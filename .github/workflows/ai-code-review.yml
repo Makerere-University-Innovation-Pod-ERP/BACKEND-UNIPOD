@@ -27,46 +27,63 @@ jobs:
           echo "diff_size=$(wc -c < diff.txt)" >> $GITHUB_OUTPUT
 
       - name: Review with Gemini
-        uses: actions/github-script@v7
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-            const diff = fs.readFileSync('diff.txt', 'utf8');
-            
-            if (diff.length === 0) {
-              console.log('No diff to review');
-              return;
-            }
-            
-            // Truncate to avoid huge prompts
-            const truncatedDiff = diff.length > 100000 ? diff.slice(0, 100000) + '\n\n[Diff truncated due to size]' : diff;
-            
-            const prompt = `You are an expert Java/Spring Boot code reviewer. Review the following pull request diff and provide constructive feedback. 
-            Focus on bugs, security issues, performance, readability and best practices. Be concise and actionable.
-            Return your review in markdown.\n\n${truncatedDiff}`;
-            
-            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }]
-              })
-            });
-            
-            if (!res.ok) {
-              const err = await res.text();
-              throw new Error(`Gemini API error: ${res.status} ${err}`);
-            }
-            
-            const data = await res.json();
-            const review = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No review generated.';
-            
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `## AI Code Review (Gemini 3.8 Flash)\n\n${review}`
-            });
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ ! -s diff.txt ]; then
+            echo "No diff to review"
+            exit 0
+          fi
+          
+          # Truncate diff to ~100KB
+          head -c 100000 diff.txt > diff_truncated.txt
+          if [ $(wc -c < diff.txt) -gt 100000 ]; then
+            echo -e "\n\n[Diff truncated due to size]" >> diff_truncated.txt
+          fi
+          
+          # Create prompt (escape for JSON)
+          PROMPT=$(cat << 'EOF'
+          You are an expert Java/Spring Boot code reviewer. Review the following pull request diff and provide constructive feedback. 
+          Focus on bugs, security issues, performance, readability and best practices. Be concise and actionable.
+          Return your review in markdown.
+          
+          EOF
+          )
+          
+          # Combine prompt and diff
+          {
+            echo "$PROMPT"
+            cat diff_truncated.txt
+          } > full_prompt.txt
+          
+          # Create JSON payload
+          jq -n --rawfile text full_prompt.txt '{contents:[{parts:[{text:$text}]}]}' > payload.json
+          
+          # Call Gemini API with timeout
+          curl -s --max-time 60 -X POST \
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${GEMINI_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d @payload.json > response.json
+          
+          # Check if we got a valid response
+          if ! jq -e '.candidates[0].content.parts[0].text' response.json > /dev/null 2>&1; then
+            echo "API call failed or returned unexpected response:"
+            cat response.json
+            exit 1
+          fi
+          
+          REVIEW=$(jq -r '.candidates[0].content.parts[0].text' response.json)
+          
+          # Post comment to PR
+          jq -n --arg body "## AI Code Review (Gemini 2.5 Flash)
+
+          $REVIEW" \
+            '{body: $body}' > comment.json
+          
+          curl -s --max-time 30 -X POST \
+            "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            -d @comment.json
