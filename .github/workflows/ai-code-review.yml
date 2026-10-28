@@ -1,0 +1,26 @@
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Gemini AI Code Review
+        uses: petarzarkov/gemini-code-review-action@v1
+        with:
+          api_key: ${{ secrets.GEMINI_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          model: "gemini-1.5-flash"
+          exclude: "*.json, *.md, package-lock.json, target/*"
