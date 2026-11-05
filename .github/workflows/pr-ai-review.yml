@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
   pull-requests: write
 
 concurrency:
@@ -30,6 +31,19 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Test PR review comment generation
+        run: python .github/scripts/test_pr_ai_review.py
+
+      - name: Install OpenAPI validation tools
+        run: pip install --disable-pip-version-check pyyaml openapi-spec-validator
+
+      - name: Validate OpenAPI contract
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python .github/scripts/pr_ai_review.py --validate-openapi
+
       - name: Review with Gemini
         continue-on-error: true
         env:
@@ -47,6 +61,17 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_REF: ${{ github.base_ref }}
         run: python .github/scripts/pr_ai_review.py --provider groq --base-ref "$BASE_REF"
+
+      - name: Review with PR Agent
+        uses: The-PR-Agent/pr-agent@v0.49.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          config.model: gemini/gemini-2.5-flash
+          config.fallback_models: "[]"
+          GOOGLE_AI_STUDIO.GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          github_action_config.auto_review: "true"
+          github_action_config.auto_describe: "false"
+          github_action_config.auto_improve: "false"
 
       - name: Enforce review result
         run: python .github/scripts/pr_ai_review.py --summary
