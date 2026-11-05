@@ -144,11 +144,15 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(AccessDeniedException.class)
     ResponseEntity<ProblemDetail> handleAccessDenied(AccessDeniedException exception) {
-        return problem(
+        ProblemDetail problem = problemDetail(
                 HttpStatus.FORBIDDEN,
                 "Forbidden",
                 "You do not have permission to perform this action."
         );
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .header("WWW-Authenticate", "Bearer")
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problem);
     }
 
     @ExceptionHandler(Exception.class)

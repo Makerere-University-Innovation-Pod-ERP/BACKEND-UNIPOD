@@ -49,15 +49,16 @@ written only to server logs and are never included in the response.
 1. Start PostgreSQL and create the database configured by `DATABASE_URL` (the
    local default is `makerere_hub_db`). Set `DB_PASS` and, if needed, `DB_USER`
    and `DATABASE_URL` in the environment. Configure `JWT_ISSUER_URI` and
-   `JWT_AUDIENCE` to match your identity provider, then run the backend from
-   `UnipodERPBackend` with `.\mvnw.cmd spring-boot:run`.
+   `JWT_AUDIENCE` to match your identity provider. From `UnipodERPBackend`,
+   start the backend with `.\mvnw.cmd spring-boot:run` on Windows PowerShell or
+   `./mvnw spring-boot:run` on Linux/macOS.
 2. Obtain an access token from the configured identity provider for a user with
    one of the intake roles. Do not put real tokens or database credentials in
    the repository or a shared Postman collection.
 3. In Postman, create an environment with `baseUrl` set to
    `http://localhost:8080/api` and `accessToken` set to the token. For protected
-   requests, open the Authorization tab, select `Bearer Token`, and enter
-   `{{accessToken}}` in the Token field.
+   requests, open the Authorization tab, choose the built-in bearer
+   authorization option, and enter `{{accessToken}}` as the token.
 4. Send `POST {{baseUrl}}/submissions` with `Content-Type: application/json`
    and this body to create a student draft:
 
@@ -85,6 +86,6 @@ written only to server logs and are never included in the response.
    `application/problem+json`; unexpected `500` responses include a support
    reference without a stack trace.
 
-For automated checks, run `.\mvnw.cmd test` from `UnipodERPBackend`. The
-database-backed integration tests require a reachable PostgreSQL database and
-the configured database credentials.
+For automated checks from `UnipodERPBackend`, run `.\mvnw.cmd test` on Windows
+PowerShell or `./mvnw test` on Linux/macOS. The database-backed integration
+tests require a reachable PostgreSQL database and the configured credentials.

@@ -141,6 +141,7 @@ public class SecurityConfiguration {
     AccessDeniedHandler accessDeniedHandler() {
         return (request, response, exception) -> {
             response.setStatus(HttpStatus.FORBIDDEN.value());
+            response.setHeader("WWW-Authenticate", "Bearer");
             response.setContentType("application/problem+json");
             response.getWriter().write("""
                     {"type":"about:blank","title":"Forbidden","status":403,"detail":"You do not have permission to perform this action."}

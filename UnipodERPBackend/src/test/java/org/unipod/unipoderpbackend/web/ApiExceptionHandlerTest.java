@@ -45,6 +45,7 @@ class ApiExceptionHandlerTest {
         );
 
         assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+        assertEquals("Bearer", response.getHeaders().getFirst("WWW-Authenticate"));
         assertNotNull(response.getBody());
         assertEquals("Forbidden", response.getBody().getTitle());
         assertFalse(response.getBody().getDetail().contains("internal rule"));
