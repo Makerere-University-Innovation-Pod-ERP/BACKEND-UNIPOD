@@ -60,7 +60,7 @@ public class ApiErrorController implements ErrorController {
 
         ResponseEntity.BodyBuilder response = ResponseEntity.status(status)
                 .contentType(MediaType.APPLICATION_PROBLEM_JSON);
-        if (status == HttpStatus.UNAUTHORIZED) {
+        if (status == HttpStatus.UNAUTHORIZED || status == HttpStatus.FORBIDDEN) {
             response.header("WWW-Authenticate", "Bearer");
         }
         return response.body(problem);
