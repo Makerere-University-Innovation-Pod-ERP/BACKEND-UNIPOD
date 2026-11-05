@@ -1,0 +1,9 @@
+package org.unipod.unipoderpbackend.submissions;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.util.UUID;
+
+public interface CaseStageHistoryRepository extends JpaRepository<CaseStageHistory, UUID> {
+    long countBySubmissionId(UUID submissionId);
+}

@@ -35,10 +35,11 @@ server:
   servlet:
     context-path: /api
 
-# JWT Security Settings
 jwt:
-  secret: ${JWT_SECRET:change-this-to-a-very-secure-random-secret-key-for-production-environment}
-  expiration-hours: ${JWT_EXPIRATION_HOURS:24}
+  issuer-uri: ${JWT_ISSUER_URI:}
+  audience: ${JWT_AUDIENCE:}
+  roles-claim: ${JWT_ROLES_CLAIM:roles}
+  subject-claim: ${JWT_SUBJECT_CLAIM:sub}
 
 # CORS Configuration (Allowing your frontend app origins)
 cors:
@@ -55,7 +56,5 @@ management:
 logging:
   level:
     root: INFO
-    # Change package name to match your actual Java base package when you create it
-    com.makerere.hub: DEBUG
-    org.springframework.security: DEBUG
+    org.unipod.unipoderpbackend: INFO
     org.springframework.flyway: INFO
