@@ -1,0 +1,248 @@
+openapi: 3.1.0
+info:
+  title: Makerere Innovation Hub ERP API
+  version: 1.0.0
+  description: |
+    W1 submission intake contract. A submission is first saved as a draft.
+    Registration marks receipt and assigns the immutable case code. Student
+    evidence is conditionally required at registration; general-public cases
+    must not include student-specific fields.
+servers:
+  - url: /api
+    description: API context path
+security:
+  - bearerAuth: []
+tags:
+  - name: Submissions
+    description: Intake and registration
+paths:
+  /submissions:
+    post:
+      tags: [Submissions]
+      operationId: createSubmission
+      summary: Create an intake draft
+      description: |
+        Available to Administrator, Innovation Coordinator, Receptionist, and
+        Fact-Finding Officer. The authenticated principal is recorded as
+        registeredBy. This operation does not allocate a case code.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSubmissionRequest'
+            examples:
+              student:
+                value:
+                  category: student
+                  title: Low-cost irrigation monitor
+                  purpose: Prototype a low-cost monitor for small farms
+                  problemAddressed: Farmers lack timely soil-moisture information
+                  studentNumber: "2026001234"
+                  programme: Agricultural Engineering
+                  supervisor: Dr Example
+                  recommendationLetterStatus: submitted
+              general:
+                value:
+                  category: general
+                  title: Community solar charging point
+                  purpose: Explore a shared charging point
+                  problemAddressed: Limited access to reliable charging
+      responses:
+        '201':
+          description: Draft created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /submissions/{id}/register:
+    post:
+      tags: [Submissions]
+      operationId: registerSubmission
+      summary: Register a submission as received
+      description: |
+        Available to Administrator, Innovation Coordinator, Receptionist, and
+        Fact-Finding Officer. Allocates a unique STU-{year}-{sequence} or
+        GEN-{year}-{sequence} code atomically. Student number, programme,
+        supervisor, and recommendation-letter status must be present for
+        student submissions. A submission can be registered only once.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      responses:
+        '200':
+          description: Submission registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    SubmissionId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    CreateSubmissionRequest:
+      type: object
+      additionalProperties: false
+      required: [category, title, purpose, problemAddressed]
+      properties:
+        category:
+          type: string
+          enum: [student, general]
+        title:
+          type: string
+          minLength: 1
+          maxLength: 240
+        purpose:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        problemAddressed:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        studentNumber:
+          type: string
+          maxLength: 80
+        programme:
+          type: string
+          maxLength: 200
+        supervisor:
+          type: string
+          maxLength: 255
+        recommendationLetterStatus:
+          $ref: '#/components/schemas/RecommendationLetterStatus'
+      allOf:
+        - if:
+            properties:
+              category:
+                const: general
+          then:
+            not:
+              anyOf:
+                - required: [studentNumber]
+                - required: [programme]
+                - required: [supervisor]
+                - required: [recommendationLetterStatus]
+    RecommendationLetterStatus:
+      type: string
+      enum: [verified, submitted, one_file, not_required]
+    Submission:
+      type: object
+      required: [id, category, title, purpose, problemAddressed, registeredBy, stage, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: [string, 'null']
+          pattern: '^(STU|GEN)-[0-9]{4}-[0-9]{6,19}$'
+        category:
+          type: string
+          enum: [student, general]
+        title:
+          type: string
+        purpose:
+          type: string
+        problemAddressed:
+          type: string
+        registeredBy:
+          type: string
+        receivingOfficer:
+          type: [string, 'null']
+        studentNumber:
+          type: [string, 'null']
+        programme:
+          type: [string, 'null']
+        supervisor:
+          type: [string, 'null']
+        recommendationLetterStatus:
+          oneOf:
+            - $ref: '#/components/schemas/RecommendationLetterStatus'
+            - type: 'null'
+        responsibleSectorId:
+          type: [string, 'null']
+          format: uuid
+        stage:
+          type: string
+          enum: [DRAFT, RECEIVED]
+        receivedAt:
+          type: [string, 'null']
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    Problem:
+      type: object
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+  responses:
+    BadRequest:
+      description: Request validation failed
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Unauthorized:
+      description: A valid bearer token is required
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Forbidden:
+      description: Authenticated user lacks an allowed intake role
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotFound:
+      description: Submission does not exist
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Conflict:
+      description: Submission has already been registered
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
