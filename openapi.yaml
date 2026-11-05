@@ -63,6 +63,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
   /submissions/{id}/register:
     post:
       tags: [Submissions]
@@ -95,6 +97,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 components:
   securitySchemes:
     bearerAuth:
@@ -206,15 +210,22 @@ components:
           format: date-time
     Problem:
       type: object
+      required: [type, title, status, detail]
       properties:
         type:
           type: string
+          format: uri-reference
         title:
           type: string
         status:
           type: integer
+          minimum: 400
+          maximum: 599
         detail:
           type: string
+        reference:
+          type: string
+          description: Support reference included for unexpected server errors.
   responses:
     BadRequest:
       description: Request validation failed
@@ -242,6 +253,12 @@ components:
             $ref: '#/components/schemas/Problem'
     Conflict:
       description: Submission has already been registered
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    InternalServerError:
+      description: Unexpected server error. The response includes a support reference but no internal details.
       content:
         application/problem+json:
           schema:
