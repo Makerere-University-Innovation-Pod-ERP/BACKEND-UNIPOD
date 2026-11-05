@@ -23,4 +23,16 @@ class ApiErrorControllerTest {
         assertEquals("Bearer", response.getHeaders().getFirst("WWW-Authenticate"));
         assertEquals(MediaType.APPLICATION_PROBLEM_JSON, response.getHeaders().getContentType());
     }
+
+    @Test
+    void forbiddenErrorDispatchIncludesBearerChallenge() {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/private");
+        request.setAttribute(RequestDispatcher.ERROR_STATUS_CODE, HttpStatus.FORBIDDEN.value());
+
+        var response = errorController.error(request);
+
+        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+        assertEquals("Bearer", response.getHeaders().getFirst("WWW-Authenticate"));
+        assertEquals(MediaType.APPLICATION_PROBLEM_JSON, response.getHeaders().getContentType());
+    }
 }

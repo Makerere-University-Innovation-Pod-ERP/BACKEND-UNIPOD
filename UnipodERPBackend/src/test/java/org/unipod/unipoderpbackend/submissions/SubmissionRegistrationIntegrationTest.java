@@ -3,6 +3,7 @@ package org.unipod.unipoderpbackend.submissions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -126,6 +127,123 @@ class SubmissionRegistrationIntegrationTest {
                         ),
                         "receptionist-1"
                 )
+        );
+    }
+
+    @Test
+    void forwardsDocumentsAndAdvancesCaseThroughCompletion() {
+        SubmissionResponse draft = submissions.create(
+                new CreateSubmissionRequest(
+                        SubmissionCategory.GENERAL,
+                        "Community charging point",
+                        "Explore a shared charging point",
+                        "Reliable charging is not readily available",
+                        null,
+                        null,
+                        null,
+                        null
+                ),
+                "receptionist-1"
+        );
+        DocumentResponse document = submissions.addDocument(
+                draft.id(),
+                new CreateDocumentRequest(
+                        "Project brief",
+                        DocumentStatus.SUBMITTED,
+                        "file_01JCASEFILE"
+                ),
+                "receptionist-1"
+        );
+        submissions.register(draft.id(), "receptionist-2");
+        var forwarded = submissions.forward(
+                draft.id(),
+                java.util.UUID.randomUUID(),
+                "receptionist-2"
+        );
+
+        assertEquals(SubmissionStage.FORWARDED, forwarded.stage());
+        assertEquals(1, jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM notification_outbox WHERE aggregate_id = ? AND event_type = ?",
+                Integer.class,
+                draft.id(),
+                "submission.forwarded"
+        ));
+
+        submissions.advance(draft.id(), SubmissionStage.IN_PROGRESS, "coordinator-1");
+        SubmissionResponse completed = submissions.advance(
+                draft.id(),
+                SubmissionStage.COMPLETED,
+                "coordinator-1"
+        );
+        CaseFileResponse caseFile = submissions.caseFile(draft.id());
+
+        assertEquals(SubmissionStage.COMPLETED, completed.stage());
+        assertEquals(document.id(), caseFile.documents().getFirst().id());
+        assertEquals(5, caseFile.stageHistory().size());
+        assertEquals(SubmissionStage.COMPLETED, caseFile.stageHistory().getLast().toStage());
+        assertThrows(
+                SubmissionConflictException.class,
+                () -> submissions.addDocument(
+                        draft.id(),
+                        new CreateDocumentRequest("Late document", DocumentStatus.SUBMITTED, null),
+                        "coordinator-1"
+                )
+        );
+    }
+
+    @Test
+    void receptionQueueAndOverviewExposeConsistentCountersAndPages() {
+        SubmissionResponse draft = submissions.create(
+                new CreateSubmissionRequest(
+                        SubmissionCategory.GENERAL,
+                        "Community charging point",
+                        "Explore a shared charging point",
+                        "Reliable charging is not readily available",
+                        null,
+                        null,
+                        null,
+                        null
+                ),
+                "receptionist-queue-test"
+        );
+
+        ReceptionQueueResponse queue = submissions.receptionQueue(
+                PageRequest.of(0, 10)
+        );
+        var mine = submissions.mine(
+                "receptionist-queue-test",
+                PageRequest.of(0, 10)
+        );
+        DashboardOverviewResponse overview = submissions.overview();
+
+        assertTrue(queue.items().stream().anyMatch(item -> item.id().equals(draft.id())));
+        assertTrue(queue.inQueueCount() >= 1);
+        assertTrue(queue.recentlyUpdatedCount() >= 1);
+        assertEquals(1, mine.getTotalElements());
+        assertTrue(overview.totalSubmissions() >= 1);
+        assertTrue(overview.generalSubmissions() >= 1);
+        assertTrue(overview.byStage().get(SubmissionStage.DRAFT) >= 1);
+    }
+
+    @Test
+    void rejectsSkippingLifecycleStages() {
+        SubmissionResponse draft = submissions.create(
+                new CreateSubmissionRequest(
+                        SubmissionCategory.GENERAL,
+                        "Community charging point",
+                        "Explore a shared charging point",
+                        "Reliable charging is not readily available",
+                        null,
+                        null,
+                        null,
+                        null
+                ),
+                "receptionist-1"
+        );
+
+        assertThrows(
+                SubmissionConflictException.class,
+                () -> submissions.advance(draft.id(), SubmissionStage.COMPLETED, "coordinator-1")
         );
     }
 

@@ -62,6 +62,9 @@ public class Submission {
     @Column(name = "received_at")
     private Instant receivedAt;
 
+    @Column(name = "forwarded_at")
+    private Instant forwardedAt;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -118,6 +121,38 @@ public class Submission {
         this.receivedAt = time;
         this.receivingOfficer = officer;
         this.stage = SubmissionStage.RECEIVED;
+        this.updatedAt = time;
+    }
+
+    public void forward(UUID sectorId, Instant time) {
+        if (stage != SubmissionStage.RECEIVED) {
+            throw new SubmissionConflictException("Only received submissions can be forwarded.");
+        }
+        if (sectorId == null) {
+            throw new InvalidSubmissionException("A sector is required to forward a submission.");
+        }
+        this.responsibleSectorId = sectorId;
+        this.forwardedAt = time;
+        this.stage = SubmissionStage.FORWARDED;
+        this.updatedAt = time;
+    }
+
+    public void advanceTo(SubmissionStage nextStage, Instant time) {
+        boolean validTransition = (stage == SubmissionStage.FORWARDED
+                && nextStage == SubmissionStage.IN_PROGRESS)
+                || (stage == SubmissionStage.IN_PROGRESS
+                && nextStage == SubmissionStage.COMPLETED);
+        if (!validTransition) {
+            throw new SubmissionConflictException("The requested lifecycle transition is not allowed.");
+        }
+        this.stage = nextStage;
+        this.updatedAt = time;
+    }
+
+    public void touch(Instant time) {
+        if (stage == SubmissionStage.COMPLETED) {
+            throw new SubmissionConflictException("Completed submissions cannot be changed.");
+        }
         this.updatedAt = time;
     }
 
@@ -179,6 +214,10 @@ public class Submission {
 
     public Instant getReceivedAt() {
         return receivedAt;
+    }
+
+    public Instant getForwardedAt() {
+        return forwardedAt;
     }
 
     public Instant getCreatedAt() {

@@ -2,10 +2,11 @@
 
 Backend API for the Makerere Innovation Hub ERP, built to manage core department workflows.
 
-## W1 submission registration
+## Waluube case workflow
 
-The W1 API contract is in [`openapi.yaml`](./openapi.yaml). `POST /api/submissions`
-creates a draft; `POST /api/submissions/{id}/register` records receipt, creates
+The Waluube API contract is in [`openapi.yaml`](./openapi.yaml).
+`POST /api/submissions` creates a draft;
+`POST /api/submissions/{id}/register` records receipt, creates
 the case-stage history entry, and allocates an immutable `STU-{year}-{sequence}`
 or `GEN-{year}-{sequence}` case code. Sequence allocation is transactional and
 safe for concurrent registrations.
@@ -14,6 +15,53 @@ Student drafts may be saved before all student details are available, but
 registration requires student number, programme, supervisor, and
 recommendation-letter status. General-public submissions must not contain
 student-only details.
+
+The lifecycle is `DRAFT` → `RECEIVED` → `FORWARDED` → `IN_PROGRESS` →
+`COMPLETED`. The API rejects skipped and backward transitions. Forwarding
+assigns an opaque sector UUID, writes stage history, and inserts a
+`submission.forwarded` record in `notification_outbox` in the same transaction.
+This backend has no configured notification delivery worker, so the outbox is a
+durable integration handoff and does not itself send email or messages.
+
+Reception staff can use `GET /api/queues/reception` for paginated drafts and
+counters: `inQueueCount` is the number of drafts, `awaitingActionCount` is the
+number of received cases not yet forwarded, and `recentlyUpdatedCount` counts
+all cases updated in the last 14 days. `GET /api/submissions` lists all cases;
+`GET /api/submissions/mine` filters by the authenticated user's `registeredBy`
+identity. Both are paginated (default 25, maximum 100). `GET
+/api/submissions/{id}` returns the case record, documents, and stage history.
+`GET /api/dashboard/overview` returns total/category/stage counts and the same
+14-day recent-update metric.
+
+After registration, forward a case with
+`POST /api/submissions/{id}/forward` and `{"sectorId":"<sector-uuid>"}`.
+Advance it in order using `POST /api/submissions/{id}/transition` with
+`{"stage":"IN_PROGRESS"}` and then `{"stage":"COMPLETED"}`. Add metadata using
+`POST /api/submissions/{id}/documents`, for example:
+
+```json
+{
+  "name": "Project brief",
+  "status": "SUBMITTED",
+  "fileReference": "storage_object_01J..."
+}
+```
+
+The `fileReference` may be omitted when no file has been attached yet.
+`status` is one of `VERIFIED`, `SUBMITTED`, `ONE_FILE`, or `NOT_REQUIRED`.
+
+The file reference must be a provider-generated URL-safe ID; URLs, filesystem
+paths, file bytes, and access tokens are not accepted. The actual file upload
+and storage service must be provided separately. The sector UUID is also stored
+as an opaque reference because no sector catalog/service exists in this backend.
+
+All case APIs are restricted to Administrator, Innovation Coordinator,
+Receptionist, and Fact-Finding Officer. `My Submissions` is based on the
+authenticated principal recorded at intake.
+
+The backend repository does not contain the Reception, All Submissions, My
+Submissions, Case file, or Overview frontend screens; it provides their API
+surfaces only.
 
 ## Authentication configuration
 
@@ -36,6 +84,32 @@ Set `SPRING_PROFILES_ACTIVE` only when selecting a profile that exists in the
 deployment; the application does not silently activate a development profile.
 Database URL and username have local defaults, but credentials must be supplied
 through environment variables or a secrets manager.
+
+Before applying the workflow migration to an existing database, check for
+registered student submissions that do not meet the new constraint. This
+includes older `RECEIVED` cases whose recommendation status was missing; the
+previous PostgreSQL `CHECK` constraint could allow those rows because a
+`NULL` result passes a check. Correct any existing records using their actual
+recommendation-letter status before applying the migration. Do not infer a
+status from missing data, and do not edit a migration after it has been
+applied:
+
+```sql
+SELECT id, recommendation_letter_status
+FROM submissions
+WHERE stage <> 'DRAFT'
+  AND category = 'STUDENT'
+  AND (
+      student_number IS NULL OR length(btrim(student_number)) = 0
+      OR programme IS NULL OR length(btrim(programme)) = 0
+      OR supervisor IS NULL OR length(btrim(supervisor)) = 0
+      OR recommendation_letter_status IS NULL
+      OR recommendation_letter_status NOT IN ('VERIFIED', 'SUBMITTED', 'ONE_FILE', 'NOT_REQUIRED')
+  );
+```
+
+After correcting any returned rows, rerun the query and confirm it returns no
+rows before deploying.
 
 ## API errors
 
