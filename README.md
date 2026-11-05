@@ -126,6 +126,7 @@ accepted for forwarding; each sector has a notification email address.
 | Method | Endpoint | Description |
 | ------ | -------- | ----------- |
 | GET | `/api/sectors` | Lists active sectors for intake roles. |
+| GET | `/api/sectors/catalog` | Lists all sectors, including inactive ones (Administrator only). |
 | POST | `/api/sectors` | Creates a sector (Administrator only). |
 | PUT | `/api/sectors/{id}` | Updates or deactivates a sector (Administrator only). |
 
