@@ -23,6 +23,7 @@ import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
@@ -67,7 +68,7 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(SectorConflictException.class)
     ResponseEntity<ProblemDetail> handleSectorConflict(SectorConflictException exception) {
-        return problem(HttpStatus.CONFLICT, "Sector conflict", "A sector with that name already exists.");
+        return problem(HttpStatus.CONFLICT, "Sector conflict", "The sector was changed by another request or conflicts with an existing name.");
     }
 
     @ExceptionHandler(SubmissionNotFoundException.class)
@@ -87,6 +88,11 @@ public class ApiExceptionHandler {
     @ExceptionHandler(StorageObjectNotFoundException.class)
     ResponseEntity<ProblemDetail> handleDocumentNotFound(StorageObjectNotFoundException exception) {
         return problem(HttpStatus.NOT_FOUND, "Document not found", "The requested document was not found.");
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    ResponseEntity<ProblemDetail> handleMaxUploadSize(MaxUploadSizeExceededException exception) {
+        return problem(HttpStatus.PAYLOAD_TOO_LARGE, "Upload too large", "The uploaded file exceeds the allowed size.");
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

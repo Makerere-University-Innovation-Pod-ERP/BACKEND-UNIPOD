@@ -174,7 +174,8 @@ class WaluubeApiIntegrationTest {
                 {
                   "name": "%s",
                   "notificationEmail": "sector@example.invalid",
-                  "active": true
+                  "active": true,
+                  "version": 0
                 }
                 """.formatted(name);
 

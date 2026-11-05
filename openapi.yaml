@@ -291,6 +291,12 @@ paths:
                 $ref: '#/components/schemas/SubmissionDocument'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '413':
+          description: Uploaded file exceeds the configured size limit
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -627,11 +633,16 @@ components:
           maxLength: 320
         active:
           type: boolean
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Expected sector version for updates; omit when creating a sector.
     Sector:
       allOf:
         - $ref: '#/components/schemas/SectorRequest'
         - type: object
-          required: [id, createdAt, updatedAt]
+          required: [id, version, createdAt, updatedAt]
           properties:
             id:
               type: string

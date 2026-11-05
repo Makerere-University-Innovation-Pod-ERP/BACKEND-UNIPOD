@@ -5,7 +5,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -46,7 +45,6 @@ public class UploadedDocumentService {
         this.transaction = new TransactionTemplate(transactionManager);
     }
 
-    @Transactional
     public DocumentResponse upload(
             UUID submissionId,
             String name,
@@ -62,6 +60,14 @@ public class UploadedDocumentService {
             throw new InvalidSubmissionException("Document details are invalid.");
         }
         String originalFilename = safeFilename(file.getOriginalFilename(), documentName);
+        transaction.execute(statusTransaction -> {
+            Submission submission = submissions.findByIdForUpdate(submissionId)
+                    .orElseThrow(() -> new SubmissionNotFoundException(submissionId));
+            if (submission.getStage() == SubmissionStage.COMPLETED) {
+                throw new SubmissionConflictException("The submission cannot be changed in its current state.");
+            }
+            return null;
+        });
 
         String reference;
         try {
@@ -97,10 +103,10 @@ public class UploadedDocumentService {
         }
     }
 
-    @Transactional(readOnly = true)
     public DownloadedDocument download(UUID submissionId, UUID documentId) {
-        SubmissionDocument document = documents.findByIdAndSubmissionId(documentId, submissionId)
-                .orElseThrow(StorageObjectNotFoundException::new);
+        SubmissionDocument document = transaction.execute(status -> documents
+                .findByIdAndSubmissionId(documentId, submissionId)
+                .orElseThrow(StorageObjectNotFoundException::new));
         return new DownloadedDocument(document, storage.download(document.getFileReference()));
     }
 

@@ -49,7 +49,8 @@ class OutboxNotificationDispatcherTest {
                           "submissionTitle": "Irrigation monitor"
                         }
                         """,
-                1
+                        1,
+                        UUID.randomUUID()
         ));
 
         var message = org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
@@ -58,7 +59,8 @@ class OutboxNotificationDispatcherTest {
         assertEquals("Submission GEN-2026-000001 forwarded to Agriculture", message.getValue().getSubject());
         verify(jdbcTemplate).update(
                 contains("published_at = CURRENT_TIMESTAMP"),
-                eq((Object) eventId)
+                eq((Object) eventId),
+                any(Object.class)
         );
     }
 
@@ -78,7 +80,8 @@ class OutboxNotificationDispatcherTest {
                           "submissionTitle": "Irrigation monitor"
                         }
                         """,
-                1
+                        1,
+                        UUID.randomUUID()
         ));
 
         var retryArguments = org.mockito.ArgumentCaptor.forClass(Object[].class);

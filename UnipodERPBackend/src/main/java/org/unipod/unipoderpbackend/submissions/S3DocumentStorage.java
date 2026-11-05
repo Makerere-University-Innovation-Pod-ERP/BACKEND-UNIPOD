@@ -10,6 +10,7 @@ import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -56,6 +57,11 @@ public class S3DocumentStorage {
             return s3.getObject(GetObjectRequest.builder().bucket(bucket).key(reference).build());
         } catch (NoSuchKeyException exception) {
             throw new StorageObjectNotFoundException();
+        } catch (S3Exception exception) {
+            if (exception.statusCode() == 404) {
+                throw new StorageObjectNotFoundException();
+            }
+            throw exception;
         }
     }
 

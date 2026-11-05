@@ -11,6 +11,7 @@ import java.io.InputStream;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -34,9 +35,9 @@ class S3DocumentStorageTest {
         var request = org.mockito.ArgumentCaptor.forClass(PutObjectRequest.class);
         var body = org.mockito.ArgumentCaptor.forClass(RequestBody.class);
         verify(s3).putObject(request.capture(), body.capture());
-        assertTrue(request.getValue().key().equals(reference));
-        assertTrue(request.getValue().bucket().equals("test-bucket"));
-        assertTrue(request.getValue().contentLength() == 4L);
+        assertEquals(reference, request.getValue().key());
+        assertEquals("test-bucket", request.getValue().bucket());
+        assertEquals(4L, request.getValue().contentLength());
         try (InputStream uploaded = body.getValue().contentStreamProvider().newStream()) {
             org.junit.jupiter.api.Assertions.assertArrayEquals(
                     new byte[]{1, 2, 3, 4},

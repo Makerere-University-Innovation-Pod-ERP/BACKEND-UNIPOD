@@ -126,8 +126,9 @@ accepted for forwarding; each sector has a notification email address.
 | Method | Endpoint | Description |
 | ------ | -------- | ----------- |
 | GET | `/api/sectors` | Lists active sectors for intake roles. |
+| GET | `/api/sectors/catalog` | Lists active and inactive sectors (Administrator only). |
 | POST | `/api/sectors` | Creates a sector (Administrator only). |
-| PUT | `/api/sectors/{id}` | Updates or deactivates a sector (Administrator only). |
+| PUT | `/api/sectors/{id}` | Updates or deactivates a sector (Administrator only). The request must include the current `version`; stale updates return `409 Conflict`. |
 
 Forwarding writes an email notification to the outbox in the same transaction
 as the stage change. Notification delivery itself is asynchronous.
@@ -204,7 +205,9 @@ The configured multipart and S3 object size limits are enforced from
 database transaction rolls back; deletion failures are logged and require
 periodic orphan-object reconciliation in the storage provider. The
 backend does not scan files for malware; deploy an appropriate scanning and
-content-retention policy before accepting untrusted uploads.
+content-retention policy before accepting untrusted uploads. Requests over the
+configured limit return `413 Payload Too Large`. Downloads use a five-minute
+async request timeout by default, configurable with `ASYNC_REQUEST_TIMEOUT`.
 
 ### API Access Control
 

@@ -8,6 +8,7 @@ public record SectorResponse(
         String name,
         String notificationEmail,
         boolean active,
+        long version,
         Instant createdAt,
         Instant updatedAt
 ) {
@@ -17,6 +18,7 @@ public record SectorResponse(
                 sector.getName(),
                 sector.getNotificationEmail(),
                 sector.isActive(),
+                sector.getVersion(),
                 sector.getCreatedAt(),
                 sector.getUpdatedAt()
         );

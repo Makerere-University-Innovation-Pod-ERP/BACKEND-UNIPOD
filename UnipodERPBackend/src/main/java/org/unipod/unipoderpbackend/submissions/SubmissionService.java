@@ -130,7 +130,7 @@ public class SubmissionService {
                 actor,
                 now
         ));
-        notificationOutbox.recordForwarded(
+        notificationOutbox.recordForwarded(new NotificationOutbox.ForwardedNotification(
                 submission.getId(),
                 sectorId,
                 sector.getName(),
@@ -139,7 +139,7 @@ public class SubmissionService {
                 submission.getCode(),
                 actor,
                 now
-        );
+        ));
         return SubmissionResponse.from(submission);
     }
 

@@ -19,7 +19,9 @@ public interface SectorRepository extends JpaRepository<Sector, UUID> {
     @Query("select sector from Sector sector where sector.id = :id")
     Optional<Sector> findByIdForShare(@Param("id") UUID id);
 
-    boolean existsByNameIgnoreCase(String name);
+    @Query("select count(sector) > 0 from Sector sector where lower(sector.name) = lower(:name)")
+    boolean existsByNameIgnoreCase(@Param("name") String name);
 
-    boolean existsByNameIgnoreCaseAndIdNot(String name, UUID id);
+    @Query("select count(sector) > 0 from Sector sector where lower(sector.name) = lower(:name) and sector.id <> :id")
+    boolean existsByNameIgnoreCaseAndIdNot(@Param("name") String name, @Param("id") UUID id);
 }

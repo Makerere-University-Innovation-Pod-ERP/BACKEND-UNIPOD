@@ -58,6 +58,9 @@ public class SectorService {
     @Transactional
     public SectorResponse update(UUID id, SectorRequest request) {
         Sector sector = sectors.findById(id).orElseThrow(() -> new SectorNotFoundException(id));
+        if (request.version() == null || request.version() != sector.getVersion()) {
+            throw new SectorConflictException();
+        }
         String name = request.name().trim();
         if (sectors.existsByNameIgnoreCaseAndIdNot(name, id)) {
             throw new SectorConflictException();

@@ -34,7 +34,8 @@ public class OutboxNotificationDispatcher {
             WITH candidate AS (
                 SELECT id
                 FROM notification_outbox
-                WHERE published_at IS NULL
+                WHERE event_type = 'submission.forwarded'
+                    AND published_at IS NULL
                     AND (locked_until IS NULL OR locked_until <= CURRENT_TIMESTAMP)
                     AND dead_lettered_at IS NULL
                     AND next_attempt_at <= CURRENT_TIMESTAMP
@@ -44,10 +45,11 @@ public class OutboxNotificationDispatcher {
             )
             UPDATE notification_outbox event
             SET locked_until = CURRENT_TIMESTAMP + INTERVAL '2 minutes',
-                attempt_count = attempt_count + 1
+                attempt_count = attempt_count + 1,
+                locked_by = CAST(? AS uuid)
             FROM candidate
             WHERE event.id = candidate.id
-            RETURNING event.id, event.payload::text AS payload, event.attempt_count
+            RETURNING event.id, event.payload::text AS payload, event.attempt_count, event.locked_by
             """;
 
     private final JdbcTemplate jdbcTemplate;
@@ -88,10 +90,11 @@ public class OutboxNotificationDispatcher {
     }
 
     Optional<OutboxMessage> claimNext() {
+        UUID claimToken = UUID.randomUUID();
         return transaction.execute(status -> jdbcTemplate.query(
                 CLAIM_NEXT_SQL,
                 (result, row) -> mapMessage(result),
-                new Object[0]
+                claimToken
         ).stream().findFirst());
     }
 
@@ -125,17 +128,18 @@ public class OutboxNotificationDispatcher {
             retry(event, exception);
             return;
         }
-        markPublished(event.id());
+        markPublished(event);
     }
 
-    private void markPublished(UUID id) {
+    private void markPublished(OutboxMessage event) {
         jdbcTemplate.update("""
                 UPDATE notification_outbox
                 SET published_at = CURRENT_TIMESTAMP,
                     locked_until = NULL,
+                    locked_by = NULL,
                     last_error = NULL
-                WHERE id = ? AND published_at IS NULL
-                """, id);
+                WHERE id = ? AND locked_by = ? AND published_at IS NULL
+                """, event.id(), event.claimToken());
     }
 
     private void retry(OutboxMessage event, Exception exception) {
@@ -154,9 +158,10 @@ public class OutboxNotificationDispatcher {
                         ELSE dead_lettered_at
                     END,
                     locked_until = NULL,
+                    locked_by = NULL,
                     last_error = ?
-                WHERE id = ? AND published_at IS NULL AND dead_lettered_at IS NULL
-                    """, MAX_ATTEMPTS, delaySeconds, MAX_ATTEMPTS, errorType, event.id());
+                WHERE id = ? AND locked_by = ? AND published_at IS NULL AND dead_lettered_at IS NULL
+                    """, MAX_ATTEMPTS, delaySeconds, MAX_ATTEMPTS, errorType, event.id(), event.claimToken());
         log.warn("Notification delivery failed for outbox event {} on attempt {} ({}){}",
                     event.id(), event.attemptCount(), errorType,
                     event.attemptCount() >= MAX_ATTEMPTS ? "; moved to dead letter state" : "");
@@ -166,7 +171,8 @@ public class OutboxNotificationDispatcher {
         return new OutboxMessage(
                 result.getObject("id", UUID.class),
                 result.getString("payload"),
-                result.getInt("attempt_count")
+                result.getInt("attempt_count"),
+                result.getObject("locked_by", UUID.class)
         );
     }
 
@@ -192,6 +198,6 @@ public class OutboxNotificationDispatcher {
         }
     }
 
-    record OutboxMessage(UUID id, String payload, int attemptCount) {
+    record OutboxMessage(UUID id, String payload, int attemptCount, UUID claimToken) {
     }
 }

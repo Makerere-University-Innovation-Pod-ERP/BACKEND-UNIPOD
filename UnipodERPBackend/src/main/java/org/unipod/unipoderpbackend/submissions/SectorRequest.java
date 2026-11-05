@@ -16,6 +16,10 @@ public record SectorRequest(
                 message = "must be a valid routable email address"
         )
         String notificationEmail,
-        @NotNull Boolean active
+        @NotNull Boolean active,
+        Long version
 ) {
+    public SectorRequest(String name, String notificationEmail, Boolean active) {
+        this(name, notificationEmail, active, null);
+    }
 }

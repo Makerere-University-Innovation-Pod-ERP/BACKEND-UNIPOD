@@ -83,7 +83,10 @@ class ApiExceptionHandlerTest {
 
         assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
         assertEquals("Sector conflict", response.getBody().getTitle());
-        assertEquals("A sector with that name already exists.", response.getBody().getDetail());
+        assertEquals(
+                "The sector was changed by another request or conflicts with an existing name.",
+                response.getBody().getDetail()
+        );
     }
 
     @Test
