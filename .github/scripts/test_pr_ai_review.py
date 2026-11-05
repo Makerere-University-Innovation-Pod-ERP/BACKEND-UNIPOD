@@ -12,7 +12,7 @@ class ReviewOutputTests(unittest.TestCase):
         models = pr_ai_review.PROVIDERS["gemini"]["default_models"]
 
         self.assertEqual(models[0], "gemini-3.8-flash")
-        self.assertNotIn("gemini-2.0-flash", models)
+        self.assertEqual(models, ["gemini-3.8-flash", "gemini-3.6-flash"])
 
     def test_gemini_review_uses_first_configured_model(self):
         response = {
