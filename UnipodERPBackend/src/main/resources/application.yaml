@@ -1,14 +1,12 @@
 spring:
   application:
     name: UnipodERPBackend
-  profiles:
-    active: ${SPRING_PROFILES_ACTIVE:dev}
 
   # Database Configuration (PostgreSQL)
   datasource:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/makerere_hub_db}
     username: ${DB_USER:postgres}
-    password: ${DB_PASS:postgres}
+    password: ${DB_PASS}
     driver-class-name: org.postgresql.Driver
 
   # JPA / Hibernate Configuration
@@ -22,13 +20,17 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
 
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+
   # Flyway Database Migration Configuration
   flyway:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: true
     baseline-version: 1
-    out-of-order: true
+    out-of-order: false
 
 server:
   port: ${SERVER_PORT:8080}
@@ -39,11 +41,19 @@ server:
     include-stacktrace: never
   servlet:
     context-path: /api
+  error:
+    include-message: never
+    include-binding-errors: never
+    include-exception: false
+    include-stacktrace: never
+    whitelabel:
+      enabled: false
 
-# JWT Security Settings
 jwt:
-  secret: ${JWT_SECRET:change-this-to-a-very-secure-random-secret-key-for-production-environment}
-  expiration-hours: ${JWT_EXPIRATION_HOURS:24}
+  issuer-uri: ${JWT_ISSUER_URI:}
+  audience: ${JWT_AUDIENCE:}
+  roles-claim: ${JWT_ROLES_CLAIM:roles}
+  subject-claim: ${JWT_SUBJECT_CLAIM:sub}
 
 # CORS Configuration (Allowing your frontend app origins)
 cors:
@@ -60,7 +70,5 @@ management:
 logging:
   level:
     root: INFO
-    # Change package name to match your actual Java base package when you create it
-    com.makerere.hub: DEBUG
-    org.springframework.security: DEBUG
+    org.unipod.unipoderpbackend: INFO
     org.springframework.flyway: INFO
