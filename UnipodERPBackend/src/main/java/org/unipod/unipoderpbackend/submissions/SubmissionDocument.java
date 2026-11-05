@@ -29,6 +29,12 @@ public class SubmissionDocument {
     @Column(name = "file_reference", length = 256)
     private String fileReference;
 
+    @Column(name = "content_type", length = 255)
+    private String contentType;
+
+    @Column(name = "file_size")
+    private Long fileSize;
+
     @Column(name = "created_by", nullable = false)
     private String createdBy;
 
@@ -47,11 +53,27 @@ public class SubmissionDocument {
             String createdBy,
             Instant createdAt
     ) {
+        this(id, submissionId, name, status, fileReference, null, null, createdBy, createdAt);
+    }
+
+    public SubmissionDocument(
+            UUID id,
+            UUID submissionId,
+            String name,
+            DocumentStatus status,
+            String fileReference,
+            String contentType,
+            Long fileSize,
+            String createdBy,
+            Instant createdAt
+    ) {
         this.id = id;
         this.submissionId = submissionId;
         this.name = name;
         this.status = status;
         this.fileReference = fileReference;
+        this.contentType = contentType;
+        this.fileSize = fileSize;
         this.createdBy = createdBy;
         this.createdAt = createdAt;
     }
@@ -74,6 +96,14 @@ public class SubmissionDocument {
 
     public String getFileReference() {
         return fileReference;
+    }
+
+    public String getContentType() {
+        return contentType;
+    }
+
+    public Long getFileSize() {
+        return fileSize;
     }
 
     public String getCreatedBy() {

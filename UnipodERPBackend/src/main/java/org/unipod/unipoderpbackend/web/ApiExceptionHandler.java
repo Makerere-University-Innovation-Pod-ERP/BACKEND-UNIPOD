@@ -3,14 +3,19 @@ package org.unipod.unipoderpbackend.web;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.unipod.unipoderpbackend.submissions.InvalidSubmissionException;
+import org.unipod.unipoderpbackend.submissions.SectorConflictException;
+import org.unipod.unipoderpbackend.submissions.SectorNotFoundException;
 import org.unipod.unipoderpbackend.submissions.SubmissionConflictException;
 import org.unipod.unipoderpbackend.submissions.SubmissionNotFoundException;
+import org.unipod.unipoderpbackend.submissions.StorageObjectNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.HttpMediaTypeNotAcceptableException;
@@ -37,6 +42,7 @@ import java.util.regex.Pattern;
  * logs.</p>
  */
 @RestControllerAdvice
+@Order(Ordered.HIGHEST_PRECEDENCE)
 public class ApiExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
     private static final Pattern SAFE_REFERENCE = Pattern.compile("[A-Za-z0-9-]{1,64}");
@@ -59,6 +65,11 @@ public class ApiExceptionHandler {
         );
     }
 
+    @ExceptionHandler(SectorConflictException.class)
+    ResponseEntity<ProblemDetail> handleSectorConflict(SectorConflictException exception) {
+        return problem(HttpStatus.CONFLICT, "Sector conflict", "A sector with that name already exists.");
+    }
+
     @ExceptionHandler(SubmissionNotFoundException.class)
     ResponseEntity<ProblemDetail> handleNotFound(SubmissionNotFoundException exception) {
         return problem(
@@ -66,6 +77,16 @@ public class ApiExceptionHandler {
                 "Submission not found",
                 "The requested submission was not found."
         );
+    }
+
+    @ExceptionHandler(SectorNotFoundException.class)
+    ResponseEntity<ProblemDetail> handleSectorNotFound(SectorNotFoundException exception) {
+        return problem(HttpStatus.NOT_FOUND, "Sector not found", "The requested sector was not found or is inactive.");
+    }
+
+    @ExceptionHandler(StorageObjectNotFoundException.class)
+    ResponseEntity<ProblemDetail> handleDocumentNotFound(StorageObjectNotFoundException exception) {
+        return problem(HttpStatus.NOT_FOUND, "Document not found", "The requested document was not found.");
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

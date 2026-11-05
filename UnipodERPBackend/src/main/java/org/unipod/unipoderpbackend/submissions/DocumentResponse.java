@@ -9,6 +9,8 @@ public record DocumentResponse(
         String name,
         DocumentStatus status,
         String fileReference,
+        String contentType,
+        Long fileSize,
         String createdBy,
         Instant createdAt
 ) {
@@ -19,6 +21,8 @@ public record DocumentResponse(
                 document.getName(),
                 document.getStatus(),
                 document.getFileReference(),
+                document.getContentType(),
+                document.getFileSize(),
                 document.getCreatedBy(),
                 document.getCreatedAt()
         );

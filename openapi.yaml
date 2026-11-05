@@ -19,6 +19,8 @@ tags:
     description: Reception work queue
   - name: Dashboard
     description: Pipeline overview metrics
+  - name: Sectors
+    description: Sector catalog and routing
 paths:
   /submissions:
     post:
@@ -256,6 +258,161 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+  /submissions/{id}/documents/upload:
+    post:
+      tags: [Submissions]
+      operationId: uploadSubmissionDocument
+      summary: Upload a document to configured S3-compatible storage
+      description: Available only when S3 storage is enabled. Files are limited by the configured server-side upload limit.
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [name, status, file]
+              properties:
+                name:
+                  type: string
+                  maxLength: 255
+                status:
+                  $ref: '#/components/schemas/DocumentStatus'
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Document metadata and generated opaque storage reference
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionDocument'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /submissions/{id}/documents/{documentId}/file:
+    get:
+      tags: [Submissions]
+      operationId: downloadSubmissionDocument
+      summary: Download a case document
+      description: The response is always an attachment with an octet-stream content type and nosniff protection.
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Document bytes
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+            X-Content-Type-Options:
+              schema:
+                type: string
+                enum: [nosniff]
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /sectors:
+    get:
+      tags: [Sectors]
+      operationId: listActiveSectors
+      summary: List active sectors
+      responses:
+        '200':
+          description: Active sectors ordered by name
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Sector'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Sectors]
+      operationId: createSector
+      summary: Create a sector
+      description: Administrator only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SectorRequest'
+      responses:
+        '201':
+          description: Sector created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sector'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /sectors/{id}:
+    put:
+      tags: [Sectors]
+      operationId: updateSector
+      summary: Update or deactivate a sector
+      description: Administrator only. Deactivation is soft; existing cases retain their sector reference.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SectorRequest'
+      responses:
+        '200':
+          description: Updated sector
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sector'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /queues/reception:
     get:
       tags: [Reception]
@@ -423,11 +580,46 @@ components:
           $ref: '#/components/schemas/DocumentStatus'
         fileReference:
           type: [string, 'null']
+        contentType:
+          type: [string, 'null']
+        fileSize:
+          type: [integer, 'null']
+          format: int64
         createdBy:
           type: string
         createdAt:
           type: string
           format: date-time
+    SectorRequest:
+      type: object
+      additionalProperties: false
+      required: [name, notificationEmail, active]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        notificationEmail:
+          type: string
+          format: email
+          maxLength: 320
+        active:
+          type: boolean
+    Sector:
+      allOf:
+        - $ref: '#/components/schemas/SectorRequest'
+        - type: object
+          required: [id, createdAt, updatedAt]
+          properties:
+            id:
+              type: string
+              format: uuid
+            createdAt:
+              type: string
+              format: date-time
+            updatedAt:
+              type: string
+              format: date-time
     SubmissionPage:
       type: object
       required: [items, page, size, totalElements, totalPages]
