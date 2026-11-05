@@ -54,6 +54,11 @@ at-least-once: an interruption after SMTP accepts a message but before the
 database records success can cause a duplicate. With delivery disabled, events
 remain in the outbox for an external consumer.
 
+Delivery attempts are capped at ten. Events that continue to fail are moved to
+the dead-letter state for operator review. V6 retires pre-existing forwarded
+events that lack the sector recipient fields required by the SMTP worker,
+rather than retrying them indefinitely.
+
 ### Reception Queue
 
 Reception staff can use:
@@ -189,11 +194,15 @@ When S3 storage is enabled, the API can upload a file using
 `POST /api/submissions/{id}/documents/upload` as `multipart/form-data` fields
 `name`, `status`, and `file`. It generates the opaque `fileReference` itself.
 Download with `GET /api/submissions/{id}/documents/{documentId}/file`; responses
-are forced to attachment/octet-stream with `nosniff`. Storage is disabled by
+use the sanitized original filename when available, are forced to
+attachment/octet-stream, and include `nosniff`. Storage is disabled by
 default and metadata-only document creation remains available.
 
-The configured multipart and S3 object size limits are enforced. Uploads are
-removed from S3 if the corresponding database transaction rolls back. The
+The configured multipart and S3 object size limits are enforced from
+`S3_MAX_FILE_BYTES` (with a separate request envelope limit
+`S3_MAX_REQUEST_BYTES`). Upload cleanup is attempted if the corresponding
+database transaction rolls back; deletion failures are logged and require
+periodic orphan-object reconciliation in the storage provider. The
 backend does not scan files for malware; deploy an appropriate scanning and
 content-retention policy before accepting untrusted uploads.
 
@@ -235,13 +244,15 @@ Configure the following environment variables in the deployment environment.
 | `SMTP_HOST`, `SMTP_PORT` | SMTP server and port (port defaults to `587`). |
 | `SMTP_USERNAME`, `SMTP_PASSWORD` | SMTP credentials when required by the provider. |
 | `SMTP_AUTH`, `SMTP_STARTTLS` | SMTP authentication and STARTTLS toggles (both default to `true`). |
+| `SMTP_STARTTLS_REQUIRED` | Requires STARTTLS when enabled (defaults to `true`). |
 | `NOTIFICATION_OUTBOX_POLL_INTERVAL` | Worker delay as a Spring duration (defaults to `PT15S`). |
 | `S3_STORAGE_ENABLED` | Enables S3-compatible file upload/download; defaults to `false`. |
-| `S3_BUCKET`, `AWS_REGION` | Required bucket and storage region when S3 is enabled. |
+| `S3_BUCKET` | Required bucket when S3 is enabled. |
+| `AWS_REGION` | Storage region; defaults to `us-east-1`. |
 | `S3_ENDPOINT` | Optional S3-compatible endpoint, such as a private object-storage service. |
 | `S3_PATH_STYLE_ACCESS` | Enables path-style bucket addressing (defaults to `true`). |
 | `S3_MAX_FILE_BYTES` | Maximum stored file size in bytes (defaults to `10485760`). |
-| `S3_MAX_FILE_SIZE`, `S3_MAX_REQUEST_SIZE` | Multipart request limits (defaults to `10MB` and `11MB`). |
+| `S3_MAX_REQUEST_BYTES` | Multipart request envelope limit in bytes (defaults to `11534336`). |
 
 Use the AWS SDK default credential provider chain for S3 credentials (for
 example, a workload IAM role or `AWS_ACCESS_KEY_ID` and

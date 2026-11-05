@@ -2,6 +2,8 @@ package org.unipod.unipoderpbackend.web;
 
 import org.junit.jupiter.api.Test;
 import org.unipod.unipoderpbackend.submissions.InvalidSubmissionException;
+import org.unipod.unipoderpbackend.submissions.SectorConflictException;
+import org.unipod.unipoderpbackend.submissions.StorageObjectNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -73,5 +75,23 @@ class ApiExceptionHandlerTest {
 
         assertEquals(HttpStatus.METHOD_NOT_ALLOWED, response.getStatusCode());
         assertEquals("GET, POST", response.getHeaders().getFirst("Allow"));
+    }
+
+    @Test
+    void sectorConflictReturnsSafeConflictEnvelope() {
+        ResponseEntity<ProblemDetail> response = handler.handleSectorConflict(new SectorConflictException());
+
+        assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
+        assertEquals("Sector conflict", response.getBody().getTitle());
+        assertEquals("A sector with that name already exists.", response.getBody().getDetail());
+    }
+
+    @Test
+    void missingDocumentReturnsSafeNotFoundEnvelope() {
+        ResponseEntity<ProblemDetail> response = handler.handleDocumentNotFound(new StorageObjectNotFoundException());
+
+        assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
+        assertEquals("Document not found", response.getBody().getTitle());
+        assertEquals("The requested document was not found.", response.getBody().getDetail());
     }
 }

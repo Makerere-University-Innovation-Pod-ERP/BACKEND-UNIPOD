@@ -6,14 +6,14 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.UUID;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 @ConditionalOnProperty(name = "storage.s3.enabled", havingValue = "true")
@@ -26,11 +26,13 @@ public class UploadedDocumentService {
     private final S3DocumentStorage storage;
     private final Clock clock;
     private final long maxFileSize;
+    private final TransactionTemplate transaction;
 
     public UploadedDocumentService(
             SubmissionRepository submissions,
             SubmissionDocumentRepository documents,
             S3DocumentStorage storage,
+            PlatformTransactionManager transactionManager,
             @Value("${storage.s3.max-file-size}") long maxFileSize
     ) {
         if (maxFileSize <= 0) {
@@ -41,6 +43,7 @@ public class UploadedDocumentService {
         this.storage = storage;
         this.maxFileSize = maxFileSize;
         this.clock = Clock.systemUTC();
+        this.transaction = new TransactionTemplate(transactionManager);
     }
 
     @Transactional
@@ -51,8 +54,6 @@ public class UploadedDocumentService {
             MultipartFile file,
             String actor
     ) {
-        Submission submission = submissions.findByIdForUpdate(submissionId)
-                .orElseThrow(() -> new SubmissionNotFoundException(submissionId));
         if (file == null || file.isEmpty() || file.getSize() > maxFileSize) {
             throw new InvalidSubmissionException("The uploaded file is empty or exceeds the allowed size.");
         }
@@ -60,6 +61,7 @@ public class UploadedDocumentService {
         if (documentName.isEmpty() || documentName.length() > 255 || status == null) {
             throw new InvalidSubmissionException("Document details are invalid.");
         }
+        String originalFilename = safeFilename(file.getOriginalFilename(), documentName);
 
         String reference;
         try {
@@ -68,39 +70,31 @@ public class UploadedDocumentService {
             throw new DocumentStorageException(exception);
         }
 
-        Instant now = clock.instant();
-        submission.touch(now);
         String contentType = safeContentType(file.getContentType());
-        SubmissionDocument document = new SubmissionDocument(
-                UUID.randomUUID(),
-                submissionId,
-                documentName,
-                status,
-                reference,
-                contentType,
-                file.getSize(),
-                actor,
-                now
-        );
         try {
-            documents.saveAndFlush(document);
+            SubmissionDocument document = transaction.execute(statusTransaction -> {
+                Submission submission = submissions.findByIdForUpdate(submissionId)
+                        .orElseThrow(() -> new SubmissionNotFoundException(submissionId));
+                Instant now = clock.instant();
+                submission.touch(now);
+                return documents.saveAndFlush(new SubmissionDocument(
+                        UUID.randomUUID(),
+                        submissionId,
+                        documentName,
+                        status,
+                        reference,
+                        contentType,
+                        file.getSize(),
+                        originalFilename,
+                        actor,
+                        now
+                ));
+            });
+            return DocumentResponse.from(document);
         } catch (RuntimeException exception) {
             deleteAfterFailure(reference, exception);
             throw exception;
         }
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCompletion(int completionStatus) {
-                if (completionStatus == STATUS_ROLLED_BACK) {
-                    try {
-                        storage.delete(reference);
-                    } catch (RuntimeException exception) {
-                        log.warn("Unable to remove uploaded object after database rollback: {}", reference);
-                    }
-                }
-            }
-        });
-        return DocumentResponse.from(document);
     }
 
     @Transactional(readOnly = true)
@@ -115,15 +109,29 @@ public class UploadedDocumentService {
             storage.delete(reference);
         } catch (RuntimeException cleanupException) {
             originalException.addSuppressed(cleanupException);
-            log.warn("Unable to remove uploaded object after database write failure: {}", reference);
+            log.warn("Unable to remove uploaded object after database write failure: {}", reference, cleanupException);
         }
     }
 
     private static String safeContentType(String contentType) {
-        if (contentType == null || !contentType.matches("[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+")) {
+        if (contentType == null || contentType.length() > 255
+                || !contentType.matches("[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+")) {
             return DEFAULT_CONTENT_TYPE;
         }
         return contentType;
+    }
+
+    private static String safeFilename(String originalFilename, String fallback) {
+        String filename = originalFilename == null ? "" : originalFilename;
+        int separator = Math.max(filename.lastIndexOf('/'), filename.lastIndexOf('\\'));
+        if (separator >= 0) {
+            filename = filename.substring(separator + 1);
+        }
+        filename = filename.replaceAll("[\\p{Cntrl}]+", " ").trim();
+        if (filename.isEmpty()) {
+            return fallback;
+        }
+        return filename.length() <= 255 ? filename : filename.substring(0, 255);
     }
 
     public record DownloadedDocument(SubmissionDocument document, java.io.InputStream content) {

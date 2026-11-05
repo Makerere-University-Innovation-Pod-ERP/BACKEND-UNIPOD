@@ -13,6 +13,8 @@ import java.util.UUID;
 public interface SectorRepository extends JpaRepository<Sector, UUID> {
     List<Sector> findAllByActiveTrueOrderByNameAsc();
 
+    List<Sector> findAllByOrderByNameAsc();
+
     @Lock(LockModeType.PESSIMISTIC_READ)
     @Query("select sector from Sector sector where sector.id = :id")
     Optional<Sector> findByIdForShare(@Param("id") UUID id);

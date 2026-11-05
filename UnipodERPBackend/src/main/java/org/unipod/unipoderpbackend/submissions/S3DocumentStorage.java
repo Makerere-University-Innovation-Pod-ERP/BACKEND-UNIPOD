@@ -8,8 +8,8 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-import software.amazon.awssdk.services.s3.model.S3Exception;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -54,11 +54,8 @@ public class S3DocumentStorage {
         }
         try {
             return s3.getObject(GetObjectRequest.builder().bucket(bucket).key(reference).build());
-        } catch (S3Exception exception) {
-            if (exception.statusCode() == 404) {
-                throw new StorageObjectNotFoundException();
-            }
-            throw exception;
+        } catch (NoSuchKeyException exception) {
+            throw new StorageObjectNotFoundException();
         }
     }
 
@@ -67,7 +64,8 @@ public class S3DocumentStorage {
     }
 
     private static String safeContentType(String contentType) {
-        if (contentType == null || !contentType.matches("[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+")) {
+        if (contentType == null || contentType.length() > 255
+                || !contentType.matches("[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+")) {
             return DEFAULT_CONTENT_TYPE;
         }
         return contentType;

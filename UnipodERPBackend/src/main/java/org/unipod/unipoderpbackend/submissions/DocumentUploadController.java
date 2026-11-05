@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 @RestController
@@ -57,8 +58,12 @@ public class DocumentUploadController {
         UploadedDocumentService.DownloadedDocument downloaded = documents.download(id, documentId);
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+        String filename = downloaded.document().getOriginalFilename();
+        if (filename == null || filename.isBlank()) {
+            filename = downloaded.document().getName();
+        }
         headers.setContentDisposition(ContentDisposition.attachment()
-                .filename(downloaded.document().getName())
+                .filename(filename, StandardCharsets.UTF_8)
                 .build());
         headers.set("X-Content-Type-Options", "nosniff");
         if (downloaded.document().getFileSize() != null) {

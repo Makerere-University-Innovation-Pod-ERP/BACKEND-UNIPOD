@@ -26,8 +26,8 @@ spring:
 
   servlet:
     multipart:
-      max-file-size: ${S3_MAX_FILE_SIZE:10MB}
-      max-request-size: ${S3_MAX_REQUEST_SIZE:11MB}
+      max-file-size: ${S3_MAX_FILE_BYTES:10485760}
+      max-request-size: ${S3_MAX_REQUEST_BYTES:11534336}
 
   mail:
     host: ${SMTP_HOST:}
@@ -40,6 +40,7 @@ spring:
           auth: ${SMTP_AUTH:true}
           starttls:
             enable: ${SMTP_STARTTLS:true}
+            required: ${SMTP_STARTTLS_REQUIRED:true}
           connectiontimeout: 5000
           timeout: 5000
           writetimeout: 5000

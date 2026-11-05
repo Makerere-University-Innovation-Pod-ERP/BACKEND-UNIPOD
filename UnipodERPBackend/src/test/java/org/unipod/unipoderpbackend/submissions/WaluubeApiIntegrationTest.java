@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -164,6 +165,60 @@ class WaluubeApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.byStage.DRAFT").isNumber())
                 .andExpect(jsonPath("$.completedCount").isNumber());
+    }
+
+    @Test
+    void sectorAdministrationIsRestrictedAndSupportsLifecycle() throws Exception {
+        String name = "Sector API " + UUID.randomUUID();
+        String body = """
+                {
+                  "name": "%s",
+                  "notificationEmail": "sector@example.invalid",
+                  "active": true
+                }
+                """.formatted(name);
+
+        mockMvc.perform(post("/sectors")
+                        .with(user("receptionist").roles("RECEPTIONIST"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isForbidden());
+
+        String created = mockMvc.perform(post("/sectors")
+                        .with(user("admin").roles("ADMINISTRATOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.name").value(name))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        Matcher idMatcher = Pattern.compile("\"id\":\"([^\"]+)\"").matcher(created);
+        assertTrue(idMatcher.find(), "Sector response should include the sector id.");
+        String id = idMatcher.group(1);
+
+        mockMvc.perform(put("/sectors/{id}", id)
+                        .with(user("receptionist").roles("RECEPTIONIST"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(put("/sectors/{id}", UUID.randomUUID())
+                        .with(user("admin").roles("ADMINISTRATOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(put("/sectors/{id}", id)
+                        .with(user("admin").roles("ADMINISTRATOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body.replace("\"active\": true", "\"active\": false")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.active").value(false));
+
+        mockMvc.perform(get("/sectors/catalog").with(user("admin").roles("ADMINISTRATOR")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id == '" + id + "')].active").value(false));
     }
 
     @Test

@@ -377,6 +377,25 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/Conflict'
+  /sectors/catalog:
+    get:
+      tags: [Sectors]
+      operationId: listAllSectors
+      summary: List active and inactive sectors
+      description: Administrator only; use this list to reactivate a deactivated sector.
+      responses:
+        '200':
+          description: All sectors ordered by name
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Sector'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /sectors/{id}:
     put:
       tags: [Sectors]
@@ -585,6 +604,9 @@ components:
         fileSize:
           type: [integer, 'null']
           format: int64
+        originalFilename:
+          type: [string, 'null']
+          maxLength: 255
         createdBy:
           type: string
         createdAt:

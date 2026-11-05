@@ -30,6 +30,12 @@ public class SectorController {
         return sectors.activeSectors();
     }
 
+    @GetMapping("/catalog")
+    @PreAuthorize("hasRole('ADMINISTRATOR')")
+    public List<SectorResponse> allSectors() {
+        return sectors.allSectors();
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasRole('ADMINISTRATOR')")

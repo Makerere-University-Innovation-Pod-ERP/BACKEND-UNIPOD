@@ -81,7 +81,12 @@ class OutboxNotificationDispatcherTest {
                 1
         ));
 
-        verify(jdbcTemplate).update(contains("next_attempt_at"), any(Object[].class));
+        var retryArguments = org.mockito.ArgumentCaptor.forClass(Object[].class);
+        verify(jdbcTemplate).update(contains("next_attempt_at"), retryArguments.capture());
+        assertEquals("MailSendException", retryArguments.getValue()[3]);
+        org.junit.jupiter.api.Assertions.assertFalse(
+                java.util.Arrays.toString(retryArguments.getValue()).contains("provider secret details")
+        );
         verify(jdbcTemplate, org.mockito.Mockito.never())
                 .update(contains("published_at = CURRENT_TIMESTAMP"), any(Object[].class));
     }

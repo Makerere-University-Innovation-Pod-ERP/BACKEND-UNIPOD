@@ -7,6 +7,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -14,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class S3DocumentStorageTest {
@@ -30,10 +32,17 @@ class S3DocumentStorageTest {
         assertTrue(reference.matches("[A-Za-z0-9_-]{1,256}"));
         UUID.fromString(reference);
         var request = org.mockito.ArgumentCaptor.forClass(PutObjectRequest.class);
-        verify(s3).putObject(request.capture(), any(RequestBody.class));
+        var body = org.mockito.ArgumentCaptor.forClass(RequestBody.class);
+        verify(s3).putObject(request.capture(), body.capture());
         assertTrue(request.getValue().key().equals(reference));
         assertTrue(request.getValue().bucket().equals("test-bucket"));
         assertTrue(request.getValue().contentLength() == 4L);
+        try (InputStream uploaded = body.getValue().contentStreamProvider().newStream()) {
+            org.junit.jupiter.api.Assertions.assertArrayEquals(
+                    new byte[]{1, 2, 3, 4},
+                    uploaded.readAllBytes()
+            );
+        }
     }
 
     @Test
@@ -42,5 +51,6 @@ class S3DocumentStorageTest {
         S3DocumentStorage storage = new S3DocumentStorage(s3, "test-bucket");
 
         assertThrows(StorageObjectNotFoundException.class, () -> storage.download("https://example.invalid/file"));
+        verifyNoInteractions(s3);
     }
 }

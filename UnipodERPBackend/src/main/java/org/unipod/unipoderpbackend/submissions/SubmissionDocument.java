@@ -35,6 +35,9 @@ public class SubmissionDocument {
     @Column(name = "file_size")
     private Long fileSize;
 
+    @Column(name = "original_filename", length = 255)
+    private String originalFilename;
+
     @Column(name = "created_by", nullable = false)
     private String createdBy;
 
@@ -53,7 +56,7 @@ public class SubmissionDocument {
             String createdBy,
             Instant createdAt
     ) {
-        this(id, submissionId, name, status, fileReference, null, null, createdBy, createdAt);
+        this(id, submissionId, name, status, fileReference, null, null, null, createdBy, createdAt);
     }
 
     public SubmissionDocument(
@@ -64,6 +67,7 @@ public class SubmissionDocument {
             String fileReference,
             String contentType,
             Long fileSize,
+            String originalFilename,
             String createdBy,
             Instant createdAt
     ) {
@@ -74,6 +78,7 @@ public class SubmissionDocument {
         this.fileReference = fileReference;
         this.contentType = contentType;
         this.fileSize = fileSize;
+        this.originalFilename = originalFilename;
         this.createdBy = createdBy;
         this.createdAt = createdAt;
     }
@@ -104,6 +109,10 @@ public class SubmissionDocument {
 
     public Long getFileSize() {
         return fileSize;
+    }
+
+    public String getOriginalFilename() {
+        return originalFilename;
     }
 
     public String getCreatedBy() {

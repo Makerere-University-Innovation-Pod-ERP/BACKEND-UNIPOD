@@ -16,6 +16,8 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import jakarta.mail.internet.AddressException;
+import jakarta.mail.internet.InternetAddress;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Optional;
@@ -26,6 +28,7 @@ import java.util.UUID;
 public class OutboxNotificationDispatcher {
     private static final Logger log = LoggerFactory.getLogger(OutboxNotificationDispatcher.class);
     private static final int MAX_BATCH_SIZE = 10;
+    private static final int MAX_ATTEMPTS = 10;
 
     private static final String CLAIM_NEXT_SQL = """
             WITH candidate AS (
@@ -33,6 +36,7 @@ public class OutboxNotificationDispatcher {
                 FROM notification_outbox
                 WHERE published_at IS NULL
                     AND (locked_until IS NULL OR locked_until <= CURRENT_TIMESTAMP)
+                    AND dead_lettered_at IS NULL
                     AND next_attempt_at <= CURRENT_TIMESTAMP
                 ORDER BY next_attempt_at, occurred_at, id
                 LIMIT 1
@@ -60,7 +64,7 @@ public class OutboxNotificationDispatcher {
             @Value("${notifications.email.from}") String fromAddress,
             @Value("${spring.mail.host}") String mailHost
     ) {
-        if (fromAddress.isBlank() || mailHost.isBlank()) {
+        if (fromAddress.isBlank() || mailHost.isBlank() || !isValidAddress(fromAddress)) {
             throw new IllegalStateException(
                     "NOTIFICATION_EMAIL_FROM and SMTP_HOST must be configured when email delivery is enabled."
             );
@@ -141,13 +145,21 @@ public class OutboxNotificationDispatcher {
                 : "NotificationDeliveryException";
         jdbcTemplate.update("""
                 UPDATE notification_outbox
-                SET next_attempt_at = CURRENT_TIMESTAMP + (? * INTERVAL '1 second'),
+                SET next_attempt_at = CASE
+                        WHEN attempt_count >= ? THEN next_attempt_at
+                        ELSE CURRENT_TIMESTAMP + (? * INTERVAL '1 second')
+                    END,
+                    dead_lettered_at = CASE
+                        WHEN attempt_count >= ? THEN CURRENT_TIMESTAMP
+                        ELSE dead_lettered_at
+                    END,
                     locked_until = NULL,
                     last_error = ?
-                WHERE id = ? AND published_at IS NULL
-                """, delaySeconds, errorType, event.id());
-        log.warn("Notification delivery failed for outbox event {} on attempt {} ({})",
-                event.id(), event.attemptCount(), errorType);
+                WHERE id = ? AND published_at IS NULL AND dead_lettered_at IS NULL
+                    """, MAX_ATTEMPTS, delaySeconds, MAX_ATTEMPTS, errorType, event.id());
+        log.warn("Notification delivery failed for outbox event {} on attempt {} ({}){}",
+                    event.id(), event.attemptCount(), errorType,
+                    event.attemptCount() >= MAX_ATTEMPTS ? "; moved to dead letter state" : "");
     }
 
     private static OutboxMessage mapMessage(ResultSet result) throws SQLException {
@@ -168,6 +180,16 @@ public class OutboxNotificationDispatcher {
 
     private static String safeHeader(String value) {
         return value.replaceAll("[\\p{Cntrl}]+", " ").trim();
+    }
+
+    private static boolean isValidAddress(String value) {
+        try {
+            InternetAddress address = new InternetAddress(value);
+            address.validate();
+            return value.equals(address.getAddress());
+        } catch (AddressException exception) {
+            return false;
+        }
     }
 
     record OutboxMessage(UUID id, String payload, int attemptCount) {

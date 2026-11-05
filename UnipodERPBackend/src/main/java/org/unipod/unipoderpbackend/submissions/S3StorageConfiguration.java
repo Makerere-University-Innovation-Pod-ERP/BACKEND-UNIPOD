@@ -28,15 +28,24 @@ public class S3StorageConfiguration {
                         .pathStyleAccessEnabled(pathStyleAccess)
                         .build());
         if (!endpoint.isBlank()) {
-            URI endpointUri = URI.create(endpoint);
+            URI endpointUri;
+            try {
+                endpointUri = URI.create(endpoint);
+            } catch (IllegalArgumentException exception) {
+                throw invalidEndpoint();
+            }
             if (!("https".equalsIgnoreCase(endpointUri.getScheme())
                     || "http".equalsIgnoreCase(endpointUri.getScheme()))
                     || endpointUri.getHost() == null
                     || endpointUri.getUserInfo() != null) {
-                throw new IllegalStateException("S3 endpoint must be an HTTP(S) URL without embedded credentials.");
+                throw invalidEndpoint();
             }
             builder.endpointOverride(endpointUri);
         }
         return builder.build();
+    }
+
+    private static IllegalStateException invalidEndpoint() {
+        return new IllegalStateException("S3 endpoint must be an HTTP(S) URL without embedded credentials.");
     }
 }
