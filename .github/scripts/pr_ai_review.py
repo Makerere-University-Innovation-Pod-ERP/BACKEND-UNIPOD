@@ -34,7 +34,11 @@ PROVIDERS = {
         "label": "Gemini",
         "secret_env": "GEMINI_API_KEY",
         "model_env": "GEMINI_MODEL",
-        "default_models": ["gemini-2.5-flash", "gemini-2.0-flash"],
+        "default_models": [
+            "gemini-3.8-flash",
+            "gemini-3.6-flash",
+            "gemini-2.5-flash",
+        ],
         "max_diff_chars": 100_000,
         "max_spec_chars": 30_000,
     },

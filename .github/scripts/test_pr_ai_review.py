@@ -8,6 +8,33 @@ import pr_ai_review
 
 
 class ReviewOutputTests(unittest.TestCase):
+    def test_gemini_defaults_use_supported_models(self):
+        models = pr_ai_review.PROVIDERS["gemini"]["default_models"]
+
+        self.assertEqual(models[0], "gemini-3.8-flash")
+        self.assertNotIn("gemini-2.0-flash", models)
+
+    def test_gemini_review_uses_first_configured_model(self):
+        response = {
+            "candidates": [
+                {"content": {"parts": [{"text": '{"verdict":"pass","findings":[]}'}]}}
+            ]
+        }
+        with patch.object(
+            pr_ai_review, "http_json", return_value=(200, response, "")
+        ) as request:
+            model, _ = pr_ai_review.call_gemini(
+                "test-key",
+                pr_ai_review.PROVIDERS["gemini"]["default_models"],
+                "prompt",
+            )
+
+        self.assertEqual(model, "gemini-3.8-flash")
+        self.assertIn(
+            "/models/gemini-3.8-flash:generateContent",
+            request.call_args.args[0],
+        )
+
     def test_groq_request_uses_configured_api_key(self):
         response = {
             "choices": [{"message": {"content": '{"verdict":"pass","findings":[]}'}}]
