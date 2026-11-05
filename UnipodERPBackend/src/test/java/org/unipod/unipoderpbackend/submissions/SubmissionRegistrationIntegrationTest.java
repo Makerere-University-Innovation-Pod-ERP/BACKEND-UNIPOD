@@ -36,6 +36,9 @@ class SubmissionRegistrationIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private SectorService sectors;
+
     @Test
     void createsDraftAndRegistersStudentWithCaseCodeAndHistory() {
         SubmissionResponse draft = submissions.create(
@@ -155,9 +158,14 @@ class SubmissionRegistrationIntegrationTest {
                 "receptionist-1"
         );
         submissions.register(draft.id(), "receptionist-2");
+        SectorResponse sector = sectors.create(new SectorRequest(
+                "Integration test sector",
+                "sector@example.invalid",
+                true
+        ));
         var forwarded = submissions.forward(
                 draft.id(),
-                java.util.UUID.randomUUID(),
+                sector.id(),
                 "receptionist-2"
         );
 
@@ -168,6 +176,14 @@ class SubmissionRegistrationIntegrationTest {
                 draft.id(),
                 "submission.forwarded"
         ));
+        assertEquals(
+                "sector@example.invalid",
+                jdbcTemplate.queryForObject(
+                        "SELECT payload ->> 'notificationEmail' FROM notification_outbox WHERE aggregate_id = ?",
+                        String.class,
+                        draft.id()
+                )
+        );
 
         submissions.advance(draft.id(), SubmissionStage.IN_PROGRESS, "coordinator-1");
         SubmissionResponse completed = submissions.advance(

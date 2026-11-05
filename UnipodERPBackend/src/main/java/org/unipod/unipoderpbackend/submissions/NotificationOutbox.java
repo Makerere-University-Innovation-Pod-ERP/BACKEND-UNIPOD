@@ -15,29 +15,48 @@ public class NotificationOutbox {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    public void recordForwarded(UUID submissionId, UUID sectorId, String caseCode, String actor, Instant occurredAt) {
+    public void recordForwarded(ForwardedNotification notification) {
         jdbcTemplate.update("""
                 INSERT INTO notification_outbox (
-                    id, aggregate_id, event_type, payload, occurred_at
+                    id, aggregate_id, event_type, payload, occurred_at, next_attempt_at
                 )
                 VALUES (
                     ?, ?, 'submission.forwarded',
                     jsonb_build_object(
                         'submissionId', ?::text,
                         'sectorId', ?::text,
+                        'sectorName', ?::text,
+                        'notificationEmail', ?::text,
+                        'submissionTitle', ?::text,
                         'caseCode', ?::text,
                         'forwardedBy', ?::text
                     ),
-                    ?
+                    ?, ?
                 )
                 """,
                 UUID.randomUUID(),
-                submissionId,
-                submissionId.toString(),
-                sectorId.toString(),
-                caseCode,
-                actor,
-                Timestamp.from(occurredAt)
+                notification.submissionId(),
+                notification.submissionId().toString(),
+                notification.sectorId().toString(),
+                notification.sectorName(),
+                notification.notificationEmail(),
+                notification.submissionTitle(),
+                notification.caseCode(),
+                notification.actor(),
+                Timestamp.from(notification.occurredAt()),
+                Timestamp.from(notification.occurredAt())
         );
+    }
+
+    public record ForwardedNotification(
+            UUID submissionId,
+            UUID sectorId,
+            String sectorName,
+            String notificationEmail,
+            String submissionTitle,
+            String caseCode,
+            String actor,
+            Instant occurredAt
+    ) {
     }
 }

@@ -23,6 +23,7 @@ public class SubmissionService {
     private final SubmissionDocumentRepository documents;
     private final NotificationOutbox notificationOutbox;
     private final PipelineMetricsRepository metrics;
+    private final SectorService sectorsCatalog;
     private final Clock clock;
 
     @Autowired
@@ -32,10 +33,11 @@ public class SubmissionService {
             CaseCodeGenerator caseCodeGenerator,
             SubmissionDocumentRepository documents,
             NotificationOutbox notificationOutbox,
-            PipelineMetricsRepository metrics
+            PipelineMetricsRepository metrics,
+            SectorService sectorsCatalog
     ) {
         this(submissions, stageHistory, caseCodeGenerator, documents, notificationOutbox, metrics,
-                Clock.system(CASE_CODE_ZONE));
+                sectorsCatalog, Clock.system(CASE_CODE_ZONE));
     }
 
     SubmissionService(
@@ -45,6 +47,7 @@ public class SubmissionService {
             SubmissionDocumentRepository documents,
             NotificationOutbox notificationOutbox,
             PipelineMetricsRepository metrics,
+            SectorService sectorsCatalog,
             Clock clock
     ) {
         this.submissions = submissions;
@@ -53,6 +56,7 @@ public class SubmissionService {
         this.documents = documents;
         this.notificationOutbox = notificationOutbox;
         this.metrics = metrics;
+        this.sectorsCatalog = sectorsCatalog;
         this.clock = clock;
     }
 
@@ -114,6 +118,7 @@ public class SubmissionService {
     public SubmissionResponse forward(UUID id, UUID sectorId, String actor) {
         Submission submission = submissions.findByIdForUpdate(id)
                 .orElseThrow(() -> new SubmissionNotFoundException(id));
+        Sector sector = sectorsCatalog.requireActive(sectorId);
         Instant now = clock.instant();
         SubmissionStage previousStage = submission.getStage();
         submission.forward(sectorId, now);
@@ -125,13 +130,16 @@ public class SubmissionService {
                 actor,
                 now
         ));
-        notificationOutbox.recordForwarded(
+        notificationOutbox.recordForwarded(new NotificationOutbox.ForwardedNotification(
                 submission.getId(),
                 sectorId,
+                sector.getName(),
+                sector.getNotificationEmail(),
+                submission.getTitle(),
                 submission.getCode(),
                 actor,
                 now
-        );
+        ));
         return SubmissionResponse.from(submission);
     }
 
