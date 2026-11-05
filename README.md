@@ -56,8 +56,8 @@ written only to server logs and are never included in the response.
    the repository or a shared Postman collection.
 3. In Postman, create an environment with `baseUrl` set to
    `http://localhost:8080/api` and `accessToken` set to the token. For protected
-   requests, open the Authorization tab, select the JWT access-token scheme,
-   and enter `{{accessToken}}`.
+   requests, open the Authorization tab, select `Bearer Token`, and enter
+   `{{accessToken}}` in the Token field.
 4. Send `POST {{baseUrl}}/submissions` with `Content-Type: application/json`
    and this body to create a student draft:
 

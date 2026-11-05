@@ -7,6 +7,9 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -58,5 +61,16 @@ class ApiExceptionHandlerTest {
         assertEquals("Submission details are invalid or incomplete.", response.getBody().getDetail());
         assertFalse(response.getBody().getDetail().contains("SQL details"));
         assertFalse(response.getBody().getDetail().contains("implementation path"));
+    }
+
+    @Test
+    void methodNotAllowedPreservesAllowHeader() {
+        HttpRequestMethodNotSupportedException exception =
+                new HttpRequestMethodNotSupportedException("TRACE", List.of("GET", "POST"));
+
+        ResponseEntity<ProblemDetail> response = handler.handleMethodNotSupported(exception);
+
+        assertEquals(HttpStatus.METHOD_NOT_ALLOWED, response.getStatusCode());
+        assertEquals("GET, POST", response.getHeaders().getFirst("Allow"));
     }
 }

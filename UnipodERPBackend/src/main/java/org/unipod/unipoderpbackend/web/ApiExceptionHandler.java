@@ -113,11 +113,15 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     ResponseEntity<ProblemDetail> handleMethodNotSupported(HttpRequestMethodNotSupportedException exception) {
-        return problem(
+        ProblemDetail problem = problemDetail(
                 HttpStatus.METHOD_NOT_ALLOWED,
                 "Method not allowed",
                 "The HTTP method is not supported for this resource."
         );
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
+                .headers(exception.getHeaders())
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problem);
     }
 
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)

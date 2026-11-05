@@ -58,9 +58,12 @@ public class ApiErrorController implements ErrorController {
             problem.setProperty("reference", reference);
         }
 
-        return ResponseEntity.status(status)
-                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
-                .body(problem);
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(status)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON);
+        if (status == HttpStatus.UNAUTHORIZED) {
+            response.header("WWW-Authenticate", "Bearer");
+        }
+        return response.body(problem);
     }
 
     private static HttpStatus resolveStatus(HttpServletRequest request) {
