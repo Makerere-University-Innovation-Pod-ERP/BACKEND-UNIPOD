@@ -19,6 +19,7 @@ public record SubmissionResponse(
         UUID responsibleSectorId,
         SubmissionStage stage,
         Instant receivedAt,
+        Instant forwardedAt,
         Instant createdAt,
         Instant updatedAt
 ) {
@@ -39,6 +40,7 @@ public record SubmissionResponse(
                 submission.getResponsibleSectorId(),
                 submission.getStage(),
                 submission.getReceivedAt(),
+                submission.getForwardedAt(),
                 submission.getCreatedAt(),
                 submission.getUpdatedAt()
         );

@@ -2,5 +2,8 @@ package org.unipod.unipoderpbackend.submissions;
 
 public enum SubmissionStage {
     DRAFT,
-    RECEIVED
+    RECEIVED,
+    FORWARDED,
+    IN_PROGRESS,
+    COMPLETED
 }

@@ -3,10 +3,10 @@ info:
   title: Makerere Innovation Hub ERP API
   version: 1.0.0
   description: |
-    W1 submission intake contract. A submission is first saved as a draft.
-    Registration marks receipt and assigns the immutable case code. Student
-    evidence is conditionally required at registration; general-public cases
-    must not include student-specific fields.
+    Waluube intake and case workflow contract. A submission is first saved as a
+    draft, registered as received, assigned to a sector, and advanced through
+    the pipeline. Student evidence is conditionally required at registration;
+    general-public cases must not include student-specific fields.
 servers:
   - url: /api
     description: API context path
@@ -15,6 +15,10 @@ security:
 tags:
   - name: Submissions
     description: Intake and registration
+  - name: Reception
+    description: Reception work queue
+  - name: Dashboard
+    description: Pipeline overview metrics
 paths:
   /submissions:
     post:
@@ -65,6 +69,44 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/InternalServerError'
+    get:
+      tags: [Submissions]
+      operationId: listSubmissions
+      summary: List all submissions
+      description: Available to the four intake roles. Results are ordered by most recently updated first.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of submissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /submissions/mine:
+    get:
+      tags: [Submissions]
+      operationId: listMySubmissions
+      summary: List submissions created by the authenticated user
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of the caller's submissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /submissions/{id}/register:
     post:
       tags: [Submissions]
@@ -99,6 +141,157 @@ paths:
           $ref: '#/components/responses/Conflict'
         '500':
           $ref: '#/components/responses/InternalServerError'
+  /submissions/{id}:
+    get:
+      tags: [Submissions]
+      operationId: getCaseFile
+      summary: Get the case file, documents, and stage history
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      responses:
+        '200':
+          description: Case file
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaseFile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /submissions/{id}/forward:
+    post:
+      tags: [Submissions]
+      operationId: forwardSubmission
+      summary: Assign a received submission to a sector
+      description: Stores the sector UUID as an opaque reference and writes a durable submission.forwarded outbox event in the same transaction. Notification delivery requires a downstream worker.
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForwardSubmissionRequest'
+      responses:
+        '200':
+          description: Submission forwarded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /submissions/{id}/transition:
+    post:
+      tags: [Submissions]
+      operationId: advanceSubmission
+      summary: Advance a forwarded submission through the pipeline
+      description: Only FORWARDED to IN_PROGRESS and IN_PROGRESS to COMPLETED are allowed. Backward transitions and skipped stages are rejected.
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdvanceSubmissionRequest'
+      responses:
+        '200':
+          description: Submission advanced
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /submissions/{id}/documents:
+    post:
+      tags: [Submissions]
+      operationId: addSubmissionDocument
+      summary: Add document metadata to a case
+      description: Accepts an opaque storage reference, not a URL, filesystem path, or file bytes. File storage is provided by an external storage integration.
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDocumentRequest'
+      responses:
+        '201':
+          description: Document metadata created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionDocument'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /queues/reception:
+    get:
+      tags: [Reception]
+      operationId: getReceptionQueue
+      summary: Get draft reception queue and queue counters
+      description: The queue contains DRAFT submissions. Awaiting action counts RECEIVED submissions; recently updated counts all submissions updated in the last 14 days.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Reception queue page and counters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceptionQueue'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /dashboard/overview:
+    get:
+      tags: [Dashboard]
+      operationId: getDashboardOverview
+      summary: Get pipeline overview metrics
+      responses:
+        '200':
+          description: Pipeline counts by stage and category
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardOverview'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 components:
   securitySchemes:
     bearerAuth:
@@ -106,6 +299,23 @@ components:
       scheme: bearer
       bearerFormat: JWT
   parameters:
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    Size:
+      name: size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 25
     SubmissionId:
       name: id
       in: path
@@ -160,6 +370,158 @@ components:
     RecommendationLetterStatus:
       type: string
       enum: [verified, submitted, one_file, not_required]
+    SubmissionStage:
+      type: string
+      enum: [DRAFT, RECEIVED, FORWARDED, IN_PROGRESS, COMPLETED]
+    DocumentStatus:
+      type: string
+      enum: [VERIFIED, SUBMITTED, ONE_FILE, NOT_REQUIRED]
+    ForwardSubmissionRequest:
+      type: object
+      additionalProperties: false
+      required: [sectorId]
+      properties:
+        sectorId:
+          type: string
+          format: uuid
+    AdvanceSubmissionRequest:
+      type: object
+      additionalProperties: false
+      required: [stage]
+      properties:
+        stage:
+          type: string
+          enum: [IN_PROGRESS, COMPLETED]
+    CreateDocumentRequest:
+      type: object
+      additionalProperties: false
+      required: [name, status]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        status:
+          $ref: '#/components/schemas/DocumentStatus'
+        fileReference:
+          type: [string, 'null']
+          maxLength: 256
+          pattern: '^[A-Za-z0-9_-]+$'
+    SubmissionDocument:
+      type: object
+      required: [id, submissionId, name, status, createdBy, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        submissionId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          $ref: '#/components/schemas/DocumentStatus'
+        fileReference:
+          type: [string, 'null']
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    SubmissionPage:
+      type: object
+      required: [items, page, size, totalElements, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Submission'
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+    ReceptionQueue:
+      allOf:
+        - $ref: '#/components/schemas/SubmissionPage'
+        - type: object
+          required: [inQueueCount, awaitingActionCount, recentlyUpdatedCount]
+          properties:
+            inQueueCount:
+              type: integer
+              format: int64
+            awaitingActionCount:
+              type: integer
+              format: int64
+            recentlyUpdatedCount:
+              type: integer
+              format: int64
+    CaseStageHistory:
+      type: object
+      required: [id, toStage, changedBy, changedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        fromStage:
+          oneOf:
+            - $ref: '#/components/schemas/SubmissionStage'
+            - type: 'null'
+        toStage:
+          $ref: '#/components/schemas/SubmissionStage'
+        changedBy:
+          type: string
+        changedAt:
+          type: string
+          format: date-time
+    CaseFile:
+      type: object
+      required: [submission, documents, stageHistory]
+      properties:
+        submission:
+          $ref: '#/components/schemas/Submission'
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubmissionDocument'
+        stageHistory:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaseStageHistory'
+    DashboardOverview:
+      type: object
+      required: [totalSubmissions, byStage, studentSubmissions, generalSubmissions, awaitingActionCount, forwardedCount, completedCount, recentlyUpdatedCount]
+      properties:
+        totalSubmissions:
+          type: integer
+          format: int64
+        byStage:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+        studentSubmissions:
+          type: integer
+          format: int64
+        generalSubmissions:
+          type: integer
+          format: int64
+        awaitingActionCount:
+          type: integer
+          format: int64
+        forwardedCount:
+          type: integer
+          format: int64
+        completedCount:
+          type: integer
+          format: int64
+        recentlyUpdatedCount:
+          type: integer
+          format: int64
     Submission:
       type: object
       required: [id, category, title, purpose, problemAddressed, registeredBy, stage, createdAt, updatedAt]
@@ -197,9 +559,11 @@ components:
           type: [string, 'null']
           format: uuid
         stage:
-          type: string
-          enum: [DRAFT, RECEIVED]
+          $ref: '#/components/schemas/SubmissionStage'
         receivedAt:
+          type: [string, 'null']
+          format: date-time
+        forwardedAt:
           type: [string, 'null']
           format: date-time
         createdAt:

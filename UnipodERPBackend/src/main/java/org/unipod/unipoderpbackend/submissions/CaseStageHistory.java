@@ -51,4 +51,28 @@ public class CaseStageHistory {
         this.changedBy = changedBy;
         this.changedAt = changedAt;
     }
+
+    public UUID getId() {
+        return id;
+    }
+
+    public UUID getSubmissionId() {
+        return submissionId;
+    }
+
+    public SubmissionStage getFromStage() {
+        return fromStage;
+    }
+
+    public SubmissionStage getToStage() {
+        return toStage;
+    }
+
+    public String getChangedBy() {
+        return changedBy;
+    }
+
+    public Instant getChangedAt() {
+        return changedAt;
+    }
 }
