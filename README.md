@@ -5,42 +5,143 @@
 
 Backend API for the Makerere Innovation Hub ERP, built to manage core department workflows.
 
-## Waluube case workflow
+## Waluube Case Workflow
 
-The Waluube API contract is in [`openapi.yaml`](./openapi.yaml).
-`POST /api/submissions` creates a draft;
-`POST /api/submissions/{id}/register` records receipt, creates
-the case-stage history entry, and allocates an immutable `STU-{year}-{sequence}`
-or `GEN-{year}-{sequence}` case code. Sequence allocation is transactional and
-safe for concurrent registrations.
+The Waluube API contract is documented in [`openapi.yaml`](./openapi.yaml).
 
-Student drafts may be saved before all student details are available, but
-registration requires student number, programme, supervisor, and
-recommendation-letter status. General-public submissions must not contain
-student-only details.
+### Submission Creation and Registration
 
-The lifecycle is `DRAFT` → `RECEIVED` → `FORWARDED` → `IN_PROGRESS` →
-`COMPLETED`. The API rejects skipped and backward transitions. Forwarding
-assigns an opaque sector UUID, writes stage history, and inserts a
-`submission.forwarded` record in `notification_outbox` in the same transaction.
-This backend has no configured notification delivery worker, so the outbox is a
-durable integration handoff and does not itself send email or messages.
+* `POST /api/submissions` creates a draft submission.
+* `POST /api/submissions/{id}/register` records receipt, creates the case-stage history entry, and allocates an immutable case code.
 
-Reception staff can use `GET /api/queues/reception` for paginated drafts and
-counters: `inQueueCount` is the number of drafts, `awaitingActionCount` is the
-number of received cases not yet forwarded, and `recentlyUpdatedCount` counts
-all cases updated in the last 14 days. `GET /api/submissions` lists all cases;
-`GET /api/submissions/mine` filters by the authenticated user's `registeredBy`
-identity. Both are paginated (default 25, maximum 100). `GET
-/api/submissions/{id}` returns the case record, documents, and stage history.
-`GET /api/dashboard/overview` returns total/category/stage counts and the same
-14-day recent-update metric.
+Case codes follow these formats:
 
-After registration, forward a case with
-`POST /api/submissions/{id}/forward` and `{"sectorId":"<sector-uuid>"}`.
-Advance it in order using `POST /api/submissions/{id}/transition` with
-`{"stage":"IN_PROGRESS"}` and then `{"stage":"COMPLETED"}`. Add metadata using
-`POST /api/submissions/{id}/documents`, for example:
+* Student submissions: `STU-{year}-{sequence}`
+* General-public submissions: `GEN-{year}-{sequence}`
+
+Sequence allocation is transactional and safe for concurrent registrations.
+
+Student drafts may be saved before all student details are available. However, registration requires:
+
+* Student number.
+* Programme.
+* Supervisor.
+* Recommendation-letter status.
+
+General-public submissions must not contain student-only details.
+
+### Submission Lifecycle
+
+The submission lifecycle follows these stages:
+
+`DRAFT` → `RECEIVED` → `FORWARDED` → `IN_PROGRESS` → `COMPLETED`
+
+The API rejects skipped and backward transitions.
+
+Forwarding a case:
+
+1. Assigns an opaque sector UUID.
+2. Records the stage history.
+3. Inserts a `submission.forwarded` record into `notification_outbox`.
+
+These operations happen within the same database transaction.
+
+**Notification delivery:** This backend does not currently have a configured notification delivery worker. The notification outbox is a durable integration handoff and does not independently send emails or messages.
+
+### Reception Queue
+
+Reception staff can use:
+
+`GET /api/queues/reception`
+
+This endpoint returns paginated drafts and queue counters:
+
+* `inQueueCount`: Number of draft submissions.
+* `awaitingActionCount`: Number of received cases that have not yet been forwarded.
+* `recentlyUpdatedCount`: Number of all cases updated within the last 14 days.
+
+### Submission Endpoints
+
+| Method | Endpoint                           | Description                                             |
+| ------ | ---------------------------------- | ------------------------------------------------------- |
+| GET    | `/api/submissions`                 | Lists all submissions.                                  |
+| GET    | `/api/submissions/mine`            | Lists submissions registered by the authenticated user. |
+| GET    | `/api/submissions/{id}`            | Returns a submission, documents, and stage history.     |
+| POST   | `/api/submissions`                 | Creates a draft submission.                             |
+| POST   | `/api/submissions/{id}/register`   | Registers a submission and generates its case code.     |
+| POST   | `/api/submissions/{id}/forward`    | Forwards a submission to a sector.                      |
+| POST   | `/api/submissions/{id}/transition` | Advances a submission to the next lifecycle stage.      |
+| POST   | `/api/submissions/{id}/documents`  | Adds document metadata.                                 |
+| GET    | `/api/queues/reception`            | Returns the reception queue and counters.               |
+| GET    | `/api/dashboard/overview`          | Returns dashboard statistics.                           |
+
+Both `/api/submissions` and `/api/submissions/mine` are paginated.
+
+Pagination defaults:
+
+* Default page size: 25.
+* Maximum page size: 100.
+
+`GET /api/submissions/mine` filters submissions using the authenticated user's `registeredBy` identity.
+
+### Dashboard Overview
+
+`GET /api/dashboard/overview`
+
+Returns:
+
+* Total submission count.
+* Submission counts by category.
+* Submission counts by lifecycle stage.
+* Number of submissions updated within the last 14 days.
+
+### Forwarding a Submission
+
+After registration, forward a case using:
+
+`POST /api/submissions/{id}/forward`
+
+Request body:
+
+```json
+{
+  "sectorId": "<sector-uuid>"
+}
+```
+
+The sector UUID is stored as an opaque reference because this backend does not currently contain a sector catalog or sector management service.
+
+### Transitioning a Submission
+
+Advance a submission through its lifecycle using:
+
+`POST /api/submissions/{id}/transition`
+
+Example request body for moving to `IN_PROGRESS`:
+
+```json
+{
+  "stage": "IN_PROGRESS"
+}
+```
+
+To complete the submission:
+
+```json
+{
+  "stage": "COMPLETED"
+}
+```
+
+Transitions must follow the defined lifecycle order.
+
+### Adding Document Metadata
+
+Use:
+
+`POST /api/submissions/{id}/documents`
+
+Example request body:
 
 ```json
 {
@@ -50,52 +151,98 @@ Advance it in order using `POST /api/submissions/{id}/transition` with
 }
 ```
 
-The `fileReference` may be omitted when no file has been attached yet.
-`status` is one of `VERIFIED`, `SUBMITTED`, `ONE_FILE`, or `NOT_REQUIRED`.
+The `fileReference` field may be omitted when no file has been attached yet.
 
-The file reference must be a provider-generated URL-safe ID; URLs, filesystem
-paths, file bytes, and access tokens are not accepted. The actual file upload
-and storage service must be provided separately. The sector UUID is also stored
-as an opaque reference because no sector catalog/service exists in this backend.
+Supported document statuses:
 
-All case APIs are restricted to Administrator, Innovation Coordinator,
-Receptionist, and Fact-Finding Officer. `My Submissions` is based on the
-authenticated principal recorded at intake.
+* `VERIFIED`
+* `SUBMITTED`
+* `ONE_FILE`
+* `NOT_REQUIRED`
 
-The backend repository does not contain the Reception, All Submissions, My
-Submissions, Case file, or Overview frontend screens; it provides their API
-surfaces only.
+The file reference must be a provider-generated URL-safe identifier.
 
-## Authentication configuration
+The following values are not accepted as file references:
 
-Protected API operations use bearer JWTs from the existing OIDC-compatible
-issuer. Configure these values in the deployment environment:
+* URLs.
+* Filesystem paths.
+* File bytes.
+* Access tokens.
 
-- `DB_PASS`: required PostgreSQL password. There is no default password.
-- `JWT_ISSUER_URI`: trusted issuer URL.
-- `JWT_AUDIENCE`: audience required for this API.
-- `JWT_ROLES_CLAIM`: claim containing a list of role names (defaults to `roles`).
-- `JWT_SUBJECT_CLAIM`: claim used as the authenticated user identifier (defaults to `sub`).
-- `CORS_ALLOWED_ORIGINS`: comma-separated exact browser origins allowed to call the API.
+The actual file upload and storage service must be provided separately.
 
-Role values are mapped to Spring authorities by adding the `ROLE_` prefix. Intake
-creation and registration require `ADMINISTRATOR`, `INNOVATION_COORDINATOR`,
-`RECEPTIONIST`, or `FACT_FINDING_OFFICER`. If issuer or audience configuration
-is missing, protected API routes fail closed.
+### API Access Control
 
-Set `SPRING_PROFILES_ACTIVE` only when selecting a profile that exists in the
-deployment; the application does not silently activate a development profile.
-Database URL and username have local defaults, but credentials must be supplied
-through environment variables or a secrets manager.
+All case APIs are restricted to the following roles:
 
-Before applying the workflow migration to an existing database, check for
-registered student submissions that do not meet the new constraint. This
-includes older `RECEIVED` cases whose recommendation status was missing; the
-previous PostgreSQL `CHECK` constraint could allow those rows because a
-`NULL` result passes a check. Correct any existing records using their actual
-recommendation-letter status before applying the migration. Do not infer a
-status from missing data, and do not edit a migration after it has been
-applied:
+* `ADMINISTRATOR`
+* `INNOVATION_COORDINATOR`
+* `RECEPTIONIST`
+* `FACT_FINDING_OFFICER`
+
+Intake creation and registration require one of these authorized roles.
+
+`My Submissions` uses the authenticated principal recorded at intake.
+
+**Frontend availability:** This backend repository does not contain the Reception, All Submissions, My Submissions, Case File, or Overview frontend screens. It provides the API endpoints required to support these interfaces.
+
+---
+
+## Authentication Configuration
+
+Protected API operations use bearer JWTs issued by the existing OIDC-compatible identity provider.
+
+Configure the following environment variables in the deployment environment.
+
+| Environment Variable   | Description                                                             |
+| ---------------------- | ----------------------------------------------------------------------- |
+| `DB_PASS`              | Required PostgreSQL password. No default password is provided.          |
+| `JWT_ISSUER_URI`       | Trusted JWT issuer URL.                                                 |
+| `JWT_AUDIENCE`         | Required audience for this API.                                         |
+| `JWT_ROLES_CLAIM`      | JWT claim containing role names. Defaults to `roles`.                   |
+| `JWT_SUBJECT_CLAIM`    | JWT claim used as the authenticated user identifier. Defaults to `sub`. |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated list of exact browser origins allowed to call the API.  |
+| `DATABASE_URL`         | PostgreSQL connection URL.                                              |
+| `DB_USER`              | PostgreSQL username.                                                    |
+
+### JWT Role Mapping
+
+Role values are mapped to Spring Security authorities by adding the `ROLE_` prefix.
+
+For example:
+
+| JWT Role                 | Spring Security Authority     |
+| ------------------------ | ----------------------------- |
+| `ADMINISTRATOR`          | `ROLE_ADMINISTRATOR`          |
+| `INNOVATION_COORDINATOR` | `ROLE_INNOVATION_COORDINATOR` |
+| `RECEPTIONIST`           | `ROLE_RECEPTIONIST`           |
+| `FACT_FINDING_OFFICER`   | `ROLE_FACT_FINDING_OFFICER`   |
+
+If issuer or audience configuration is missing, protected API routes fail closed.
+
+Database URL and username have local defaults, but database credentials must be supplied through environment variables or a secrets manager.
+
+Set `SPRING_PROFILES_ACTIVE` only when selecting a profile that actually exists in the deployment. The application does not silently activate a development profile.
+
+Never commit real database credentials, access tokens, or other secrets to the repository.
+
+---
+
+## Database Migration and Existing Records
+
+Before applying the workflow migration to an existing database, check for registered student submissions that do not satisfy the new database constraints.
+
+This includes older `RECEIVED` cases whose recommendation-letter status was missing.
+
+The previous PostgreSQL `CHECK` constraint could allow those records because a `NULL` result passes a check constraint.
+
+Correct existing records using their actual recommendation-letter status before applying the migration.
+
+Do not infer a recommendation-letter status from missing data.
+
+Do not edit a migration after it has already been applied.
+
+Run the following SQL query:
 
 ```sql
 SELECT id, recommendation_letter_status
@@ -103,66 +250,235 @@ FROM submissions
 WHERE stage <> 'DRAFT'
   AND category = 'STUDENT'
   AND (
-      student_number IS NULL OR length(btrim(student_number)) = 0
-      OR programme IS NULL OR length(btrim(programme)) = 0
-      OR supervisor IS NULL OR length(btrim(supervisor)) = 0
+      student_number IS NULL
+      OR length(btrim(student_number)) = 0
+      OR programme IS NULL
+      OR length(btrim(programme)) = 0
+      OR supervisor IS NULL
+      OR length(btrim(supervisor)) = 0
       OR recommendation_letter_status IS NULL
-      OR recommendation_letter_status NOT IN ('VERIFIED', 'SUBMITTED', 'ONE_FILE', 'NOT_REQUIRED')
+      OR recommendation_letter_status NOT IN (
+          'VERIFIED',
+          'SUBMITTED',
+          'ONE_FILE',
+          'NOT_REQUIRED'
+      )
   );
 ```
 
-After correcting any returned rows, rerun the query and confirm it returns no
-rows before deploying.
+After correcting any returned records:
 
-## API errors
+1. Rerun the query.
+2. Confirm that it returns no rows.
+3. Verify that the existing records satisfy the new constraints.
+4. Apply the workflow migration.
+5. Deploy the updated backend.
 
-Errors use RFC 9457 `application/problem+json` responses. Client errors include
-a safe summary; unexpected server errors return a generic message and a
-reference ID for support. Stack traces and internal exception details are
-written only to server logs and are never included in the response.
+---
+
+## API Error Handling
+
+Errors use RFC 9457 `application/problem+json` responses.
+
+Client errors include a safe summary describing the problem.
+
+Unexpected server errors return:
+
+* A generic error message.
+* A support reference ID.
+
+Internal exception details, stack traces, and validation internals are never exposed in API responses.
+
+Unexpected exceptions are recorded in the server logs for diagnostic purposes.
+
+The API must not expose sensitive implementation details to clients.
+
+---
 
 ## Testing the API with Postman
 
-1. Start PostgreSQL and create the database configured by `DATABASE_URL` (the
-   local default is `makerere_hub_db`). Set `DB_PASS` and, if needed, `DB_USER`
-   and `DATABASE_URL` in the environment. Configure `JWT_ISSUER_URI` and
-   `JWT_AUDIENCE` to match your identity provider. From `UnipodERPBackend`,
-   start the backend with `.\mvnw.cmd spring-boot:run` on Windows PowerShell or
-   `./mvnw spring-boot:run` on Linux/macOS.
-2. Obtain an access token from the configured identity provider for a user with
-   one of the intake roles. Do not put real tokens or database credentials in
-   the repository or a shared Postman collection.
-3. In Postman, create an environment with `baseUrl` set to
-   `http://localhost:8080/api` and `accessToken` set to the token. For protected
-   requests, open the Authorization tab, choose the built-in bearer
-   authorization option, and enter `{{accessToken}}` as the token.
-4. Send `POST {{baseUrl}}/submissions` with `Content-Type: application/json`
-   and this body to create a student draft:
+Follow these steps to test the submission workflow.
 
-   ```json
-   {
-     "category": "student",
-     "title": "Postman test submission",
-     "purpose": "Validate submission intake",
-     "problemAddressed": "The intake workflow needs verification",
-     "studentNumber": "TEST-0001",
-     "programme": "Engineering",
-     "supervisor": "Test Supervisor",
-     "recommendationLetterStatus": "submitted"
-   }
-   ```
+### 1. Start PostgreSQL and the Backend
 
-   Expect `201 Created`; save the response `id` as `submissionId`.
-5. Send `POST {{baseUrl}}/submissions/{{submissionId}}/register` with the same
-   authorization configuration. Expect `200 OK`, stage `RECEIVED`, and a
-   generated case code.
-   Repeating this request should return `409 Conflict`.
-6. Verify safe failures: omit the token for `401`, use a token without an
-   allowed role for `403`, add an undeclared JSON property for `400`, and use
-   an unknown submission UUID for `404`. Error responses use
-   `application/problem+json`; unexpected `500` responses include a support
-   reference without a stack trace.
+Start PostgreSQL and create the database configured by `DATABASE_URL`.
 
-For automated checks from `UnipodERPBackend`, run `.\mvnw.cmd test` on Windows
-PowerShell or `./mvnw test` on Linux/macOS. The database-backed integration
-tests require a reachable PostgreSQL database and the configured credentials.
+The local default database is:
+
+`makerere_hub_db`
+
+Configure the required environment variables:
+
+```powershell
+$env:DB_PASS="your_database_password"
+$env:DB_USER="your_database_username"
+$env:DATABASE_URL="jdbc:postgresql://localhost:5432/makerere_hub_db"
+
+$env:JWT_ISSUER_URI="your_identity_provider_issuer"
+$env:JWT_AUDIENCE="your_api_audience"
+```
+
+From the `UnipodERPBackend` directory, start the backend using Windows PowerShell:
+
+```powershell
+.\mvnw.cmd spring-boot:run
+```
+
+On Linux/macOS:
+
+```bash
+./mvnw spring-boot:run
+```
+
+### 2. Obtain an Access Token
+
+Obtain an access token from the configured identity provider.
+
+The authenticated user must have one of the following roles:
+
+* `ADMINISTRATOR`
+* `INNOVATION_COORDINATOR`
+* `RECEPTIONIST`
+* `FACT_FINDING_OFFICER`
+
+Do not put real access tokens or database credentials in the repository or a shared Postman collection.
+
+### 3. Configure Postman
+
+Create a Postman environment containing the following variables:
+
+| Variable       | Value                                   |
+| -------------- | --------------------------------------- |
+| `baseUrl`      | `http://localhost:8080/api`             |
+| `accessToken`  | Your valid access token                 |
+| `submissionId` | ID returned when creating a submission. |
+
+For protected requests:
+
+1. Open the Authorization tab.
+2. Select the built-in Bearer Token authorization option.
+3. Enter `{{accessToken}}` as the token.
+4. Ensure the request uses `Content-Type: application/json` when sending JSON.
+
+### 4. Create a Student Draft
+
+Send:
+
+`POST {{baseUrl}}/submissions`
+
+Request headers:
+
+```http
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+```
+
+Request body:
+
+```json
+{
+  "category": "student",
+  "title": "Postman test submission",
+  "purpose": "Validate submission intake",
+  "problemAddressed": "The intake workflow needs verification",
+  "studentNumber": "TEST-0001",
+  "programme": "Engineering",
+  "supervisor": "Test Supervisor",
+  "recommendationLetterStatus": "submitted"
+}
+```
+
+Expected response:
+
+`201 Created`
+
+Save the returned submission `id` in the Postman environment as:
+
+`submissionId`
+
+### 5. Register the Submission
+
+Send:
+
+`POST {{baseUrl}}/submissions/{{submissionId}}/register`
+
+Use the same authorization configuration.
+
+Expected response:
+
+`200 OK`
+
+The response should contain:
+
+* The registered submission.
+* Stage: `RECEIVED`.
+* A generated case code.
+
+Repeating this registration request should return:
+
+`409 Conflict`
+
+### 6. Verify Error Handling
+
+Test the following scenarios:
+
+| Test                                           | Expected HTTP Status |
+| ---------------------------------------------- | -------------------- |
+| Request without an access token                | `401 Unauthorized`   |
+| Request with a token lacking an allowed role   | `403 Forbidden`      |
+| Request containing an undeclared JSON property | `400 Bad Request`    |
+| Request using an unknown submission UUID       | `404 Not Found`      |
+| Registering an already registered submission   | `409 Conflict`       |
+
+Error responses must use:
+
+`application/problem+json`
+
+Unexpected `500 Internal Server Error` responses must include a support reference without exposing stack traces or internal exception details.
+
+---
+
+## Running Automated Tests
+
+From the `UnipodERPBackend` directory, run the following command in Windows PowerShell:
+
+```powershell
+.\mvnw.cmd test
+```
+
+On Linux/macOS:
+
+```bash
+./mvnw test
+```
+
+Database-backed integration tests require:
+
+* A reachable PostgreSQL database.
+* A correctly configured database URL.
+* Valid database credentials.
+* The required database schema and migrations.
+
+Ensure PostgreSQL is running and the required environment variables are configured before executing the integration tests.
+
+---
+
+## Security and Deployment Notes
+
+1. Never commit database passwords, JWT tokens, or other secrets.
+2. Always configure the trusted JWT issuer and audience in deployment.
+3. Keep protected API routes secured through Spring Security.
+4. Do not expose stack traces or internal exception details to clients.
+5. Use exact allowed browser origins when configuring CORS.
+6. Validate submission lifecycle transitions on the backend.
+7. Preserve transactional consistency during registration and forwarding.
+8. Do not modify database migrations that have already been applied.
+9. Use a secrets manager or deployment environment variables for sensitive configuration.
+10. Ensure that database-backed integration tests pass before deploying changes.
+
+---
+
+**Project:** Makerere Innovation Hub ERP
+**Repository:** BACKEND-UNIPOD
+**Component:** Backend REST API
+**API Contract:** `openapi.yaml`
