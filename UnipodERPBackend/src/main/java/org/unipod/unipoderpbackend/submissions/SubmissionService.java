@@ -189,6 +189,56 @@ public class SubmissionService {
     }
 
     @Transactional(readOnly = true)
+    public Page<SubmissionResponse> search(
+            SubmissionCategory category,
+            SubmissionStage stage,
+            UUID sectorId,
+            String query,
+            Pageable pageable,
+            org.springframework.security.core.Authentication authentication
+    ) {
+        String scope = SubmissionVisibility.scope(authentication);
+        return submissions.searchVisible(
+                category,
+                stage,
+                sectorId,
+                clean(query),
+                scope,
+                authentication.getName(),
+                pageable
+        ).map(SubmissionResponse::from);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<SubmissionResponse> searchByCodeOrTitle(
+            String query,
+            Pageable pageable,
+            org.springframework.security.core.Authentication authentication
+    ) {
+        String scope = SubmissionVisibility.scope(authentication);
+        String principal = authentication.getName();
+        Submission exact = submissions.findVisibleByCode(query.trim(), scope, principal).orElse(null);
+        if (exact != null) {
+            return new org.springframework.data.domain.PageImpl<>(
+                    List.of(SubmissionResponse.from(exact)),
+                    pageable,
+                    1
+            );
+        }
+        return submissions.searchVisible(
+                null, null, null, query.trim(), scope, principal, pageable
+        ).map(SubmissionResponse::from);
+    }
+
+    @Transactional
+    public SubmissionResponse assignReviewer(UUID id, String subject) {
+        Submission submission = submissions.findByIdForUpdate(id)
+                .orElseThrow(() -> new SubmissionNotFoundException(id));
+        submission.assignReviewer(subject);
+        return SubmissionResponse.from(submission);
+    }
+
+    @Transactional(readOnly = true)
     public Page<SubmissionResponse> mine(String actor, Pageable pageable) {
         return submissions.findAllByRegisteredByOrderByUpdatedAtDescIdAsc(actor, pageable)
                 .map(SubmissionResponse::from);

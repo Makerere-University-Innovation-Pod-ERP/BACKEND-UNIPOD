@@ -76,6 +76,7 @@ This endpoint returns paginated drafts and queue counters:
 | Method | Endpoint                           | Description                                             |
 | ------ | ---------------------------------- | ------------------------------------------------------- |
 | GET    | `/api/submissions`                 | Lists all submissions.                                  |
+| GET    | `/api/submissions/search`           | Exact code search, then title substring search.         |
 | GET    | `/api/submissions/mine`            | Lists submissions registered by the authenticated user. |
 | GET    | `/api/submissions/{id}`            | Returns a submission, documents, and stage history.     |
 | POST   | `/api/submissions`                 | Creates a draft submission.                             |
@@ -94,6 +95,29 @@ Pagination defaults:
 * Maximum page size: 100.
 
 `GET /api/submissions/mine` filters submissions using the authenticated user's `registeredBy` identity.
+
+### All Submissions and Global Search
+
+`GET /api/submissions` supports the optional `category`, `stage`, `sector`, and
+`q` filters. Results are ordered by received date descending, with the
+submission ID as a deterministic tie-breaker, and use the same page-size limits
+as the other submission lists.
+
+`GET /api/submissions/search?code=...` first checks for an exact visible case
+code. If no exact code is visible, it searches visible titles using a
+case-insensitive substring match.
+
+Visibility is enforced in the database query:
+
+* Submitters see submissions they registered.
+* Reviewers see submissions assigned to their subject.
+* Sector Officers see submissions routed to sectors where they are members.
+* Administrators, Coordinators, Receptionists, Fact-Finding Officers,
+  IP Liaisons, and Observers see all submissions.
+
+Student Projects and General Innovations use the same list endpoint with the
+appropriate `category` filter. Administrator-only endpoints manage reviewer
+assignments and Sector Officer membership.
 
 ### Dashboard Overview
 

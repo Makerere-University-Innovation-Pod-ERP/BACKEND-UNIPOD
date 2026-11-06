@@ -39,6 +39,9 @@ public class Submission {
     @Column(name = "receiving_officer")
     private String receivingOfficer;
 
+    @Column(name = "assigned_reviewer_subject")
+    private String assignedReviewerSubject;
+
     @Column(name = "student_number", length = 80)
     private String studentNumber;
 
@@ -186,6 +189,14 @@ public class Submission {
 
     public String getReceivingOfficer() {
         return receivingOfficer;
+    }
+
+    public String getAssignedReviewerSubject() {
+        return assignedReviewerSubject;
+    }
+
+    public void assignReviewer(String subject) {
+        this.assignedReviewerSubject = subject == null || subject.isBlank() ? null : subject.trim();
     }
 
     public String getStudentNumber() {
