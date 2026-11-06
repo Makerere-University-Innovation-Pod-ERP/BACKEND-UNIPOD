@@ -955,6 +955,8 @@ components:
         responsibleSectorId:
           type: [string, 'null']
           format: uuid
+        responsibleSectorName:
+          type: [string, 'null']
         stage:
           $ref: '#/components/schemas/SubmissionStage'
         receivedAt:

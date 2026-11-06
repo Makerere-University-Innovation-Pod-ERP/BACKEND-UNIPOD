@@ -68,6 +68,13 @@ class WaluubeApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[?(@.id == '" + id + "')]").isNotEmpty());
 
+        mockMvc.perform(get("/submissions/mine")
+                        .with(user(actor).roles("SUBMITTER"))
+                        .param("page", "0")
+                        .param("size", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[?(@.id == '" + id + "')]").isNotEmpty());
+
         mockMvc.perform(get("/submissions")
                         .with(receptionist)
                         .param("page", "0")

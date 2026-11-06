@@ -5,6 +5,8 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 
@@ -57,6 +59,10 @@ public class Submission {
 
     @Column(name = "responsible_sector_id")
     private UUID responsibleSectorId;
+
+    @ManyToOne
+    @JoinColumn(name = "responsible_sector_id", insertable = false, updatable = false)
+    private Sector responsibleSector;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
@@ -218,6 +224,10 @@ public class Submission {
 
     public UUID getResponsibleSectorId() {
         return responsibleSectorId;
+    }
+
+    public String getResponsibleSectorName() {
+        return responsibleSector == null ? null : responsibleSector.getName();
     }
 
     public SubmissionStage getStage() {
