@@ -28,16 +28,14 @@ public class SectorMemberService {
     public String add(UUID sectorId, SectorMemberRequest request) {
         ensureSectorExists(sectorId);
         String subject = request.subject().trim();
-        if (!members.existsBySectorIdAndSubject(sectorId, subject)) {
-            members.save(new SectorMember(UUID.randomUUID(), sectorId, subject));
-        }
+        members.insertIfAbsent(UUID.randomUUID(), sectorId, subject);
         return subject;
     }
 
     @Transactional
     public void remove(UUID sectorId, String subject) {
         ensureSectorExists(sectorId);
-        members.deleteBySectorIdAndSubject(sectorId, subject);
+        members.deleteBySectorIdAndSubject(sectorId, subject.trim());
     }
 
     private void ensureSectorExists(UUID sectorId) {

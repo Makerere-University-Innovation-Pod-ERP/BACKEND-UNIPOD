@@ -195,8 +195,9 @@ public class Submission {
         return assignedReviewerSubject;
     }
 
-    public void assignReviewer(String subject) {
+    public void assignReviewer(String subject, Instant time) {
         this.assignedReviewerSubject = subject == null || subject.isBlank() ? null : subject.trim();
+        this.updatedAt = time;
     }
 
     public String getStudentNumber() {

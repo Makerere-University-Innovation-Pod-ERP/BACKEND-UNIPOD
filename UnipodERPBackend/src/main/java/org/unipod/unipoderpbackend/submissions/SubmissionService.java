@@ -202,7 +202,7 @@ public class SubmissionService {
                 category,
                 stage,
                 sectorId,
-                clean(query),
+                query == null ? null : escapeLike(clean(query)),
                 scope,
                 authentication.getName(),
                 pageable
@@ -215,10 +215,18 @@ public class SubmissionService {
             Pageable pageable,
             org.springframework.security.core.Authentication authentication
     ) {
+        if (query == null || query.isBlank()) {
+            throw new InvalidSubmissionException("The search code is required.");
+        }
         String scope = SubmissionVisibility.scope(authentication);
         String principal = authentication.getName();
         Submission exact = submissions.findVisibleByCode(query.trim(), scope, principal).orElse(null);
         if (exact != null) {
+            if (pageable.getOffset() > 0) {
+                return new org.springframework.data.domain.PageImpl<>(
+                        List.of(), pageable, 1
+                );
+            }
             return new org.springframework.data.domain.PageImpl<>(
                     List.of(SubmissionResponse.from(exact)),
                     pageable,
@@ -226,7 +234,7 @@ public class SubmissionService {
             );
         }
         return submissions.searchVisible(
-                null, null, null, query.trim(), scope, principal, pageable
+                null, null, null, escapeLike(query.trim()), scope, principal, pageable
         ).map(SubmissionResponse::from);
     }
 
@@ -234,8 +242,17 @@ public class SubmissionService {
     public SubmissionResponse assignReviewer(UUID id, String subject) {
         Submission submission = submissions.findByIdForUpdate(id)
                 .orElseThrow(() -> new SubmissionNotFoundException(id));
-        submission.assignReviewer(subject);
+        submission.assignReviewer(subject, clock.instant());
         return SubmissionResponse.from(submission);
+    }
+
+    private static String escapeLike(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value.replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
     }
 
     @Transactional(readOnly = true)

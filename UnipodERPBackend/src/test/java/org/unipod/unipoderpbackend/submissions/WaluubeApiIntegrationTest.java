@@ -247,4 +247,19 @@ class WaluubeApiIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value("One or more request values are invalid."));
     }
+
+    @Test
+    void submissionListAcceptsLowercaseCategoryAndSearchRejectsBlankCode() throws Exception {
+        mockMvc.perform(get("/submissions")
+                        .with(user("observer").roles("OBSERVER"))
+                        .param("category", "student"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items").isArray());
+
+        mockMvc.perform(get("/submissions/search")
+                        .with(user("observer").roles("OBSERVER"))
+                        .param("code", "   "))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("Validation failed"));
+    }
 }

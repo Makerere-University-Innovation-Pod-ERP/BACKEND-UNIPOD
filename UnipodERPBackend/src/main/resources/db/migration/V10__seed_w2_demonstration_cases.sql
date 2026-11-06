@@ -1,18 +1,50 @@
-INSERT INTO sectors (id, name, notification_email, active, created_at, updated_at, version)
+DO $seed$
+BEGIN
+    IF current_setting('app.demo_seed', true) IS DISTINCT FROM 'true' THEN
+        RETURN;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM sectors
+        WHERE id IN (
+            '10000000-0000-0000-0000-000000000001'::uuid,
+            '10000000-0000-0000-0000-000000000002'::uuid,
+            '10000000-0000-0000-0000-000000000003'::uuid
+        )
+        AND NOT (
+            (id = '10000000-0000-0000-0000-000000000001'::uuid AND name = 'Agriculture and Food')
+            OR (id = '10000000-0000-0000-0000-000000000002'::uuid AND name = 'Digital Technology')
+            OR (id = '10000000-0000-0000-0000-000000000003'::uuid AND name = 'Health and Life Sciences')
+        )
+    ) OR EXISTS (
+        SELECT 1
+        FROM sectors
+        WHERE name IN ('Agriculture and Food', 'Digital Technology', 'Health and Life Sciences')
+          AND NOT (
+              (name = 'Agriculture and Food' AND id = '10000000-0000-0000-0000-000000000001'::uuid)
+              OR (name = 'Digital Technology' AND id = '10000000-0000-0000-0000-000000000002'::uuid)
+              OR (name = 'Health and Life Sciences' AND id = '10000000-0000-0000-0000-000000000003'::uuid)
+          )
+    ) THEN
+        RAISE EXCEPTION 'Demo seed requires an unused, explicitly provisioned sector catalog.';
+    END IF;
+
+    INSERT INTO sectors (id, name, notification_email, active, created_at, updated_at, version)
 VALUES
     ('10000000-0000-0000-0000-000000000001', 'Agriculture and Food', 'agriculture@example.invalid', TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
     ('10000000-0000-0000-0000-000000000002', 'Digital Technology', 'digital@example.invalid', TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
     ('10000000-0000-0000-0000-000000000003', 'Health and Life Sciences', 'health@example.invalid', TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
-ON CONFLICT (id) DO NOTHING;
+    ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO sector_members (id, sector_id, subject)
+    INSERT INTO sector_members (id, sector_id, subject)
 VALUES
     ('11000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', 'demo-sector-agriculture'),
     ('11000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000002', 'demo-sector-digital'),
     ('11000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000003', 'demo-sector-health')
-ON CONFLICT (id) DO NOTHING;
+    ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO submissions (
+    INSERT INTO submissions (
     id, code, category, title, purpose, problem_addressed, registered_by,
     receiving_officer, assigned_reviewer_subject, student_number, programme,
     supervisor, recommendation_letter_status, responsible_sector_id, stage,
@@ -29,4 +61,60 @@ VALUES
     ('20000000-0000-0000-0000-000000000008', 'GEN-2026-900004', 'GENERAL', 'Micro-logistics network', 'Improve last-mile delivery coordination', 'Small enterprises face expensive fragmented delivery', 'demo-submitter-8', 'demo-reception', 'demo-reviewer-1', NULL, NULL, NULL, NULL, '10000000-0000-0000-0000-000000000002', 'IN_PROGRESS', CURRENT_TIMESTAMP - INTERVAL '15 days', CURRENT_TIMESTAMP - INTERVAL '14 days', CURRENT_TIMESTAMP - INTERVAL '15 days', CURRENT_TIMESTAMP - INTERVAL '4 days', 0),
     ('20000000-0000-0000-0000-000000000009', 'STU-2026-900005', 'STUDENT', 'Renewable energy dashboard', 'Visualize campus energy use', 'Facilities teams lack actionable consumption data', 'demo-submitter-9', 'demo-reception', 'demo-reviewer-2', 'DEMO-009', 'Electrical Engineering', 'Dr. Grace Atim', 'SUBMITTED', NULL, 'RECEIVED', CURRENT_TIMESTAMP - INTERVAL '2 days', NULL, CURRENT_TIMESTAMP - INTERVAL '2 days', CURRENT_TIMESTAMP - INTERVAL '2 days', 0),
     ('20000000-0000-0000-0000-000000000010', NULL, 'GENERAL', 'Youth enterprise toolkit', 'Support youth-led innovation projects', 'Early-stage founders need practical startup guidance', 'demo-submitter-10', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'DRAFT', NULL, NULL, CURRENT_TIMESTAMP - INTERVAL '4 hours', CURRENT_TIMESTAMP - INTERVAL '4 hours', 0)
-ON CONFLICT (id) DO NOTHING;
+    ON CONFLICT (id) DO NOTHING;
+
+    INSERT INTO case_stage_history (
+        id, submission_id, from_stage, to_stage, changed_by, changed_at
+    )
+    SELECT md5(submission.id::text || ':draft')::uuid,
+           submission.id, NULL, 'DRAFT', 'demo-seed', submission.created_at
+    FROM submissions submission
+    WHERE submission.id >= '20000000-0000-0000-0000-000000000001'::uuid
+      AND submission.id <= '20000000-0000-0000-0000-000000000010'::uuid
+    ON CONFLICT (id) DO NOTHING;
+
+    INSERT INTO case_stage_history (
+        id, submission_id, from_stage, to_stage, changed_by, changed_at
+    )
+    SELECT md5(submission.id::text || ':received')::uuid,
+           submission.id, 'DRAFT', 'RECEIVED', 'demo-seed', submission.received_at
+    FROM submissions submission
+    WHERE submission.received_at IS NOT NULL
+      AND submission.id >= '20000000-0000-0000-0000-000000000001'::uuid
+      AND submission.id <= '20000000-0000-0000-0000-000000000010'::uuid
+    ON CONFLICT (id) DO NOTHING;
+
+    INSERT INTO case_stage_history (
+        id, submission_id, from_stage, to_stage, changed_by, changed_at
+    )
+    SELECT md5(submission.id::text || ':forwarded')::uuid,
+           submission.id, 'RECEIVED', 'FORWARDED', 'demo-seed', submission.forwarded_at
+    FROM submissions submission
+    WHERE submission.forwarded_at IS NOT NULL
+      AND submission.id >= '20000000-0000-0000-0000-000000000001'::uuid
+      AND submission.id <= '20000000-0000-0000-0000-000000000010'::uuid
+    ON CONFLICT (id) DO NOTHING;
+
+    INSERT INTO case_stage_history (
+        id, submission_id, from_stage, to_stage, changed_by, changed_at
+    )
+    SELECT md5(submission.id::text || ':in-progress')::uuid,
+           submission.id, 'FORWARDED', 'IN_PROGRESS', 'demo-seed', submission.updated_at
+    FROM submissions submission
+    WHERE submission.stage IN ('IN_PROGRESS', 'COMPLETED')
+      AND submission.id >= '20000000-0000-0000-0000-000000000001'::uuid
+      AND submission.id <= '20000000-0000-0000-0000-000000000010'::uuid
+    ON CONFLICT (id) DO NOTHING;
+
+    INSERT INTO case_stage_history (
+        id, submission_id, from_stage, to_stage, changed_by, changed_at
+    )
+    SELECT md5(submission.id::text || ':completed')::uuid,
+           submission.id, 'IN_PROGRESS', 'COMPLETED', 'demo-seed', submission.updated_at
+    FROM submissions submission
+    WHERE submission.stage = 'COMPLETED'
+      AND submission.id >= '20000000-0000-0000-0000-000000000001'::uuid
+      AND submission.id <= '20000000-0000-0000-0000-000000000010'::uuid
+    ON CONFLICT (id) DO NOTHING;
+END
+$seed$;

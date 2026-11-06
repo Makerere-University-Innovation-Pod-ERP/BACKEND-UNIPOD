@@ -29,11 +29,12 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
               and (
                   :scope = 'ALL'
                   or (:scope = 'SUBMITTER' and submission.registeredBy = :principal)
-                  or (:scope = 'REVIEWER' and submission.assignedReviewerSubject = :principal)
-                  or (:scope = 'SECTOR_OFFICER' and exists (
-                      select member.id from SectorMember member
-                      where member.sectorId = submission.responsibleSectorId
-                        and member.subject = :principal
+                  or (:scope in ('REVIEWER', 'REVIEWER_OR_SECTOR_OFFICER')
+                      and submission.assignedReviewerSubject = :principal)
+                  or (:scope in ('SECTOR_OFFICER', 'REVIEWER_OR_SECTOR_OFFICER') and exists (
+                      select sectorMember.id from SectorMember sectorMember
+                      where sectorMember.sectorId = submission.responsibleSectorId
+                        and sectorMember.subject = :principal
                   ))
               )
             """)
@@ -56,11 +57,12 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
               and (
                   :scope = 'ALL'
                   or (:scope = 'SUBMITTER' and submission.registeredBy = :principal)
-                  or (:scope = 'REVIEWER' and submission.assignedReviewerSubject = :principal)
-                  or (:scope = 'SECTOR_OFFICER' and exists (
-                      select member.id from SectorMember member
-                      where member.sectorId = submission.responsibleSectorId
-                        and member.subject = :principal
+                  or (:scope in ('REVIEWER', 'REVIEWER_OR_SECTOR_OFFICER')
+                      and submission.assignedReviewerSubject = :principal)
+                  or (:scope in ('SECTOR_OFFICER', 'REVIEWER_OR_SECTOR_OFFICER') and exists (
+                      select sectorMember.id from SectorMember sectorMember
+                      where sectorMember.sectorId = submission.responsibleSectorId
+                        and sectorMember.subject = :principal
                   ))
               )
             order by case when submission.receivedAt is null then 1 else 0 end,

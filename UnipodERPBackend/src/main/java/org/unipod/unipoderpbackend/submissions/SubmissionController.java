@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.validation.annotation.Validated;
+import jakarta.validation.constraints.NotBlank;
 
 import java.util.UUID;
 
@@ -45,21 +46,21 @@ public class SubmissionController {
     public PageResponse<SubmissionResponse> all(
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "25") @Min(1) @Max(100) int size,
-            @RequestParam(required = false) SubmissionCategory category,
+            @RequestParam(required = false) String category,
             @RequestParam(required = false) SubmissionStage stage,
             @RequestParam(required = false) UUID sector,
             @RequestParam(required = false) String q,
             Authentication authentication
     ) {
         return PageResponse.from(submissions.search(
-                category, stage, sector, q, pageable(page, size), authentication
+                parseCategory(category), stage, sector, q, pageable(page, size), authentication
         ));
     }
 
     @GetMapping("/search")
     @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'RECEPTIONIST', 'FACT_FINDING_OFFICER', 'IP_LIAISON', 'OBSERVER', 'SUBMITTER', 'REVIEWER', 'SECTOR_OFFICER')")
     public PageResponse<SubmissionResponse> search(
-            @RequestParam String code,
+            @RequestParam @NotBlank String code,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "25") @Min(1) @Max(100) int size,
             Authentication authentication
@@ -135,5 +136,16 @@ public class SubmissionController {
 
     private static PageRequest pageable(int page, int size) {
         return PageRequest.of(page, size);
+    }
+
+    private static SubmissionCategory parseCategory(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return SubmissionCategory.fromJson(value);
+        } catch (IllegalArgumentException exception) {
+            throw new InvalidSubmissionException("The category is invalid.");
+        }
     }
 }

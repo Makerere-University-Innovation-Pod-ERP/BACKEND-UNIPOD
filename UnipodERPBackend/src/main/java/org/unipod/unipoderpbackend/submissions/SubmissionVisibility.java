@@ -11,10 +11,15 @@ final class SubmissionVisibility {
                 "FACT_FINDING_OFFICER", "IP_LIAISON", "OBSERVER")) {
             return "ALL";
         }
-        if (has(authentication, "REVIEWER")) {
+        boolean reviewer = has(authentication, "REVIEWER");
+        boolean sectorOfficer = has(authentication, "SECTOR_OFFICER");
+        if (reviewer && sectorOfficer) {
+            return "REVIEWER_OR_SECTOR_OFFICER";
+        }
+        if (reviewer) {
             return "REVIEWER";
         }
-        if (has(authentication, "SECTOR_OFFICER")) {
+        if (sectorOfficer) {
             return "SECTOR_OFFICER";
         }
         return "SUBMITTER";
