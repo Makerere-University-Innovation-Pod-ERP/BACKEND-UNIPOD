@@ -189,6 +189,73 @@ public class SubmissionService {
     }
 
     @Transactional(readOnly = true)
+    public Page<SubmissionResponse> search(
+            SubmissionCategory category,
+            SubmissionStage stage,
+            UUID sectorId,
+            String query,
+            Pageable pageable,
+            org.springframework.security.core.Authentication authentication
+    ) {
+        String scope = SubmissionVisibility.scope(authentication);
+        return submissions.searchVisible(
+                category,
+                stage,
+                sectorId,
+                query == null ? null : escapeLike(clean(query)),
+                scope,
+                authentication.getName(),
+                pageable
+        ).map(SubmissionResponse::from);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<SubmissionResponse> searchByCodeOrTitle(
+            String query,
+            Pageable pageable,
+            org.springframework.security.core.Authentication authentication
+    ) {
+        if (query == null || query.isBlank()) {
+            throw new InvalidSubmissionException("The search code is required.");
+        }
+        String scope = SubmissionVisibility.scope(authentication);
+        String principal = authentication.getName();
+        Submission exact = submissions.findVisibleByCode(query.trim(), scope, principal).orElse(null);
+        if (exact != null) {
+            if (pageable.getOffset() > 0) {
+                return new org.springframework.data.domain.PageImpl<>(
+                        List.of(), pageable, 1
+                );
+            }
+            return new org.springframework.data.domain.PageImpl<>(
+                    List.of(SubmissionResponse.from(exact)),
+                    pageable,
+                    1
+            );
+        }
+        return submissions.searchVisible(
+                null, null, null, escapeLike(query.trim()), scope, principal, pageable
+        ).map(SubmissionResponse::from);
+    }
+
+    @Transactional
+    public SubmissionResponse assignReviewer(UUID id, String subject) {
+        Submission submission = submissions.findByIdForUpdate(id)
+                .orElseThrow(() -> new SubmissionNotFoundException(id));
+        submission.assignReviewer(subject, clock.instant());
+        return SubmissionResponse.from(submission);
+    }
+
+    private static String escapeLike(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value.replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
+    }
+
+    @Transactional(readOnly = true)
     public Page<SubmissionResponse> mine(String actor, Pageable pageable) {
         return submissions.findAllByRegisteredByOrderByUpdatedAtDescIdAsc(actor, pageable)
                 .map(SubmissionResponse::from);

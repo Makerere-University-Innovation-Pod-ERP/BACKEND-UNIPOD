@@ -85,4 +85,28 @@ class SubmissionTest {
 
         assertEquals(2027, SubmissionService.caseYear(receivedAt));
     }
+
+    @Test
+    void reviewerAssignmentUpdatesTimestampAndNormalizesSubject() {
+        Instant createdAt = Instant.parse("2026-11-04T00:00:00Z");
+        Instant assignedAt = Instant.parse("2026-11-04T01:00:00Z");
+        Submission submission = new Submission(
+                UUID.randomUUID(),
+                SubmissionCategory.GENERAL,
+                "Public idea",
+                "Improve access",
+                "Current access is limited",
+                "staff-1",
+                null,
+                null,
+                null,
+                null,
+                createdAt
+        );
+
+        submission.assignReviewer(" reviewer-1 ", assignedAt);
+
+        assertEquals("reviewer-1", submission.getAssignedReviewerSubject());
+        assertEquals(assignedAt, submission.getUpdatedAt());
+    }
 }

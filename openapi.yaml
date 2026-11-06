@@ -75,13 +75,57 @@ paths:
       tags: [Submissions]
       operationId: listSubmissions
       summary: List all submissions
-      description: Available to the four intake roles. Results are ordered by most recently updated first.
+      description: Results are role-scoped, filtered, paginated, and stably ordered by received date then id.
       parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: category
+          in: query
+          schema:
+            type: string
+            enum: [student, general]
+        - name: stage
+          in: query
+          schema:
+            $ref: '#/components/schemas/SubmissionStage'
+        - name: sector
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: q
+          in: query
+          description: Case-insensitive title substring.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A page of submissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /submissions/search:
+    get:
+      tags: [Submissions]
+      operationId: searchSubmissions
+      summary: Search submissions by exact code or title
+      description: Exact case-code matches are returned first; otherwise code is treated as a title substring.
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Size'
       responses:
         '200':
-          description: A page of submissions
+          description: Matching submissions
           content:
             application/json:
               schema:
@@ -133,6 +177,34 @@ paths:
                 $ref: '#/components/schemas/Submission'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /submissions/{id}/reviewer:
+    put:
+      tags: [Submissions]
+      operationId: assignSubmissionReviewer
+      summary: Assign or clear a reviewer
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewerAssignmentRequest'
+      responses:
+        '200':
+          description: Updated submission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -438,6 +510,88 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+  /sectors/{id}/members:
+    get:
+      tags: [Sectors]
+      operationId: listSectorMembers
+      summary: List sector officer subjects
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Sector officer subject identifiers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Sectors]
+      operationId: addSectorMember
+      summary: Add a sector officer subject
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SectorMemberRequest'
+      responses:
+        '200':
+          description: Added subject identifier
+          content:
+            application/json:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Sectors]
+      operationId: removeSectorMember
+      summary: Remove a sector officer subject
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: subject
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Removed
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /queues/reception:
     get:
       tags: [Reception]
@@ -653,6 +807,22 @@ components:
             updatedAt:
               type: string
               format: date-time
+    ReviewerAssignmentRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        subject:
+          type: [string, 'null']
+          maxLength: 255
+    SectorMemberRequest:
+      type: object
+      additionalProperties: false
+      required: [subject]
+      properties:
+        subject:
+          type: string
+          minLength: 1
+          maxLength: 255
     SubmissionPage:
       type: object
       required: [items, page, size, totalElements, totalPages]
@@ -769,6 +939,8 @@ components:
         registeredBy:
           type: string
         receivingOfficer:
+          type: [string, 'null']
+        assignedReviewerSubject:
           type: [string, 'null']
         studentNumber:
           type: [string, 'null']

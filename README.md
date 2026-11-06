@@ -76,6 +76,7 @@ This endpoint returns paginated drafts and queue counters:
 | Method | Endpoint                           | Description                                             |
 | ------ | ---------------------------------- | ------------------------------------------------------- |
 | GET    | `/api/submissions`                 | Lists all submissions.                                  |
+| GET    | `/api/submissions/search`           | Exact code search, then title substring search.         |
 | GET    | `/api/submissions/mine`            | Lists submissions registered by the authenticated user. |
 | GET    | `/api/submissions/{id}`            | Returns a submission, documents, and stage history.     |
 | POST   | `/api/submissions`                 | Creates a draft submission.                             |
@@ -86,7 +87,10 @@ This endpoint returns paginated drafts and queue counters:
 | GET    | `/api/queues/reception`            | Returns the reception queue and counters.               |
 | GET    | `/api/dashboard/overview`          | Returns dashboard statistics.                           |
 
-Both `/api/submissions` and `/api/submissions/mine` are paginated.
+`/api/submissions`, `/api/submissions/search`, and `/api/submissions/mine` are
+paginated. The search endpoint accepts `code`, `page`, and `size`; `page` is
+zero-based, defaults to `0`, and `size` defaults to `25` with a maximum of
+`100`.
 
 Pagination defaults:
 
@@ -94,6 +98,32 @@ Pagination defaults:
 * Maximum page size: 100.
 
 `GET /api/submissions/mine` filters submissions using the authenticated user's `registeredBy` identity.
+
+### All Submissions and Global Search
+
+`GET /api/submissions` supports the optional `category`, `stage`, `sector`, and
+`q` filters. Results are ordered by received date descending, with the
+submission ID as a deterministic tie-breaker, and use the same page-size limits
+as the other submission lists.
+
+`GET /api/submissions/search?code=...` first checks for an exact visible case
+code. If no exact code is visible, it searches visible titles using a
+case-insensitive substring match.
+
+The `code` value must not be blank. Literal `%`, `_`, and `\` characters in
+title searches are treated as ordinary text, not wildcard operators.
+
+Visibility is enforced in the database query:
+
+* Submitters see submissions they registered.
+* Reviewers see submissions assigned to their subject.
+* Sector Officers see submissions routed to sectors where they are members.
+* Administrators, Coordinators, Receptionists, Fact-Finding Officers,
+  IP Liaisons, and Observers see all submissions.
+
+Student Projects and General Innovations use the same list endpoint with the
+appropriate `category` filter. Administrator-only endpoints manage reviewer
+assignments and Sector Officer membership.
 
 ### Dashboard Overview
 
@@ -211,14 +241,25 @@ async request timeout by default, configurable with `ASYNC_REQUEST_TIMEOUT`.
 
 ### API Access Control
 
-All case APIs are restricted to the following roles:
+Intake creation and lifecycle operations are restricted to:
 
 * `ADMINISTRATOR`
 * `INNOVATION_COORDINATOR`
 * `RECEPTIONIST`
 * `FACT_FINDING_OFFICER`
 
-Intake creation and registration require one of these authorized roles.
+Submission list and global search additionally support:
+
+* `IP_LIAISON`
+* `OBSERVER`
+* `SUBMITTER`
+* `REVIEWER`
+* `SECTOR_OFFICER`
+
+These read roles use database-enforced row-level visibility: submitters see
+their own cases, reviewers see assigned cases, and sector officers see cases
+routed to their sectors. Administrators and the operational roles above see all
+cases where their endpoint permission allows it.
 
 `My Submissions` uses the authenticated principal recorded at intake.
 
@@ -275,8 +316,23 @@ For example:
 | `INNOVATION_COORDINATOR` | `ROLE_INNOVATION_COORDINATOR` |
 | `RECEPTIONIST`           | `ROLE_RECEPTIONIST`           |
 | `FACT_FINDING_OFFICER`   | `ROLE_FACT_FINDING_OFFICER`   |
+| `IP_LIAISON`            | `ROLE_IP_LIAISON`              |
+| `OBSERVER`              | `ROLE_OBSERVER`                |
+| `SUBMITTER`             | `ROLE_SUBMITTER`               |
+| `REVIEWER`              | `ROLE_REVIEWER`                |
+| `SECTOR_OFFICER`        | `ROLE_SECTOR_OFFICER`          |
 
 If issuer or audience configuration is missing, protected API routes fail closed.
+
+Intake creation and lifecycle operations are restricted to Administrators,
+Innovation Coordinators, Receptionists, and Fact-Finding Officers. Read-only
+submission list and search access additionally supports IP Liaisons, Observers,
+Submitters, Reviewers, and Sector Officers, with row-level visibility described
+above.
+
+The demonstration catalog and ten demonstration submissions are opt-in. To
+enable them for a dedicated demo database, set the PostgreSQL connection option
+`app.demo_seed=true`; production connections must not set this option.
 
 Database URL and username have local defaults, but database credentials must be supplied through environment variables or a secrets manager.
 
