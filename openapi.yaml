@@ -153,6 +153,45 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /me/submissions:
+    get:
+      tags: [Submissions]
+      operationId: listMySubmitterSubmissions
+      summary: List cases linked to the authenticated submitter
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Submitter-owned submissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmitterSubmissionPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /me/capabilities:
+    get:
+      tags: [Submissions]
+      operationId: getSubmitterCapabilities
+      summary: Return submitter navigation capabilities
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Locked modules and registration capability
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmitterCapabilities'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /submissions/{id}/register:
     post:
       tags: [Submissions]
@@ -680,6 +719,9 @@ components:
           type: string
           minLength: 1
           maxLength: 5000
+        submitterId:
+          type: [string, 'null']
+          maxLength: 255
         studentNumber:
           type: string
           maxLength: 80
@@ -840,6 +882,65 @@ components:
           format: int64
         totalPages:
           type: integer
+    SubmitterSubmissionPage:
+      type: object
+      required: [items, page, size, totalElements, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubmitterSubmission'
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+    SubmitterSubmission:
+      type: object
+      required: [id, category, title, purpose, problemAddressed, stage, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: [string, 'null']
+        category:
+          type: string
+          enum: [student, general]
+        title:
+          type: string
+        purpose:
+          type: string
+        problemAddressed:
+          type: string
+        studentNumber:
+          type: [string, 'null']
+        programme:
+          type: [string, 'null']
+        supervisor:
+          type: [string, 'null']
+        recommendationLetterStatus:
+          anyOf:
+            - $ref: '#/components/schemas/RecommendationLetterStatus'
+            - type: 'null'
+        stage:
+          $ref: '#/components/schemas/SubmissionStage'
+        receivedAt:
+          type: [string, 'null']
+          format: date-time
+        forwardedAt:
+          type: [string, 'null']
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
     ReceptionQueue:
       allOf:
         - $ref: '#/components/schemas/SubmissionPage'
@@ -938,6 +1039,8 @@ components:
           type: string
         registeredBy:
           type: string
+        submitterId:
+          type: string
         receivingOfficer:
           type: [string, 'null']
         assignedReviewerSubject:
@@ -955,6 +1058,8 @@ components:
         responsibleSectorId:
           type: [string, 'null']
           format: uuid
+        responsibleSectorName:
+          type: [string, 'null']
         stage:
           $ref: '#/components/schemas/SubmissionStage'
         receivedAt:
@@ -969,6 +1074,18 @@ components:
         updatedAt:
           type: string
           format: date-time
+    SubmitterCapabilities:
+      type: object
+      required: [canRegisterSubmission, registrationMessage, lockedModules]
+      properties:
+        canRegisterSubmission:
+          type: boolean
+        registrationMessage:
+          type: string
+        lockedModules:
+          type: array
+          items:
+            type: string
     Problem:
       type: object
       required: [type, title, status, detail]

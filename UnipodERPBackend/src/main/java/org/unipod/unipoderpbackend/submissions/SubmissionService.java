@@ -76,6 +76,9 @@ public class SubmissionService {
                 request.purpose().trim(),
                 request.problemAddressed().trim(),
                 actor,
+                request.submitterId() == null || request.submitterId().isBlank()
+                        ? actor
+                        : request.submitterId().trim(),
                 clean(request.studentNumber()),
                 clean(request.programme()),
                 clean(request.supervisor()),
@@ -121,7 +124,7 @@ public class SubmissionService {
         Sector sector = sectorsCatalog.requireActive(sectorId);
         Instant now = clock.instant();
         SubmissionStage previousStage = submission.getStage();
-        submission.forward(sectorId, now);
+        submission.forward(sector, now);
         stageHistory.save(new CaseStageHistory(
                 UUID.randomUUID(),
                 submission.getId(),
@@ -259,6 +262,12 @@ public class SubmissionService {
     public Page<SubmissionResponse> mine(String actor, Pageable pageable) {
         return submissions.findAllByRegisteredByOrderByUpdatedAtDescIdAsc(actor, pageable)
                 .map(SubmissionResponse::from);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<SubmitterSubmissionResponse> forSubmitter(String submitterId, Pageable pageable) {
+        return submissions.findAllBySubmitterIdOrderByUpdatedAtDescIdAsc(submitterId, pageable)
+                .map(SubmitterSubmissionResponse::from);
     }
 
     @Transactional(readOnly = true)
