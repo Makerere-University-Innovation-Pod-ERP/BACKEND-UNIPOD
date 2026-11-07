@@ -169,7 +169,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SubmissionPage'
+                $ref: '#/components/schemas/SubmitterSubmissionPage'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -882,6 +882,65 @@ components:
           format: int64
         totalPages:
           type: integer
+    SubmitterSubmissionPage:
+      type: object
+      required: [items, page, size, totalElements, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubmitterSubmission'
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+    SubmitterSubmission:
+      type: object
+      required: [id, category, title, purpose, problemAddressed, stage, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: [string, 'null']
+        category:
+          type: string
+          enum: [student, general]
+        title:
+          type: string
+        purpose:
+          type: string
+        problemAddressed:
+          type: string
+        studentNumber:
+          type: [string, 'null']
+        programme:
+          type: [string, 'null']
+        supervisor:
+          type: [string, 'null']
+        recommendationLetterStatus:
+          anyOf:
+            - $ref: '#/components/schemas/RecommendationLetterStatus'
+            - type: 'null'
+        stage:
+          $ref: '#/components/schemas/SubmissionStage'
+        receivedAt:
+          type: [string, 'null']
+          format: date-time
+        forwardedAt:
+          type: [string, 'null']
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
     ReceptionQueue:
       allOf:
         - $ref: '#/components/schemas/SubmissionPage'

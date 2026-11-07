@@ -4,6 +4,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
@@ -63,7 +64,7 @@ public class Submission {
     @Column(name = "responsible_sector_id")
     private UUID responsibleSectorId;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "responsible_sector_id", insertable = false, updatable = false)
     private Sector responsibleSector;
 
@@ -155,14 +156,15 @@ public class Submission {
         this.updatedAt = time;
     }
 
-    public void forward(UUID sectorId, Instant time) {
+    public void forward(Sector sector, Instant time) {
         if (stage != SubmissionStage.RECEIVED) {
             throw new SubmissionConflictException("Only received submissions can be forwarded.");
         }
-        if (sectorId == null) {
+        if (sector == null) {
             throw new InvalidSubmissionException("A sector is required to forward a submission.");
         }
-        this.responsibleSectorId = sectorId;
+        this.responsibleSectorId = sector.getId();
+        this.responsibleSector = sector;
         this.forwardedAt = time;
         this.stage = SubmissionStage.FORWARDED;
         this.updatedAt = time;

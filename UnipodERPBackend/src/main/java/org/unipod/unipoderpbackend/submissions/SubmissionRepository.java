@@ -1,6 +1,7 @@
 package org.unipod.unipoderpbackend.submissions;
 
 import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -13,24 +14,34 @@ import java.util.UUID;
 
 public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @EntityGraph(attributePaths = "responsibleSector")
     @Query("select submission from Submission submission where submission.id = :id")
     Optional<Submission> findByIdForUpdate(@Param("id") UUID id);
 
+    @Override
+    @EntityGraph(attributePaths = "responsibleSector")
+    Optional<Submission> findById(UUID id);
+
+    @EntityGraph(attributePaths = "responsibleSector")
     Page<Submission> findAllByOrderByUpdatedAtDescIdAsc(Pageable pageable);
 
+    @EntityGraph(attributePaths = "responsibleSector")
     Page<Submission> findAllByRegisteredByOrderByUpdatedAtDescIdAsc(String registeredBy, Pageable pageable);
 
+    @EntityGraph(attributePaths = "responsibleSector")
     Page<Submission> findAllBySubmitterIdOrderByUpdatedAtDescIdAsc(String submitterId, Pageable pageable);
 
+    @EntityGraph(attributePaths = "responsibleSector")
     Page<Submission> findAllByStageOrderByUpdatedAtDescIdAsc(SubmissionStage stage, Pageable pageable);
 
+    @EntityGraph(attributePaths = "responsibleSector")
     @Query("""
             select submission
             from Submission submission
             where submission.code = :code
               and (
                   :scope = 'ALL'
-                  or (:scope = 'SUBMITTER' and submission.registeredBy = :principal)
+                  or (:scope = 'SUBMITTER' and submission.submitterId = :principal)
                   or (:scope in ('REVIEWER', 'REVIEWER_OR_SECTOR_OFFICER')
                       and submission.assignedReviewerSubject = :principal)
                   or (:scope in ('SECTOR_OFFICER', 'REVIEWER_OR_SECTOR_OFFICER') and exists (
@@ -46,6 +57,7 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
             @Param("principal") String principal
     );
 
+    @EntityGraph(attributePaths = "responsibleSector")
     @Query("""
             select submission
             from Submission submission
@@ -58,7 +70,7 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
               )
               and (
                   :scope = 'ALL'
-                  or (:scope = 'SUBMITTER' and submission.registeredBy = :principal)
+                  or (:scope = 'SUBMITTER' and submission.submitterId = :principal)
                   or (:scope in ('REVIEWER', 'REVIEWER_OR_SECTOR_OFFICER')
                       and submission.assignedReviewerSubject = :principal)
                   or (:scope in ('SECTOR_OFFICER', 'REVIEWER_OR_SECTOR_OFFICER') and exists (

@@ -23,7 +23,7 @@ public class MySubmissionsController {
 
     @GetMapping("/submissions")
     @PreAuthorize("hasRole('SUBMITTER')")
-    public PageResponse<SubmissionResponse> submissions(
+    public PageResponse<SubmitterSubmissionResponse> submissions(
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "25") @Min(1) @Max(100) int size,
             Authentication authentication
@@ -35,7 +35,7 @@ public class MySubmissionsController {
 
     @GetMapping("/capabilities")
     @PreAuthorize("hasRole('SUBMITTER')")
-    public SubmitterCapabilitiesResponse capabilities() {
-        return SubmitterCapabilitiesResponse.forSubmitter();
+    public SubmitterCapabilitiesResponse capabilities(Authentication authentication) {
+        return SubmitterCapabilitiesResponse.forSubmitter(authentication);
     }
 }

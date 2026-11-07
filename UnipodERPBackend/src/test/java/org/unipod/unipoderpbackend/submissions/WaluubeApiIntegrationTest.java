@@ -82,7 +82,10 @@ class WaluubeApiIntegrationTest {
                         .param("page", "0")
                         .param("size", "10"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items[?(@.id == '" + id + "')]").isNotEmpty());
+                .andExpect(jsonPath("$.items[?(@.id == '" + id + "')]").isNotEmpty())
+                .andExpect(jsonPath("$.items[?(@.id == '" + id + "')].registeredBy").isEmpty())
+                .andExpect(jsonPath("$.items[?(@.id == '" + id + "')].assignedReviewerSubject").isEmpty())
+                .andExpect(jsonPath("$.items[?(@.id == '" + id + "')].responsibleSectorId").isEmpty());
 
         mockMvc.perform(get("/me/capabilities")
                         .with(user(submitter).roles("SUBMITTER")))
@@ -92,6 +95,15 @@ class WaluubeApiIntegrationTest {
                 .andExpect(jsonPath("$.registrationMessage").value(
                         "Only authorized intake roles can register a submission."
                 ));
+
+        mockMvc.perform(get("/me/capabilities")
+                        .with(user("intake-submitters").roles("SUBMITTER", "RECEPTIONIST")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.canRegisterSubmission").value(true));
+
+        mockMvc.perform(get("/submissions/mine")
+                        .with(user(submitter).roles("SUBMITTER")))
+                .andExpect(status().isForbidden());
 
         mockMvc.perform(get("/me/submissions")
                         .with(user("other-submitter").roles("SUBMITTER")))
@@ -151,8 +163,9 @@ class WaluubeApiIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.fileReference").value("brief_012345"));
 
+        String sectorName = "Test sector " + UUID.randomUUID();
         String sectorId = sectors.create(new SectorRequest(
-                "Test sector " + UUID.randomUUID(),
+                sectorName,
                 "sector@example.invalid",
                 true
         )).id().toString();
@@ -168,7 +181,8 @@ class WaluubeApiIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"sectorId\":\"" + sectorId + "\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.stage").value("FORWARDED"));
+                .andExpect(jsonPath("$.stage").value("FORWARDED"))
+                .andExpect(jsonPath("$.responsibleSectorName").value(sectorName));
         assertEquals(
                 "sector@example.invalid",
                 jdbcTemplate.queryForObject(

@@ -124,7 +124,7 @@ public class SubmissionService {
         Sector sector = sectorsCatalog.requireActive(sectorId);
         Instant now = clock.instant();
         SubmissionStage previousStage = submission.getStage();
-        submission.forward(sectorId, now);
+        submission.forward(sector, now);
         stageHistory.save(new CaseStageHistory(
                 UUID.randomUUID(),
                 submission.getId(),
@@ -265,9 +265,9 @@ public class SubmissionService {
     }
 
     @Transactional(readOnly = true)
-    public Page<SubmissionResponse> forSubmitter(String submitterId, Pageable pageable) {
+    public Page<SubmitterSubmissionResponse> forSubmitter(String submitterId, Pageable pageable) {
         return submissions.findAllBySubmitterIdOrderByUpdatedAtDescIdAsc(submitterId, pageable)
-                .map(SubmissionResponse::from);
+                .map(SubmitterSubmissionResponse::from);
     }
 
     @Transactional(readOnly = true)

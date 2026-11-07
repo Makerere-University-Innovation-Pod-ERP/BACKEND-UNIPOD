@@ -270,14 +270,16 @@ submission. Submitters have no write authorities; attempts to create,
 register, forward, transition, or modify documents return `403` with the safe
 permission envelope.
 
-Reception staff may set `submitterId` when creating a case for another person.
+Administrators, Innovation Coordinators, Receptionists, and Fact-Finding
+Officers may set `submitterId` when creating a case for another person.
 For backwards compatibility, omitted values default to the registering
 principal; the persisted field remains separate from `registeredBy`.
 
 The W3 submitter endpoints are read-only and do not publish workflow commands.
-The existing Waluube notification outbox remains the integration boundary for
-durable asynchronous delivery; Kafka consumers can subscribe to that boundary
-without giving submitters write access to the case aggregate.
+The existing Waluube notification outbox is a PostgreSQL-backed external-consumer
+boundary for durable asynchronous delivery. This repository does not provide a
+Kafka topic or Kafka consumer; a separate polling or CDC bridge is required
+before integrating Kafka.
 
 **Frontend availability:** This backend repository does not contain the Reception, All Submissions, My Submissions, Case File, or Overview frontend screens. It provides the API endpoints required to support these interfaces.
 
