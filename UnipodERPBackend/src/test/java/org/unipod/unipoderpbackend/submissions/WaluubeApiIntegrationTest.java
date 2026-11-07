@@ -93,6 +93,23 @@ class WaluubeApiIntegrationTest {
                         "Only authorized intake roles can register a submission."
                 ));
 
+        mockMvc.perform(get("/me/submissions")
+                        .with(user("other-submitter").roles("SUBMITTER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[?(@.id == '" + id + "')]").isEmpty());
+
+        mockMvc.perform(get("/me/capabilities")
+                        .with(user("observer").roles("OBSERVER")))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/submissions/{id}", id)
+                        .with(user(submitter).roles("SUBMITTER")))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/submissions/{id}/register", id)
+                        .with(user(submitter).roles("SUBMITTER")))
+                .andExpect(status().isForbidden());
+
         mockMvc.perform(post("/submissions")
                         .with(user(submitter).roles("SUBMITTER"))
                         .contentType(MediaType.APPLICATION_JSON)
