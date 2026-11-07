@@ -38,6 +38,9 @@ public class Submission {
     @Column(name = "registered_by", nullable = false)
     private String registeredBy;
 
+    @Column(name = "submitter_id", nullable = false)
+    private String submitterId;
+
     @Column(name = "receiving_officer")
     private String receivingOfficer;
 
@@ -94,6 +97,7 @@ public class Submission {
             String purpose,
             String problemAddressed,
             String registeredBy,
+            String submitterId,
             String studentNumber,
             String programme,
             String supervisor,
@@ -106,6 +110,7 @@ public class Submission {
         this.purpose = purpose;
         this.problemAddressed = problemAddressed;
         this.registeredBy = registeredBy;
+        this.submitterId = submitterId;
         this.studentNumber = studentNumber;
         this.programme = programme;
         this.supervisor = supervisor;
@@ -113,6 +118,23 @@ public class Submission {
         this.stage = SubmissionStage.DRAFT;
         this.createdAt = createdAt;
         this.updatedAt = createdAt;
+    }
+
+    public Submission(
+            UUID id,
+            SubmissionCategory category,
+            String title,
+            String purpose,
+            String problemAddressed,
+            String registeredBy,
+            String studentNumber,
+            String programme,
+            String supervisor,
+            RecommendationLetterStatus recommendationLetterStatus,
+            Instant createdAt
+    ) {
+        this(id, category, title, purpose, problemAddressed, registeredBy, registeredBy,
+                studentNumber, programme, supervisor, recommendationLetterStatus, createdAt);
     }
 
     public void register(String caseCode, Instant time, String officer) {
@@ -191,6 +213,10 @@ public class Submission {
 
     public String getRegisteredBy() {
         return registeredBy;
+    }
+
+    public String getSubmitterId() {
+        return submitterId;
     }
 
     public String getReceivingOfficer() {

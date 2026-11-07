@@ -261,7 +261,23 @@ their own cases, reviewers see assigned cases, and sector officers see cases
 routed to their sectors. Administrators and the operational roles above see all
 cases where their endpoint permission allows it.
 
-`My Submissions` uses the authenticated principal recorded at intake.
+### Submitter Home
+
+`GET /api/me/submissions` returns only submissions whose `submitterId` matches
+the authenticated subject. `GET /api/me/capabilities` returns the locked
+navigation modules and explains that only the four intake roles can register a
+submission. Submitters have no write authorities; attempts to create,
+register, forward, transition, or modify documents return `403` with the safe
+permission envelope.
+
+Reception staff may set `submitterId` when creating a case for another person.
+For backwards compatibility, omitted values default to the registering
+principal; the persisted field remains separate from `registeredBy`.
+
+The W3 submitter endpoints are read-only and do not publish workflow commands.
+The existing Waluube notification outbox remains the integration boundary for
+durable asynchronous delivery; Kafka consumers can subscribe to that boundary
+without giving submitters write access to the case aggregate.
 
 **Frontend availability:** This backend repository does not contain the Reception, All Submissions, My Submissions, Case File, or Overview frontend screens. It provides the API endpoints required to support these interfaces.
 

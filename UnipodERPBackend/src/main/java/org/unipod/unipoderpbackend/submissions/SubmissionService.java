@@ -76,6 +76,9 @@ public class SubmissionService {
                 request.purpose().trim(),
                 request.problemAddressed().trim(),
                 actor,
+                request.submitterId() == null || request.submitterId().isBlank()
+                        ? actor
+                        : request.submitterId().trim(),
                 clean(request.studentNumber()),
                 clean(request.programme()),
                 clean(request.supervisor()),
@@ -258,6 +261,12 @@ public class SubmissionService {
     @Transactional(readOnly = true)
     public Page<SubmissionResponse> mine(String actor, Pageable pageable) {
         return submissions.findAllByRegisteredByOrderByUpdatedAtDescIdAsc(actor, pageable)
+                .map(SubmissionResponse::from);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<SubmissionResponse> forSubmitter(String submitterId, Pageable pageable) {
+        return submissions.findAllBySubmitterIdOrderByUpdatedAtDescIdAsc(submitterId, pageable)
                 .map(SubmissionResponse::from);
     }
 

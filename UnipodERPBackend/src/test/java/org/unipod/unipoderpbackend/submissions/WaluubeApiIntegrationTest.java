@@ -39,6 +39,7 @@ class WaluubeApiIntegrationTest {
     @Test
     void intakeWorkflowIsAvailableThroughHttpEndpoints() throws Exception {
         String actor = "workflow-" + UUID.randomUUID();
+        String submitter = "submitter-" + actor;
         var receptionist = user(actor).roles("RECEPTIONIST");
 
         String created = mockMvc.perform(post("/submissions")
@@ -49,9 +50,10 @@ class WaluubeApiIntegrationTest {
                                   "category": "general",
                                   "title": "HTTP workflow test",
                                   "purpose": "Verify the workflow API",
-                                  "problemAddressed": "The workflow API needs end-to-end coverage"
+                                  "problemAddressed": "The workflow API needs end-to-end coverage",
+                                  "submitterId": "%s"
                                 }
-                                """))
+                                """.formatted(submitter)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.stage").value("DRAFT"))
                 .andReturn()
@@ -69,11 +71,43 @@ class WaluubeApiIntegrationTest {
                 .andExpect(jsonPath("$.items[?(@.id == '" + id + "')]").isNotEmpty());
 
         mockMvc.perform(get("/submissions/mine")
-                        .with(user(actor).roles("SUBMITTER"))
+                        .with(user(actor).roles("RECEPTIONIST"))
                         .param("page", "0")
                         .param("size", "10"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[?(@.id == '" + id + "')]").isNotEmpty());
+
+        mockMvc.perform(get("/me/submissions")
+                        .with(user(submitter).roles("SUBMITTER"))
+                        .param("page", "0")
+                        .param("size", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[?(@.id == '" + id + "')]").isNotEmpty());
+
+        mockMvc.perform(get("/me/capabilities")
+                        .with(user(submitter).roles("SUBMITTER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.canRegisterSubmission").value(false))
+                .andExpect(jsonPath("$.lockedModules").isArray())
+                .andExpect(jsonPath("$.registrationMessage").value(
+                        "Only authorized intake roles can register a submission."
+                ));
+
+        mockMvc.perform(post("/submissions")
+                        .with(user(submitter).roles("SUBMITTER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "category": "general",
+                                  "title": "Blocked submitter write",
+                                  "purpose": "Must be rejected",
+                                  "problemAddressed": "Submitters are read-only"
+                                }
+                                """))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.detail").value(
+                        "You do not have permission to perform this action."
+                ));
 
         mockMvc.perform(get("/submissions")
                         .with(receptionist)

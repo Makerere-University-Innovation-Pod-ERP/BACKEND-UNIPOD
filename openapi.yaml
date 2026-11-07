@@ -153,6 +153,45 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /me/submissions:
+    get:
+      tags: [Submissions]
+      operationId: listMySubmitterSubmissions
+      summary: List cases linked to the authenticated submitter
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Submitter-owned submissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /me/capabilities:
+    get:
+      tags: [Submissions]
+      operationId: getSubmitterCapabilities
+      summary: Return submitter navigation capabilities
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Locked modules and registration capability
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmitterCapabilities'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /submissions/{id}/register:
     post:
       tags: [Submissions]
@@ -680,6 +719,9 @@ components:
           type: string
           minLength: 1
           maxLength: 5000
+        submitterId:
+          type: [string, 'null']
+          maxLength: 255
         studentNumber:
           type: string
           maxLength: 80
@@ -938,6 +980,8 @@ components:
           type: string
         registeredBy:
           type: string
+        submitterId:
+          type: string
         receivingOfficer:
           type: [string, 'null']
         assignedReviewerSubject:
@@ -971,6 +1015,18 @@ components:
         updatedAt:
           type: string
           format: date-time
+    SubmitterCapabilities:
+      type: object
+      required: [canRegisterSubmission, registrationMessage, lockedModules]
+      properties:
+        canRegisterSubmission:
+          type: boolean
+        registrationMessage:
+          type: string
+        lockedModules:
+          type: array
+          items:
+            type: string
     Problem:
       type: object
       required: [type, title, status, detail]
