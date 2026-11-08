@@ -43,6 +43,7 @@ public class UploadedDocumentService {
             SubmissionRepository submissions,
             SubmissionDocumentRepository documents,
             S3DocumentStorage storage,
+            Clock clock,
             PlatformTransactionManager transactionManager,
             @Value("${storage.s3.max-file-size}") long maxFileSize
     ) {
@@ -52,8 +53,8 @@ public class UploadedDocumentService {
         this.submissions = submissions;
         this.documents = documents;
         this.storage = storage;
+        this.clock = clock;
         this.maxFileSize = maxFileSize;
-        this.clock = Clock.systemUTC();
         this.transaction = new TransactionTemplate(transactionManager);
     }
 
