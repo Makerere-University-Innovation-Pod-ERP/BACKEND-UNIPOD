@@ -362,20 +362,27 @@ before integrating Kafka.
 
 ## Authentication Configuration
 
-Protected API operations use bearer JWTs issued by the existing OIDC-compatible identity provider.
+The backend issues short-lived bearer JWTs through `POST /api/auth/login`.
+Accounts cannot self-register; the first Administrator is bootstrapped from
+Railway secrets, and only Administrators can create additional accounts through
+`POST /api/admin/users`. Passwords are stored as PBKDF2 hashes and are never
+returned by the API.
 
 Configure the following environment variables in the deployment environment.
 
-| Environment Variable   | Description                                                             |
-| ---------------------- | ----------------------------------------------------------------------- |
-| `DB_PASS`              | Required PostgreSQL password. No default password is provided.          |
-| `JWT_ISSUER_URI`       | Trusted JWT issuer URL.                                                 |
-| `JWT_AUDIENCE`         | Required audience for this API.                                         |
-| `JWT_ROLES_CLAIM`      | JWT claim containing role names. Defaults to `roles`.                   |
-| `JWT_SUBJECT_CLAIM`    | JWT claim used as the authenticated user identifier. Defaults to `sub`. |
-| `CORS_ALLOWED_ORIGINS` | Comma-separated list of exact browser origins allowed to call the API.  |
-| `DATABASE_URL`         | PostgreSQL connection URL.                                              |
-| `DB_USER`              | PostgreSQL username.                                                    |
+| Environment Variable | Description |
+| -------------------- | ----------- |
+| `DATABASE_URL` | PostgreSQL JDBC URL. |
+| `DB_USER`, `DB_PASS` | PostgreSQL credentials. |
+| `JWT_SECRET` | Base64-encoded random secret with at least 32 bytes; required on hosted deployments. |
+| `JWT_ISSUER_URI` | Issuer URI embedded in and checked against each JWT. |
+| `JWT_AUDIENCE` | Audience required for this API; defaults to `unipod-erp-api`. |
+| `JWT_ACCESS_TOKEN_TTL` | Token lifetime as a Spring duration; defaults to `PT15M` and cannot exceed one hour. |
+| `BOOTSTRAP_ADMIN_EMAIL` | Email for the first Administrator account. |
+| `BOOTSTRAP_ADMIN_PASSWORD` | Initial Administrator password (minimum 12 characters). |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated list of exact browser origins allowed to call the API. |
+| `JWT_ROLES_CLAIM` | JWT claim containing role names. Defaults to `roles`. |
+| `JWT_SUBJECT_CLAIM` | JWT claim used as the authenticated user identifier. Defaults to `sub`. |
 | `NOTIFICATION_EMAIL_ENABLED` | Enables the scheduled SMTP outbox worker; defaults to `false`. |
 | `NOTIFICATION_EMAIL_FROM` | Sender address for forwarding notifications. |
 | `SMTP_HOST`, `SMTP_PORT` | SMTP server and port (port defaults to `587`). |
@@ -415,7 +422,44 @@ For example:
 | `REVIEWER`              | `ROLE_REVIEWER`                |
 | `SECTOR_OFFICER`        | `ROLE_SECTOR_OFFICER`          |
 
-If issuer or audience configuration is missing, protected API routes fail closed.
+The bootstrap account is created only when the user table is empty. Configure
+both bootstrap variables together as Railway secrets; later restarts will not
+replace existing credentials. If either value is missing, no administrator is
+created and the API remains protected.
+
+The API signs tokens with HS256, validates issuer and audience, and protects
+all endpoints except login and the health check. A fresh random signing key is
+used only for local runs when `JWT_SECRET` is omitted; tokens from such runs
+are not valid after restart.
+
+## Render Deployment
+
+The repository-root `Dockerfile` builds the Spring Boot backend using Java 21.
+Create a Render Web Service from this repository with the repository root as
+the Docker build context and `Dockerfile` as its Dockerfile path. Select the
+same region as the PostgreSQL instance; set the health-check path to
+`/api/actuator/health`.
+
+Configure these variables on the Web Service using Render's private PostgreSQL
+connection details (do not use the external database URL):
+
+| Variable | Value |
+| -------- | ----- |
+| `PORT` | `10000` |
+| `SPRING_DATASOURCE_URL` | `jdbc:postgresql://<internal-host>:<port>/<database>` |
+| `SPRING_DATASOURCE_USERNAME` | Render database username |
+| `SPRING_DATASOURCE_PASSWORD` | Render database password |
+| `JWT_SECRET` | Base64-encoded random secret with at least 32 bytes |
+| `JWT_ISSUER_URI` | The deployed backend's public origin, without `/api` |
+| `JWT_AUDIENCE` | `unipod-erp-api` |
+| `BOOTSTRAP_ADMIN_EMAIL` | Initial Administrator email |
+| `BOOTSTRAP_ADMIN_PASSWORD` | Initial password, at least 12 characters |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:3000` for localhost development |
+
+Keep the database inbound rule private for Render-to-Render traffic. The free
+Render PostgreSQL plan expires; upgrade it before using it for persistent
+production data. Add the generated backend URL to the OpenAPI `servers` list
+after Render assigns the URL.
 
 Intake creation and lifecycle operations are restricted to Administrators,
 Innovation Coordinators, Receptionists, and Fact-Finding Officers. Read-only
@@ -544,9 +588,10 @@ Configure the required environment variables:
 $env:DB_PASS="your_database_password"
 $env:DB_USER="your_database_username"
 $env:DATABASE_URL="jdbc:postgresql://localhost:5432/makerere_hub_db"
-
-$env:JWT_ISSUER_URI="your_identity_provider_issuer"
-$env:JWT_AUDIENCE="your_api_audience"
+$env:JWT_ISSUER_URI="http://localhost:8080"
+$env:JWT_AUDIENCE="unipod-erp-api"
+$env:BOOTSTRAP_ADMIN_EMAIL="admin@example.com"
+$env:BOOTSTRAP_ADMIN_PASSWORD="use-a-unique-password-of-at-least-12-characters"
 ```
 
 From the `UnipodERPBackend` directory, start the backend using Windows PowerShell:
