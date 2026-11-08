@@ -5,6 +5,28 @@
 
 Backend API for the Makerere Innovation Hub ERP, built to manage core department workflows.
 
+## Backend package layout
+
+Java sources use the existing `org.unipod.unipoderpbackend` base package and
+group feature-specific classes inside each application layer:
+
+* `controller.submission`, `service.submission`, `model.submission`,
+  `repository.submission`, and `dto.submission` — submission workflow.
+* `controller.reception` and `dto.reception` — reception queue.
+* `controller.dashboard`, `repository.dashboard`, and `dto.dashboard` —
+  dashboard overview.
+* `controller.sector`, `dto.sector`, `model.sector`, `repository.sector`, and
+  `service.sector` — sector catalog and membership.
+* `exception.submission`, `exception.sector`, and `exception.storage` contain
+  domain-specific errors; `exception` contains shared API error handling.
+* `service.storage` and `config.storage` — document storage integrations.
+* `config`, `security`, and `util` — application-wide configuration, security,
+  and reusable helpers.
+* Shared types, such as pagination responses, remain directly in `dto`.
+
+The Spring Boot application class stays at the base package so component and
+entity scanning cover each layer.
+
 ## Waluube Case Workflow
 
 The Waluube API contract is documented in [`openapi.yaml`](./openapi.yaml).
