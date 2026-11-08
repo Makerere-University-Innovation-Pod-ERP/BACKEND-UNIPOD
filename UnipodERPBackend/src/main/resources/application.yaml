@@ -39,15 +39,10 @@ server:
     include-message: never
     include-binding-errors: never
     include-stacktrace: never
-  servlet:
-    context-path: /api
-  error:
-    include-message: never
-    include-binding-errors: never
-    include-exception: false
-    include-stacktrace: never
     whitelabel:
       enabled: false
+  servlet:
+    context-path: /api
 
 jwt:
   issuer-uri: ${JWT_ISSUER_URI:}
