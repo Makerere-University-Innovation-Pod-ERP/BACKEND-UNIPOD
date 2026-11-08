@@ -440,26 +440,31 @@ the Docker build context and `Dockerfile` as its Dockerfile path. Select the
 same region as the PostgreSQL instance; set the health-check path to
 `/api/actuator/health`.
 
+The deployed API base URL is `https://backend-unipod.onrender.com/api`.
+The OpenAPI `servers` list includes this production URL and the relative `/api`
+path for local development.
+
 Configure these variables on the Web Service using Render's private PostgreSQL
 connection details (do not use the external database URL):
 
 | Variable | Value |
 | -------- | ----- |
 | `PORT` | `10000` |
-| `JDBC_DATABASE_URL` | `jdbc:postgresql://<internal-host>:5432/<database>` |
+| `JDBC_DATABASE_URL` | `jdbc:postgresql://dpg-dbo6m5nf3r2c73aasfq0-a:5432/unipod_erp` |
 | `DB_USER` | Render database username |
 | `DATABASE_PASSWORD` | Render database password |
 | `JWT_SECRET` | Base64-encoded random secret with at least 32 bytes |
-| `JWT_ISSUER_URI` | The deployed backend's public origin, without `/api` |
+| `JWT_ISSUER_URI` | `https://backend-unipod.onrender.com` |
 | `JWT_AUDIENCE` | `unipod-erp-api` |
 | `BOOTSTRAP_ADMIN_EMAIL` | Initial Administrator email |
 | `BOOTSTRAP_ADMIN_PASSWORD` | Initial password, at least 12 characters |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:3000` for localhost development |
 
-Keep the database inbound rule private for Render-to-Render traffic. The free
-Render PostgreSQL plan expires; upgrade it before using it for persistent
-production data. Add the generated backend URL to the OpenAPI `servers` list
-after Render assigns the URL.
+The database connection above uses the private Render hostname, port `5432`,
+and database `unipod_erp`. Keep the database inbound rule private for
+Render-to-Render traffic. Never commit database credentials or other secrets
+to the repository. The free Render PostgreSQL plan expires; upgrade it before
+using it for persistent production data.
 
 Intake creation and lifecycle operations are restricted to Administrators,
 Innovation Coordinators, Receptionists, and Fact-Finding Officers. Read-only

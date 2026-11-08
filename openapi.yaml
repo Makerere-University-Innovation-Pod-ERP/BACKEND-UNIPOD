@@ -8,8 +8,10 @@ info:
     the pipeline. Student evidence is conditionally required at registration;
     general-public cases must not include student-specific fields.
 servers:
+  - url: https://backend-unipod.onrender.com/api
+    description: Production API on Render
   - url: /api
-    description: API context path
+    description: API context path for local development
 security:
   - bearerAuth: []
 tags:
