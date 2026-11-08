@@ -21,6 +21,8 @@ tags:
     description: Pipeline overview metrics
   - name: Sectors
     description: Sector catalog and routing
+  - name: Case Files
+    description: W4 case file aggregate, controls, stages, outcome, and document review
 paths:
   /submissions:
     post:
@@ -276,6 +278,155 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /cases/{id}:
+    get:
+      tags: [Case Files]
+      operationId: getCaseFileAggregate
+      summary: Get the W4 case file aggregate
+      description: |
+        Available to Administrator, Innovation Coordinator, Fact-Finding
+        Officer, Reviewer, Sector Officer, IP Liaison, Submitter, and Observer.
+        Reviewer and Sector Officer results are row-scoped. Mark's reviewer
+        panel/quorum and David's activity are marked NOT_CONFIGURED until their
+        integration providers are supplied.
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      responses:
+        '200':
+          description: Case aggregate for the case file screen
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaseFileAggregate'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /cases/{id}/capabilities:
+    get:
+      tags: [Case Files]
+      operationId: getCaseFileCapabilities
+      summary: Get enabled state and reason for each case-file control
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      responses:
+        '200':
+          description: Per-control capability state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaseFileCapabilities'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /cases/{id}/transitions/allowed:
+    get:
+      tags: [Case Files]
+      operationId: getAllowedCaseTransitions
+      summary: Get valid next case stages for the actor
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      responses:
+        '200':
+          description: Empty for read-only roles or terminal stages
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AllowedCaseTransitions'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /cases/{id}/transitions:
+    post:
+      tags: [Case Files]
+      operationId: transitionCase
+      summary: Move a case to its next allowed stage
+      description: Only Administrator and Innovation Coordinator may transition cases. Leaving Fact-Finding is coordinator-controlled. The current version is required to reject stale writes.
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaseTransitionRequest'
+      responses:
+        '200':
+          description: Updated case aggregate
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaseFileAggregate'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /cases/{id}/outcome:
+    put:
+      tags: [Case Files]
+      operationId: saveCaseOutcome
+      summary: Save case outcome
+      description: Only Administrator and Innovation Coordinator may save outcomes. Save is rejected with 409 until Mark's configured reviewer quorum is available and met.
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OutcomeUpdateRequest'
+      responses:
+        '200':
+          description: Updated case aggregate
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaseFileAggregate'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /cases/{id}/documents/{documentId}:
+    patch:
+      tags: [Case Files]
+      operationId: updateCaseDocumentStatus
+      summary: Update document verification status
+      description: Only Administrator and Innovation Coordinator may update status. Include the current case version.
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentStatusUpdateRequest'
+      responses:
+        '200':
+          description: Updated case aggregate
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaseFileAggregate'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /submissions/{id}/forward:
     post:
       tags: [Submissions]
@@ -655,10 +806,11 @@ paths:
     get:
       tags: [Dashboard]
       operationId: getDashboardOverview
-      summary: Get pipeline overview metrics
+      summary: Get the role-scoped dashboard composed from workflow and module summaries
+      description: Available to every authenticated role. Operational tiles are visible to all roles; finance data is returned only to Administrators and Innovation Coordinators. Results are cached for 30 seconds. Unconfigured external modules identify their availability rather than returning fabricated metrics.
       responses:
         '200':
-          description: Pipeline counts by stage and category
+          description: Waluube workflow metrics, attention items, and role-visible module tiles
           content:
             application/json:
               schema:
@@ -750,7 +902,13 @@ components:
       enum: [verified, submitted, one_file, not_required]
     SubmissionStage:
       type: string
-      enum: [DRAFT, RECEIVED, FORWARDED, IN_PROGRESS, COMPLETED]
+      enum: [DRAFT, RECEIVED, REGISTERED, FACT_FINDING, UNDER_REVIEW, REFINEMENT_REQUESTED, FURTHER_HANDLING, FORWARDED, IN_PROGRESS, COMPLETED]
+    CaseStage:
+      type: string
+      enum: [RECEIVED, REGISTERED, FACT_FINDING, UNDER_REVIEW, REFINEMENT_REQUESTED, FURTHER_HANDLING, COMPLETED]
+    OutcomeStatus:
+      type: string
+      enum: [NOT_STARTED, IN_PROGRESS, DECIDED]
     DocumentStatus:
       type: string
       enum: [VERIFIED, SUBMITTED, ONE_FILE, NOT_REQUIRED]
@@ -958,7 +1116,7 @@ components:
               format: int64
     CaseStageHistory:
       type: object
-      required: [id, toStage, changedBy, changedAt]
+      required: [id, toStage, changedBy, note, changedAt]
       properties:
         id:
           type: string
@@ -971,6 +1129,8 @@ components:
           $ref: '#/components/schemas/SubmissionStage'
         changedBy:
           type: string
+        note:
+          type: [string, 'null']
         changedAt:
           type: string
           format: date-time
@@ -988,9 +1148,176 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/CaseStageHistory'
+    CaseFileAggregate:
+      type: object
+      required: [submission, currentStage, reference, documents, stageHistory, stepper, outcome, capabilities, transitionOptions, reviewPanel, activity]
+      properties:
+        submission:
+          $ref: '#/components/schemas/Submission'
+        currentStage:
+          oneOf:
+            - $ref: '#/components/schemas/CaseStage'
+            - type: 'null'
+        reference:
+          type: [string, 'null']
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubmissionDocument'
+        stageHistory:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaseStageHistory'
+        stepper:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaseStepperItem'
+        outcome:
+          $ref: '#/components/schemas/CaseOutcome'
+        capabilities:
+          $ref: '#/components/schemas/CaseFileCapabilities'
+        transitionOptions:
+          $ref: '#/components/schemas/AllowedCaseTransitions'
+        reviewPanel:
+          $ref: '#/components/schemas/CaseReviewPanel'
+        activity:
+          $ref: '#/components/schemas/CaseActivity'
+    CaseStepperItem:
+      type: object
+      required: [stage, state]
+      properties:
+        stage:
+          $ref: '#/components/schemas/CaseStage'
+        state:
+          type: string
+          enum: [UPCOMING, CURRENT, COMPLETE]
+    CaseOutcome:
+      type: object
+      required: [status, decision, note, decidedBy, decidedAt]
+      properties:
+        status:
+          $ref: '#/components/schemas/OutcomeStatus'
+        decision:
+          type: [string, 'null']
+        note:
+          type: [string, 'null']
+        decidedBy:
+          type: [string, 'null']
+        decidedAt:
+          type: [string, 'null']
+          format: date-time
+    CaseFileCapabilities:
+      type: object
+      required: [nextStep, saveOutcome, updateDocumentStatus]
+      properties:
+        nextStep:
+          $ref: '#/components/schemas/Capability'
+        saveOutcome:
+          $ref: '#/components/schemas/Capability'
+        updateDocumentStatus:
+          $ref: '#/components/schemas/Capability'
+    Capability:
+      type: object
+      required: [enabled, reason]
+      properties:
+        enabled:
+          type: boolean
+        reason:
+          type: [string, 'null']
+    AllowedCaseTransitions:
+      type: object
+      required: [allowedTransitions]
+      properties:
+        allowedTransitions:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaseStage'
+    CaseReviewPanel:
+      type: object
+      required: [availability, reviewerTeam, ipPanel, quorumAvailable, quorumMet]
+      properties:
+        availability:
+          type: string
+          enum: [AVAILABLE, NOT_CONFIGURED]
+        reviewerTeam:
+          type: array
+          items:
+            type: string
+        ipPanel:
+          type: array
+          items:
+            type: string
+        quorumAvailable:
+          type: boolean
+        quorumMet:
+          type: boolean
+    CaseActivity:
+      type: object
+      required: [availability, items]
+      properties:
+        availability:
+          type: string
+          enum: [AVAILABLE, NOT_CONFIGURED]
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaseActivityItem'
+    CaseActivityItem:
+      type: object
+      required: [occurredAt, actor, action, summary]
+      properties:
+        occurredAt:
+          type: string
+          format: date-time
+        actor:
+          type: string
+        action:
+          type: string
+        summary:
+          type: string
+    CaseTransitionRequest:
+      type: object
+      additionalProperties: false
+      required: [to_stage, version]
+      properties:
+        to_stage:
+          $ref: '#/components/schemas/CaseStage'
+        note:
+          type: [string, 'null']
+          maxLength: 2000
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+    OutcomeUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        decision:
+          type: [string, 'null']
+          maxLength: 120
+        note:
+          type: [string, 'null']
+          maxLength: 5000
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+    DocumentStatusUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [status, version]
+      properties:
+        status:
+          $ref: '#/components/schemas/DocumentStatus'
+        version:
+          type: integer
+          format: int64
+          minimum: 0
     DashboardOverview:
       type: object
-      required: [totalSubmissions, byStage, studentSubmissions, generalSubmissions, awaitingActionCount, forwardedCount, completedCount, recentlyUpdatedCount]
+      required: [totalSubmissions, byStage, studentSubmissions, generalSubmissions, awaitingActionCount, forwardedCount, completedCount, recentlyUpdatedCount, awaitingReviewCount, refinementRequestedCount, pipelineAtAGlance, needsAttention, operations, finance, recentActivity]
       properties:
         totalSubmissions:
           type: integer
@@ -1018,9 +1345,123 @@ components:
         recentlyUpdatedCount:
           type: integer
           format: int64
+        awaitingReviewCount:
+          type: integer
+          format: int64
+          description: Fact-Finding and FORWARDED cases visible to the caller
+        refinementRequestedCount:
+          type: integer
+          format: int64
+        pipelineAtAGlance:
+          type: object
+          description: Six grouped lifecycle counts; intake combines RECEIVED and REGISTERED, Fact-Finding combines FACT_FINDING and FORWARDED, and review combines UNDER_REVIEW and IN_PROGRESS.
+          additionalProperties:
+            type: integer
+            format: int64
+        needsAttention:
+          type: array
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/DashboardAttentionCase'
+        operations:
+          $ref: '#/components/schemas/DashboardOperations'
+        finance:
+          oneOf:
+            - $ref: '#/components/schemas/DashboardFinance'
+            - type: 'null'
+          description: Present only for Administrators and Innovation Coordinators.
+        recentActivity:
+          $ref: '#/components/schemas/DashboardActivityFeed'
+    DashboardAttentionCase:
+      type: object
+      required: [id, title, stage, reason, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: [string, 'null']
+        title:
+          type: string
+        stage:
+          $ref: '#/components/schemas/SubmissionStage'
+        reason:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+    DashboardOperations:
+      type: object
+      required: [availability, reason, equipmentUnderRepair, bookingsToday, facilitiesFreeNow]
+      properties:
+        availability:
+          type: string
+          enum: [AVAILABLE, NOT_CONFIGURED]
+        reason:
+          type: [string, 'null']
+        equipmentUnderRepair:
+          type: [integer, 'null']
+          format: int64
+        bookingsToday:
+          type: [integer, 'null']
+          format: int64
+        facilitiesFreeNow:
+          type: [integer, 'null']
+          format: int64
+    DashboardFinance:
+      type: object
+      required: [availability, reason, incomeMonthToDate, incomeBars]
+      properties:
+        availability:
+          type: string
+          enum: [AVAILABLE, NOT_CONFIGURED]
+        reason:
+          type: [string, 'null']
+        incomeMonthToDate:
+          type: [number, 'null']
+          format: double
+        incomeBars:
+          type: array
+          items:
+            $ref: '#/components/schemas/DashboardIncomeBar'
+    DashboardIncomeBar:
+      type: object
+      required: [period, income]
+      properties:
+        period:
+          type: string
+        income:
+          type: number
+          format: double
+    DashboardActivityFeed:
+      type: object
+      required: [availability, reason, items]
+      properties:
+        availability:
+          type: string
+          enum: [AVAILABLE, NOT_CONFIGURED]
+        reason:
+          type: [string, 'null']
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DashboardActivity'
+    DashboardActivity:
+      type: object
+      required: [occurredAt, actor, action, summary]
+      properties:
+        occurredAt:
+          type: string
+          format: date-time
+        actor:
+          type: string
+        action:
+          type: string
+        summary:
+          type: string
     Submission:
       type: object
-      required: [id, category, title, purpose, problemAddressed, registeredBy, stage, createdAt, updatedAt]
+      required: [id, category, title, purpose, problemAddressed, registeredBy, stage, createdAt, updatedAt, version]
       properties:
         id:
           type: string
@@ -1074,6 +1515,9 @@ components:
         updatedAt:
           type: string
           format: date-time
+        version:
+          type: integer
+          format: int64
     SubmitterCapabilities:
       type: object
       required: [canRegisterSubmission, registrationMessage, lockedModules]

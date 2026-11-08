@@ -13,19 +13,24 @@ group feature-specific classes inside each application layer:
 * `controller.submission`, `service.submission`, `model.submission`,
   `repository.submission`, and `dto.submission` — submission workflow.
 * `controller.reception` and `dto.reception` — reception queue.
-* `controller.dashboard`, `repository.dashboard`, and `dto.dashboard` —
-  dashboard overview.
+* `controller.dashboard`, `service.dashboard`, `repository.dashboard`, and
+  `dto.dashboard` — composed, role-scoped dashboard overview.
 * `controller.sector`, `dto.sector`, `model.sector`, `repository.sector`, and
   `service.sector` — sector catalog and membership.
 * `exception.submission`, `exception.sector`, and `exception.storage` contain
   domain-specific errors; `exception` contains shared API error handling.
 * `service.storage` and `config.storage` — document storage integrations.
+* `model.submission.CaseStage` — the seven W4 case-file stepper stages.
 * `config`, `security`, and `util` — application-wide configuration, security,
   and reusable helpers.
 * Shared types, such as pagination responses, remain directly in `dto`.
 
 The Spring Boot application class stays at the base package so component and
 entity scanning cover each layer.
+
+`config.ClockConfiguration` provides a shared system `Clock` configured for
+`Africa/Kampala`, keeping production timestamps timezone-consistent. Tests can
+inject a fixed clock when deterministic timestamps are required.
 
 ## Waluube Case Workflow
 
@@ -109,6 +114,42 @@ This endpoint returns paginated drafts and queue counters:
 | GET    | `/api/queues/reception`            | Returns the reception queue and counters.               |
 | GET    | `/api/dashboard/overview`          | Returns dashboard statistics.                           |
 
+### W4 Case File
+
+The case-file endpoints provide the aggregate, seven-stage stepper, outcome,
+document status controls, and per-control capability reasons:
+
+| Method | Endpoint | Purpose |
+| ------ | -------- | ------- |
+| GET | `/api/cases/{id}` | Returns the case aggregate, stage history, stepper, outcome, review panel, activity, and capabilities. |
+| GET | `/api/cases/{id}/capabilities` | Returns `enabled` and `reason` for each mutating control. |
+| GET | `/api/cases/{id}/transitions/allowed` | Returns valid next stages for the current actor. |
+| POST | `/api/cases/{id}/transitions` | Moves to `to_stage`, recording an optional note. Requires the current `version`. |
+| PUT | `/api/cases/{id}/outcome` | Saves a decision or progress note. Requires the current `version` and reviewer quorum. |
+| PATCH | `/api/cases/{id}/documents/{docId}` | Updates document status. Requires the current case `version`. |
+
+The seven stepper stages are `RECEIVED`, `REGISTERED`, `FACT_FINDING`,
+`UNDER_REVIEW`, `REFINEMENT_REQUESTED`, `FURTHER_HANDLING`, and `COMPLETED`.
+Stage changes are currently sequential; only Administrators and Innovation
+Coordinators may perform them, including moving a case out of Fact-Finding.
+The source SRS 8.2 transition matrix was not present in this repository, so the
+sequential transition map should be checked against that matrix before treating
+it as authoritative.
+
+Administrators and Innovation Coordinators may update outcomes and document
+statuses. Other permitted case-file readers receive disabled mutation
+capabilities with a reason. Every write includes the current case version;
+stale versions return `409 Conflict`. Outcome writes return `409 Conflict`
+with `Save stays disabled until the configured reviewer quorum is met` unless
+the reviewer-quorum provider is available and reports quorum met.
+
+The Mark reviewer-team/IP-panel/quorum and David activity integrations are not
+configured in this backend. Their aggregate sections explicitly report
+`NOT_CONFIGURED` and return empty data rather than fabricating panel members or
+activity. Replace the default `CaseFileEnrichmentProvider` bean when those
+service contracts are available. Until quorum is configured, saving outcomes
+is intentionally unavailable.
+
 `/api/submissions`, `/api/submissions/search`, and `/api/submissions/mine` are
 paginated. The search endpoint accepts `code`, `page`, and `size`; `page` is
 zero-based, defaults to `0`, and `size` defaults to `25` with a maximum of
@@ -151,12 +192,24 @@ assignments and Sector Officer membership.
 
 `GET /api/dashboard/overview`
 
-Returns:
+The response combines Waluube database metrics with the Operations (Fidel),
+Finance and audit (David) module tiles. Results are cached for 30 seconds and
+workflow aggregates respect each caller's submission visibility scope:
 
-* Total submission count.
-* Submission counts by category.
-* Submission counts by lifecycle stage.
-* Number of submissions updated within the last 14 days.
+* All authenticated roles may view the dashboard and operational tiles.
+* Submitters, reviewers, and sector officers see only workflow cases within
+  their existing row-level visibility scope.
+* Only Administrators and Innovation Coordinators receive the finance tile.
+* Workflow metrics include category totals, awaiting review (Fact-Finding and
+  Forwarded), refinement requested, six grouped pipeline counts, and up to five
+  oldest open cases with an attention reason.
+
+The Operations, Finance, and audit modules are not connected in this backend.
+Their tiles return `NOT_CONFIGURED` with empty metric values until provider
+contracts and endpoints are configured; no external values are fabricated.
+The six pipeline groups combine Received with Registered, Fact-Finding with
+Forwarded, and Under Review with In Progress, followed by Refinement Requested,
+Further Handling, and Completed.
 
 ### Forwarding a Submission
 
@@ -451,7 +504,12 @@ catalog sectors may be selected when forwarding a case.
 
 ## API Error Handling
 
-Errors use RFC 9457 `application/problem+json` responses.
+Errors use RFC 9457 `application/problem+json` responses. This replaces the
+previous custom `ApiErrorResponse` response shape; workflow success responses
+are unchanged by the error-format refactor.
+
+Problem responses include `type`, `title`, `status`, and `detail`. Unexpected
+server errors also include a safe `reference` support ID.
 
 Client errors include a safe summary describing the problem.
 

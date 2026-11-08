@@ -11,6 +11,7 @@ import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.unipod.unipoderpbackend.exception.sector.SectorConflictException;
 import org.unipod.unipoderpbackend.exception.storage.StorageObjectNotFoundException;
 import org.unipod.unipoderpbackend.exception.submission.InvalidSubmissionException;
+import org.unipod.unipoderpbackend.exception.submission.SubmissionConflictException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -63,6 +64,22 @@ class ApiExceptionHandlerTest {
         assertEquals("Submission details are invalid or incomplete.", response.getBody().getDetail());
         assertFalse(response.getBody().getDetail().contains("SQL details"));
         assertFalse(response.getBody().getDetail().contains("implementation path"));
+    }
+
+    @Test
+    void submissionConflictsPreserveActionableBusinessReason() {
+        ResponseEntity<ProblemDetail> response = handler.handleConflict(
+                new SubmissionConflictException(
+                        "Save stays disabled until the configured reviewer quorum is met"
+                )
+        );
+
+        assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(
+                "Save stays disabled until the configured reviewer quorum is met",
+                response.getBody().getDetail()
+        );
     }
 
     @Test

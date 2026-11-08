@@ -99,6 +99,10 @@ public class SubmissionDocument {
         return status;
     }
 
+    public void updateStatus(DocumentStatus status) {
+        this.status = status;
+    }
+
     public String getFileReference() {
         return fileReference;
     }

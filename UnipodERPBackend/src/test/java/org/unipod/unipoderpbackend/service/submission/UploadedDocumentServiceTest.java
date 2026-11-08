@@ -1,7 +1,9 @@
 package org.unipod.unipoderpbackend.service.submission;
 
 import java.io.ByteArrayInputStream;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,8 +21,10 @@ import org.unipod.unipoderpbackend.repository.submission.SubmissionDocumentRepos
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
 import org.unipod.unipoderpbackend.service.storage.S3DocumentStorage;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -28,17 +32,19 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class UploadedDocumentServiceTest {
+    private static final Instant FIXED_TIME = Instant.parse("2026-03-10T09:30:00Z");
     private final SubmissionRepository submissions = mock(SubmissionRepository.class);
     private final SubmissionDocumentRepository documents = mock(SubmissionDocumentRepository.class);
     private final S3DocumentStorage storage = mock(S3DocumentStorage.class);
     private final PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+    private final Clock clock = Clock.fixed(FIXED_TIME, ZoneId.of("Africa/Kampala"));
     private UploadedDocumentService service;
 
     @BeforeEach
     void setUp() {
         when(transactionManager.getTransaction(any())).thenReturn(mock(TransactionStatus.class));
         service = new UploadedDocumentService(
-                submissions, documents, storage, transactionManager, 10_000
+                submissions, documents, storage, clock, transactionManager, 10_000
         );
     }
 
@@ -71,6 +77,24 @@ class UploadedDocumentServiceTest {
         ));
 
         verify(storage).delete("opaque-object");
+    }
+
+    @Test
+    void uploadUsesConfiguredClockForSubmissionAndDocumentTimestamps() throws Exception {
+        UUID id = UUID.randomUUID();
+        Submission submission = new Submission(
+                id, SubmissionCategory.GENERAL, "Title", "Purpose", "Problem",
+                "actor", null, null, null, null, Instant.parse("2026-03-01T00:00:00Z")
+        );
+        when(submissions.findByIdForUpdate(id)).thenReturn(Optional.of(submission));
+        when(storage.upload(any())).thenReturn("opaque-object");
+        when(documents.saveAndFlush(any(SubmissionDocument.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.upload(id, "brief", DocumentStatus.SUBMITTED, file(), "actor");
+
+        assertEquals(FIXED_TIME, submission.getUpdatedAt());
+        verify(documents).saveAndFlush(argThat(document -> FIXED_TIME.equals(document.getCreatedAt())));
     }
 
     @Test

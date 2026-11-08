@@ -30,6 +30,9 @@ public class CaseStageHistory {
     @Column(name = "changed_by", nullable = false)
     private String changedBy;
 
+    @Column(columnDefinition = "text")
+    private String note;
+
     @Column(name = "changed_at", nullable = false)
     private Instant changedAt;
 
@@ -44,11 +47,24 @@ public class CaseStageHistory {
             String changedBy,
             Instant changedAt
     ) {
+        this(id, submissionId, fromStage, toStage, changedBy, null, changedAt);
+    }
+
+    public CaseStageHistory(
+            UUID id,
+            UUID submissionId,
+            SubmissionStage fromStage,
+            SubmissionStage toStage,
+            String changedBy,
+            String note,
+            Instant changedAt
+    ) {
         this.id = id;
         this.submissionId = submissionId;
         this.fromStage = fromStage;
         this.toStage = toStage;
         this.changedBy = changedBy;
+        this.note = note;
         this.changedAt = changedAt;
     }
 
@@ -70,6 +86,10 @@ public class CaseStageHistory {
 
     public String getChangedBy() {
         return changedBy;
+    }
+
+    public String getNote() {
+        return note;
     }
 
     public Instant getChangedAt() {
