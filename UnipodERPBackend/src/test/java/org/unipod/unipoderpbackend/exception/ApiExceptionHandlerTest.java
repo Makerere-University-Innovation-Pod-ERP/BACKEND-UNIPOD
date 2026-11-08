@@ -1,6 +1,6 @@
 package org.unipod.unipoderpbackend.exception;
 
-import org.unipod.unipoderpbackend.exception.submission.InvalidSubmissionException;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -8,8 +8,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
-
-import java.util.List;
+import org.unipod.unipoderpbackend.exception.sector.SectorConflictException;
+import org.unipod.unipoderpbackend.exception.storage.StorageObjectNotFoundException;
+import org.unipod.unipoderpbackend.exception.submission.InvalidSubmissionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -73,5 +74,26 @@ class ApiExceptionHandlerTest {
 
         assertEquals(HttpStatus.METHOD_NOT_ALLOWED, response.getStatusCode());
         assertEquals("GET, POST", response.getHeaders().getFirst("Allow"));
+    }
+
+    @Test
+    void sectorConflictReturnsSafeConflictEnvelope() {
+        ResponseEntity<ProblemDetail> response = handler.handleSectorConflict(new SectorConflictException());
+
+        assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
+        assertEquals("Sector conflict", response.getBody().getTitle());
+        assertEquals(
+                "The sector was changed by another request or conflicts with an existing name.",
+                response.getBody().getDetail()
+        );
+    }
+
+    @Test
+    void missingDocumentReturnsSafeNotFoundEnvelope() {
+        ResponseEntity<ProblemDetail> response = handler.handleDocumentNotFound(new StorageObjectNotFoundException());
+
+        assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
+        assertEquals("Document not found", response.getBody().getTitle());
+        assertEquals("The requested document was not found.", response.getBody().getDetail());
     }
 }

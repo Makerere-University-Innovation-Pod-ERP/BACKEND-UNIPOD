@@ -1,5 +1,16 @@
 package org.unipod.unipoderpbackend.service.submission;
 
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.util.List;
+import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.unipod.unipoderpbackend.dto.dashboard.DashboardOverviewResponse;
 import org.unipod.unipoderpbackend.dto.reception.ReceptionQueueResponse;
 import org.unipod.unipoderpbackend.dto.submission.CaseFileResponse;
@@ -8,8 +19,10 @@ import org.unipod.unipoderpbackend.dto.submission.CreateDocumentRequest;
 import org.unipod.unipoderpbackend.dto.submission.CreateSubmissionRequest;
 import org.unipod.unipoderpbackend.dto.submission.DocumentResponse;
 import org.unipod.unipoderpbackend.dto.submission.SubmissionResponse;
+import org.unipod.unipoderpbackend.dto.submission.SubmitterSubmissionResponse;
 import org.unipod.unipoderpbackend.exception.submission.InvalidSubmissionException;
 import org.unipod.unipoderpbackend.exception.submission.SubmissionNotFoundException;
+import org.unipod.unipoderpbackend.model.sector.Sector;
 import org.unipod.unipoderpbackend.model.submission.CaseStageHistory;
 import org.unipod.unipoderpbackend.model.submission.Submission;
 import org.unipod.unipoderpbackend.model.submission.SubmissionCategory;
@@ -20,20 +33,8 @@ import org.unipod.unipoderpbackend.repository.submission.CaseStageHistoryReposit
 import org.unipod.unipoderpbackend.repository.submission.NotificationOutbox;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionDocumentRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
+import org.unipod.unipoderpbackend.service.sector.SectorService;
 import org.unipod.unipoderpbackend.util.CaseCodeGenerator;
-
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.time.Clock;
-import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneId;
-import java.util.List;
-import java.util.UUID;
 
 @Service
 public class SubmissionService {
@@ -45,6 +46,7 @@ public class SubmissionService {
     private final SubmissionDocumentRepository documents;
     private final NotificationOutbox notificationOutbox;
     private final PipelineMetricsRepository metrics;
+    private final SectorService sectorsCatalog;
     private final Clock clock;
 
     @Autowired
@@ -55,6 +57,7 @@ public class SubmissionService {
             SubmissionDocumentRepository documents,
             NotificationOutbox notificationOutbox,
             PipelineMetricsRepository metrics,
+            SectorService sectorsCatalog,
             Clock clock
     ) {
         this.submissions = submissions;
@@ -63,6 +66,7 @@ public class SubmissionService {
         this.documents = documents;
         this.notificationOutbox = notificationOutbox;
         this.metrics = metrics;
+        this.sectorsCatalog = sectorsCatalog;
         this.clock = clock;
     }
 
@@ -82,6 +86,9 @@ public class SubmissionService {
                 request.purpose().trim(),
                 request.problemAddressed().trim(),
                 actor,
+                request.submitterId() == null || request.submitterId().isBlank()
+                        ? actor
+                        : request.submitterId().trim(),
                 clean(request.studentNumber()),
                 clean(request.programme()),
                 clean(request.supervisor()),
@@ -124,9 +131,10 @@ public class SubmissionService {
     public SubmissionResponse forward(UUID id, UUID sectorId, String actor) {
         Submission submission = submissions.findByIdForUpdate(id)
                 .orElseThrow(() -> new SubmissionNotFoundException(id));
+        Sector sector = sectorsCatalog.requireActive(sectorId);
         Instant now = clock.instant();
         SubmissionStage previousStage = submission.getStage();
-        submission.forward(sectorId, now);
+        submission.forward(sector, now);
         stageHistory.save(new CaseStageHistory(
                 UUID.randomUUID(),
                 submission.getId(),
@@ -135,13 +143,16 @@ public class SubmissionService {
                 actor,
                 now
         ));
-        notificationOutbox.recordForwarded(
+        notificationOutbox.recordForwarded(new NotificationOutbox.ForwardedNotification(
                 submission.getId(),
                 sectorId,
+                sector.getName(),
+                sector.getNotificationEmail(),
+                submission.getTitle(),
                 submission.getCode(),
                 actor,
                 now
-        );
+        ));
         return SubmissionResponse.from(submission);
     }
 
@@ -191,9 +202,82 @@ public class SubmissionService {
     }
 
     @Transactional(readOnly = true)
+    public Page<SubmissionResponse> search(
+            SubmissionCategory category,
+            SubmissionStage stage,
+            UUID sectorId,
+            String query,
+            Pageable pageable,
+            org.springframework.security.core.Authentication authentication
+    ) {
+        String scope = SubmissionVisibility.scope(authentication);
+        return submissions.searchVisible(
+                category,
+                stage,
+                sectorId,
+                query == null ? null : escapeLike(clean(query)),
+                scope,
+                authentication.getName(),
+                pageable
+        ).map(SubmissionResponse::from);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<SubmissionResponse> searchByCodeOrTitle(
+            String query,
+            Pageable pageable,
+            org.springframework.security.core.Authentication authentication
+    ) {
+        if (query == null || query.isBlank()) {
+            throw new InvalidSubmissionException("The search code is required.");
+        }
+        String scope = SubmissionVisibility.scope(authentication);
+        String principal = authentication.getName();
+        Submission exact = submissions.findVisibleByCode(query.trim(), scope, principal).orElse(null);
+        if (exact != null) {
+            if (pageable.getOffset() > 0) {
+                return new org.springframework.data.domain.PageImpl<>(
+                        List.of(), pageable, 1
+                );
+            }
+            return new org.springframework.data.domain.PageImpl<>(
+                    List.of(SubmissionResponse.from(exact)),
+                    pageable,
+                    1
+            );
+        }
+        return submissions.searchVisible(
+                null, null, null, escapeLike(query.trim()), scope, principal, pageable
+        ).map(SubmissionResponse::from);
+    }
+
+    @Transactional
+    public SubmissionResponse assignReviewer(UUID id, String subject) {
+        Submission submission = submissions.findByIdForUpdate(id)
+                .orElseThrow(() -> new SubmissionNotFoundException(id));
+        submission.assignReviewer(subject, clock.instant());
+        return SubmissionResponse.from(submission);
+    }
+
+    private static String escapeLike(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value.replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
+    }
+
+    @Transactional(readOnly = true)
     public Page<SubmissionResponse> mine(String actor, Pageable pageable) {
         return submissions.findAllByRegisteredByOrderByUpdatedAtDescIdAsc(actor, pageable)
                 .map(SubmissionResponse::from);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<SubmitterSubmissionResponse> forSubmitter(String submitterId, Pageable pageable) {
+        return submissions.findAllBySubmitterIdOrderByUpdatedAtDescIdAsc(submitterId, pageable)
+                .map(SubmitterSubmissionResponse::from);
     }
 
     @Transactional(readOnly = true)

@@ -1,18 +1,20 @@
 package org.unipod.unipoderpbackend.model.submission;
 
-import org.unipod.unipoderpbackend.exception.submission.InvalidSubmissionException;
-import org.unipod.unipoderpbackend.exception.submission.SubmissionConflictException;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
-
 import java.time.Instant;
 import java.util.UUID;
+import org.unipod.unipoderpbackend.exception.submission.InvalidSubmissionException;
+import org.unipod.unipoderpbackend.exception.submission.SubmissionConflictException;
+import org.unipod.unipoderpbackend.model.sector.Sector;
 
 @Entity
 @Table(name = "submissions")
@@ -39,8 +41,14 @@ public class Submission {
     @Column(name = "registered_by", nullable = false)
     private String registeredBy;
 
+    @Column(name = "submitter_id", nullable = false)
+    private String submitterId;
+
     @Column(name = "receiving_officer")
     private String receivingOfficer;
+
+    @Column(name = "assigned_reviewer_subject")
+    private String assignedReviewerSubject;
 
     @Column(name = "student_number", length = 80)
     private String studentNumber;
@@ -57,6 +65,10 @@ public class Submission {
 
     @Column(name = "responsible_sector_id")
     private UUID responsibleSectorId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "responsible_sector_id", insertable = false, updatable = false)
+    private Sector responsibleSector;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
@@ -88,6 +100,7 @@ public class Submission {
             String purpose,
             String problemAddressed,
             String registeredBy,
+            String submitterId,
             String studentNumber,
             String programme,
             String supervisor,
@@ -100,6 +113,7 @@ public class Submission {
         this.purpose = purpose;
         this.problemAddressed = problemAddressed;
         this.registeredBy = registeredBy;
+        this.submitterId = submitterId;
         this.studentNumber = studentNumber;
         this.programme = programme;
         this.supervisor = supervisor;
@@ -107,6 +121,23 @@ public class Submission {
         this.stage = SubmissionStage.DRAFT;
         this.createdAt = createdAt;
         this.updatedAt = createdAt;
+    }
+
+    public Submission(
+            UUID id,
+            SubmissionCategory category,
+            String title,
+            String purpose,
+            String problemAddressed,
+            String registeredBy,
+            String studentNumber,
+            String programme,
+            String supervisor,
+            RecommendationLetterStatus recommendationLetterStatus,
+            Instant createdAt
+    ) {
+        this(id, category, title, purpose, problemAddressed, registeredBy, registeredBy,
+                studentNumber, programme, supervisor, recommendationLetterStatus, createdAt);
     }
 
     public void register(String caseCode, Instant time, String officer) {
@@ -127,14 +158,15 @@ public class Submission {
         this.updatedAt = time;
     }
 
-    public void forward(UUID sectorId, Instant time) {
+    public void forward(Sector sector, Instant time) {
         if (stage != SubmissionStage.RECEIVED) {
             throw new SubmissionConflictException("Only received submissions can be forwarded.");
         }
-        if (sectorId == null) {
+        if (sector == null) {
             throw new InvalidSubmissionException("A sector is required to forward a submission.");
         }
-        this.responsibleSectorId = sectorId;
+        this.responsibleSectorId = sector.getId();
+        this.responsibleSector = sector;
         this.forwardedAt = time;
         this.stage = SubmissionStage.FORWARDED;
         this.updatedAt = time;
@@ -187,8 +219,21 @@ public class Submission {
         return registeredBy;
     }
 
+    public String getSubmitterId() {
+        return submitterId;
+    }
+
     public String getReceivingOfficer() {
         return receivingOfficer;
+    }
+
+    public String getAssignedReviewerSubject() {
+        return assignedReviewerSubject;
+    }
+
+    public void assignReviewer(String subject, Instant time) {
+        this.assignedReviewerSubject = subject == null || subject.isBlank() ? null : subject.trim();
+        this.updatedAt = time;
     }
 
     public String getStudentNumber() {
@@ -209,6 +254,10 @@ public class Submission {
 
     public UUID getResponsibleSectorId() {
         return responsibleSectorId;
+    }
+
+    public String getResponsibleSectorName() {
+        return responsibleSector == null ? null : responsibleSector.getName();
     }
 
     public SubmissionStage getStage() {

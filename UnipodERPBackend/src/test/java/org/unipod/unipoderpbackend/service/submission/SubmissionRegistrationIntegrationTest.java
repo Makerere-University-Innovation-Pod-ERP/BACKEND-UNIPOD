@@ -1,11 +1,26 @@
 package org.unipod.unipoderpbackend.service.submission;
 
+import java.time.ZoneId;
+import java.util.HashSet;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+import org.unipod.unipoderpbackend.dto.dashboard.DashboardOverviewResponse;
+import org.unipod.unipoderpbackend.dto.reception.ReceptionQueueResponse;
+import org.unipod.unipoderpbackend.dto.sector.SectorRequest;
+import org.unipod.unipoderpbackend.dto.sector.SectorResponse;
 import org.unipod.unipoderpbackend.dto.submission.CaseFileResponse;
 import org.unipod.unipoderpbackend.dto.submission.CreateDocumentRequest;
 import org.unipod.unipoderpbackend.dto.submission.CreateSubmissionRequest;
-import org.unipod.unipoderpbackend.dto.dashboard.DashboardOverviewResponse;
 import org.unipod.unipoderpbackend.dto.submission.DocumentResponse;
-import org.unipod.unipoderpbackend.dto.reception.ReceptionQueueResponse;
 import org.unipod.unipoderpbackend.dto.submission.SubmissionResponse;
 import org.unipod.unipoderpbackend.exception.submission.InvalidSubmissionException;
 import org.unipod.unipoderpbackend.exception.submission.SubmissionConflictException;
@@ -14,22 +29,8 @@ import org.unipod.unipoderpbackend.model.submission.RecommendationLetterStatus;
 import org.unipod.unipoderpbackend.model.submission.SubmissionCategory;
 import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
 import org.unipod.unipoderpbackend.repository.submission.CaseStageHistoryRepository;
+import org.unipod.unipoderpbackend.service.sector.SectorService;
 import org.unipod.unipoderpbackend.util.CaseCodeGenerator;
-
-import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.time.ZoneId;
-import java.util.HashSet;
-import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -51,6 +52,9 @@ class SubmissionRegistrationIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private SectorService sectors;
 
     @Test
     void createsDraftAndRegistersStudentWithCaseCodeAndHistory() {
@@ -171,9 +175,14 @@ class SubmissionRegistrationIntegrationTest {
                 "receptionist-1"
         );
         submissions.register(draft.id(), "receptionist-2");
+        SectorResponse sector = sectors.create(new SectorRequest(
+                "Integration test sector",
+                "sector@example.invalid",
+                true
+        ));
         var forwarded = submissions.forward(
                 draft.id(),
-                java.util.UUID.randomUUID(),
+                sector.id(),
                 "receptionist-2"
         );
 
@@ -184,6 +193,14 @@ class SubmissionRegistrationIntegrationTest {
                 draft.id(),
                 "submission.forwarded"
         ));
+        assertEquals(
+                "sector@example.invalid",
+                jdbcTemplate.queryForObject(
+                        "SELECT payload ->> 'notificationEmail' FROM notification_outbox WHERE aggregate_id = ?",
+                        String.class,
+                        draft.id()
+                )
+        );
 
         submissions.advance(draft.id(), SubmissionStage.IN_PROGRESS, "coordinator-1");
         SubmissionResponse completed = submissions.advance(

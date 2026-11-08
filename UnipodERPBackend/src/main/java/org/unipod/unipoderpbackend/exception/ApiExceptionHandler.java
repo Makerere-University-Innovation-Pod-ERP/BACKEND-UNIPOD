@@ -1,12 +1,13 @@
 package org.unipod.unipoderpbackend.exception;
 
-import org.unipod.unipoderpbackend.exception.submission.InvalidSubmissionException;
-import org.unipod.unipoderpbackend.exception.submission.SubmissionConflictException;
-import org.unipod.unipoderpbackend.exception.submission.SubmissionNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
+import java.util.UUID;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
@@ -22,11 +23,15 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
-
-import java.util.UUID;
-import java.util.regex.Pattern;
+import org.unipod.unipoderpbackend.exception.sector.SectorConflictException;
+import org.unipod.unipoderpbackend.exception.sector.SectorNotFoundException;
+import org.unipod.unipoderpbackend.exception.storage.StorageObjectNotFoundException;
+import org.unipod.unipoderpbackend.exception.submission.InvalidSubmissionException;
+import org.unipod.unipoderpbackend.exception.submission.SubmissionConflictException;
+import org.unipod.unipoderpbackend.exception.submission.SubmissionNotFoundException;
 
 /**
  * Translates every exception into a consistent RFC 9457 problem envelope.
@@ -37,6 +42,7 @@ import java.util.regex.Pattern;
  * logs.</p>
  */
 @RestControllerAdvice
+@Order(Ordered.HIGHEST_PRECEDENCE)
 public class ApiExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
     private static final Pattern SAFE_REFERENCE = Pattern.compile("[A-Za-z0-9-]{1,64}");
@@ -59,6 +65,11 @@ public class ApiExceptionHandler {
         );
     }
 
+    @ExceptionHandler(SectorConflictException.class)
+    ResponseEntity<ProblemDetail> handleSectorConflict(SectorConflictException exception) {
+        return problem(HttpStatus.CONFLICT, "Sector conflict", "The sector was changed by another request or conflicts with an existing name.");
+    }
+
     @ExceptionHandler(SubmissionNotFoundException.class)
     ResponseEntity<ProblemDetail> handleNotFound(SubmissionNotFoundException exception) {
         return problem(
@@ -66,6 +77,21 @@ public class ApiExceptionHandler {
                 "Submission not found",
                 "The requested submission was not found."
         );
+    }
+
+    @ExceptionHandler(SectorNotFoundException.class)
+    ResponseEntity<ProblemDetail> handleSectorNotFound(SectorNotFoundException exception) {
+        return problem(HttpStatus.NOT_FOUND, "Sector not found", "The requested sector was not found or is inactive.");
+    }
+
+    @ExceptionHandler(StorageObjectNotFoundException.class)
+    ResponseEntity<ProblemDetail> handleDocumentNotFound(StorageObjectNotFoundException exception) {
+        return problem(HttpStatus.NOT_FOUND, "Document not found", "The requested document was not found.");
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    ResponseEntity<ProblemDetail> handleMaxUploadSize(MaxUploadSizeExceededException exception) {
+        return problem(HttpStatus.PAYLOAD_TOO_LARGE, "Upload too large", "The uploaded file exceeds the allowed size.");
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
