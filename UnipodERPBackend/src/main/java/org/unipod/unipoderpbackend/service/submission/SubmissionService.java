@@ -124,6 +124,7 @@ public class SubmissionService {
                 actor,
                 receivedAt
         ));
+        submissions.flush();
         return SubmissionResponse.from(submission);
     }
 
@@ -153,6 +154,7 @@ public class SubmissionService {
                 actor,
                 now
         ));
+        submissions.flush();
         return SubmissionResponse.from(submission);
     }
 
@@ -171,6 +173,7 @@ public class SubmissionService {
                 actor,
                 now
         ));
+        submissions.flush();
         return SubmissionResponse.from(submission);
     }
 

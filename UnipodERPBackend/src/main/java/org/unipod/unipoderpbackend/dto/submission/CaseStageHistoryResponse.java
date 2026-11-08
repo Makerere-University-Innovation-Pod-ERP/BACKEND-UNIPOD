@@ -11,6 +11,7 @@ public record CaseStageHistoryResponse(
         SubmissionStage fromStage,
         SubmissionStage toStage,
         String changedBy,
+        String note,
         Instant changedAt
 ) {
     public static CaseStageHistoryResponse from(CaseStageHistory entry) {
@@ -19,6 +20,7 @@ public record CaseStageHistoryResponse(
                 entry.getFromStage(),
                 entry.getToStage(),
                 entry.getChangedBy(),
+                entry.getNote(),
                 entry.getChangedAt()
         );
     }

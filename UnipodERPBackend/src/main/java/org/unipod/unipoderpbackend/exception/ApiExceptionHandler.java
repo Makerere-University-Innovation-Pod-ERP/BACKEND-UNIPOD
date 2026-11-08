@@ -61,7 +61,7 @@ public class ApiExceptionHandler {
         return problem(
                 HttpStatus.CONFLICT,
                 "Submission conflict",
-                "The submission cannot be changed in its current state."
+                exception.getMessage()
         );
     }
 

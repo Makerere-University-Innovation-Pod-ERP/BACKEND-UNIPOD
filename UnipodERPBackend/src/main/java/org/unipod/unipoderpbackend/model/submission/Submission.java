@@ -80,6 +80,22 @@ public class Submission {
     @Column(name = "forwarded_at")
     private Instant forwardedAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "outcome_status", nullable = false, length = 24)
+    private OutcomeStatus outcomeStatus = OutcomeStatus.NOT_STARTED;
+
+    @Column(name = "outcome_decision", length = 120)
+    private String outcomeDecision;
+
+    @Column(name = "outcome_note", columnDefinition = "text")
+    private String outcomeNote;
+
+    @Column(name = "outcome_decided_by")
+    private String outcomeDecidedBy;
+
+    @Column(name = "outcome_decided_at")
+    private Instant outcomeDecidedAt;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -184,6 +200,37 @@ public class Submission {
         this.updatedAt = time;
     }
 
+    public void transitionTo(SubmissionStage nextStage, Instant time) {
+        boolean validTransition = switch (stage) {
+            case RECEIVED -> nextStage == SubmissionStage.REGISTERED;
+            case REGISTERED -> nextStage == SubmissionStage.FACT_FINDING;
+            case FACT_FINDING, FORWARDED -> nextStage == SubmissionStage.UNDER_REVIEW;
+            case UNDER_REVIEW, IN_PROGRESS -> nextStage == SubmissionStage.REFINEMENT_REQUESTED;
+            case REFINEMENT_REQUESTED -> nextStage == SubmissionStage.FURTHER_HANDLING;
+            case FURTHER_HANDLING -> nextStage == SubmissionStage.COMPLETED;
+            default -> false;
+        };
+        if (!validTransition) {
+            throw new SubmissionConflictException("The requested lifecycle transition is not allowed.");
+        }
+        this.stage = nextStage;
+        this.updatedAt = time;
+    }
+
+    public void saveOutcome(String decision, String note, String actor, Instant time) {
+        if (stage == SubmissionStage.DRAFT || stage == SubmissionStage.COMPLETED) {
+            throw new SubmissionConflictException("The outcome cannot be changed in the current case stage.");
+        }
+        this.outcomeDecision = clean(decision);
+        this.outcomeNote = clean(note);
+        this.outcomeStatus = this.outcomeDecision == null
+                ? OutcomeStatus.IN_PROGRESS
+                : OutcomeStatus.DECIDED;
+        this.outcomeDecidedBy = this.outcomeStatus == OutcomeStatus.DECIDED ? actor : null;
+        this.outcomeDecidedAt = this.outcomeStatus == OutcomeStatus.DECIDED ? time : null;
+        this.updatedAt = time;
+    }
+
     public void touch(Instant time) {
         if (stage == SubmissionStage.COMPLETED) {
             throw new SubmissionConflictException("Completed submissions cannot be changed.");
@@ -272,6 +319,30 @@ public class Submission {
         return forwardedAt;
     }
 
+    public OutcomeStatus getOutcomeStatus() {
+        return outcomeStatus;
+    }
+
+    public String getOutcomeDecision() {
+        return outcomeDecision;
+    }
+
+    public String getOutcomeNote() {
+        return outcomeNote;
+    }
+
+    public String getOutcomeDecidedBy() {
+        return outcomeDecidedBy;
+    }
+
+    public Instant getOutcomeDecidedAt() {
+        return outcomeDecidedAt;
+    }
+
+    public Long getVersion() {
+        return version;
+    }
+
     public Instant getCreatedAt() {
         return createdAt;
     }
@@ -282,5 +353,9 @@ public class Submission {
 
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private static String clean(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 }

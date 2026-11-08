@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -223,6 +224,115 @@ class WaluubeApiIntegrationTest {
         mockMvc.perform(get("/dashboard/overview").with(receptionist))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalSubmissions").isNumber());
+    }
+
+    @Test
+    void caseFileEndpointsExposeAggregateAndEnforceVersionedWrites() throws Exception {
+        String actor = "case-file-" + UUID.randomUUID();
+        String submitter = "submitter-" + actor;
+        var receptionist = user(actor).roles("RECEPTIONIST");
+        String created = mockMvc.perform(post("/submissions")
+                        .with(receptionist)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "category": "general",
+                                  "title": "Case file API test",
+                                  "purpose": "Verify the W4 case file",
+                                  "problemAddressed": "The aggregate and writes need HTTP coverage",
+                                  "submitterId": "%s"
+                                }
+                                """.formatted(submitter)))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        Matcher idMatcher = Pattern.compile("\"id\":\"([^\"]+)\"").matcher(created);
+        assertTrue(idMatcher.find(), "Create response should include the submission id.");
+        String id = idMatcher.group(1);
+
+        mockMvc.perform(post("/submissions/{id}/register", id).with(receptionist))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(1));
+        String document = mockMvc.perform(post("/submissions/{id}/documents", id)
+                        .with(receptionist)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "Case file brief",
+                                  "status": "SUBMITTED",
+                                  "fileReference": "case_file_brief"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        Matcher documentIdMatcher = Pattern.compile("\"id\":\"([^\"]+)\"").matcher(document);
+        assertTrue(documentIdMatcher.find(), "Document response should include its id.");
+        String documentId = documentIdMatcher.group(1);
+
+        mockMvc.perform(get("/cases/{id}", id).with(user(submitter).roles("SUBMITTER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentStage").value("RECEIVED"))
+                .andExpect(jsonPath("$.stepper.length()").value(7))
+                .andExpect(jsonPath("$.outcome.status").value("NOT_STARTED"))
+                .andExpect(jsonPath("$.reviewPanel.availability").value("NOT_CONFIGURED"))
+                .andExpect(jsonPath("$.activity.availability").value("NOT_CONFIGURED"))
+                .andExpect(jsonPath("$.capabilities.nextStep.enabled").value(false));
+        mockMvc.perform(get("/cases/{id}/capabilities", id)
+                        .with(user(submitter).roles("SUBMITTER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.saveOutcome.enabled").value(false))
+                .andExpect(jsonPath("$.saveOutcome.reason").isNotEmpty());
+        mockMvc.perform(get("/cases/{id}/transitions/allowed", id)
+                        .with(user(submitter).roles("SUBMITTER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.allowedTransitions").isEmpty());
+
+        mockMvc.perform(get("/cases/{id}/transitions/allowed", id)
+                        .with(user("coordinator").roles("INNOVATION_COORDINATOR")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.allowedTransitions[0]").value("REGISTERED"));
+        mockMvc.perform(post("/cases/{id}/transitions", id)
+                        .with(user("officer").roles("FACT_FINDING_OFFICER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"to_stage":"REGISTERED","version":2}
+                                """))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/cases/{id}/transitions", id)
+                        .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"to_stage":"REGISTERED","note":"Intake checked","version":2}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentStage").value("REGISTERED"))
+                .andExpect(jsonPath("$.submission.version").value(3))
+                .andExpect(jsonPath("$.stageHistory[-1:].note").value("Intake checked"));
+
+        mockMvc.perform(patch("/cases/{id}/documents/{documentId}", id, documentId)
+                        .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"status":"VERIFIED","version":3}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.documents[0].status").value("VERIFIED"))
+                .andExpect(jsonPath("$.submission.version").value(4));
+
+        mockMvc.perform(put("/cases/{id}/outcome", id)
+                        .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"decision":"Approve","note":"Panel review complete","version":4}
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value(
+                        "Save stays disabled until the configured reviewer quorum is met"
+                ));
     }
 
     @Test

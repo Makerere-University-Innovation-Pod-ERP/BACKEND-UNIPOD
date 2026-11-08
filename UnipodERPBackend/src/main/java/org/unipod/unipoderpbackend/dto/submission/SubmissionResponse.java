@@ -28,7 +28,8 @@ public record SubmissionResponse(
         Instant receivedAt,
         Instant forwardedAt,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        Long version
 ) {
     public static SubmissionResponse from(Submission submission) {
         return new SubmissionResponse(
@@ -52,7 +53,8 @@ public record SubmissionResponse(
                 submission.getReceivedAt(),
                 submission.getForwardedAt(),
                 submission.getCreatedAt(),
-                submission.getUpdatedAt()
+                submission.getUpdatedAt(),
+                submission.getVersion()
         );
     }
 }

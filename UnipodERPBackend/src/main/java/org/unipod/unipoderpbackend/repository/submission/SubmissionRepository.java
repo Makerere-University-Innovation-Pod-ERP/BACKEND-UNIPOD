@@ -25,6 +25,29 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
     Optional<Submission> findById(UUID id);
 
     @EntityGraph(attributePaths = "responsibleSector")
+    @Query("""
+            select submission
+            from Submission submission
+            where submission.id = :id
+              and (
+                  :scope = 'ALL'
+                  or (:scope = 'SUBMITTER' and submission.submitterId = :principal)
+                  or (:scope in ('REVIEWER', 'REVIEWER_OR_SECTOR_OFFICER')
+                      and submission.assignedReviewerSubject = :principal)
+                  or (:scope in ('SECTOR_OFFICER', 'REVIEWER_OR_SECTOR_OFFICER') and exists (
+                      select sectorMember.id from SectorMember sectorMember
+                      where sectorMember.sectorId = submission.responsibleSectorId
+                        and sectorMember.subject = :principal
+                  ))
+              )
+            """)
+    Optional<Submission> findVisibleById(
+            @Param("id") UUID id,
+            @Param("scope") String scope,
+            @Param("principal") String principal
+    );
+
+    @EntityGraph(attributePaths = "responsibleSector")
     Page<Submission> findAllByOrderByUpdatedAtDescIdAsc(Pageable pageable);
 
     @EntityGraph(attributePaths = "responsibleSector")
