@@ -63,16 +63,23 @@ spring:
     out-of-order: false
 
 server:
-  port: ${SERVER_PORT:8080}
+  port: ${PORT:${SERVER_PORT:8080}}
   error:
     include-exception: false
     include-message: never
 
 jwt:
-  issuer-uri: ${JWT_ISSUER_URI:}
-  audience: ${JWT_AUDIENCE:}
+  issuer-uri: ${JWT_ISSUER_URI:http://localhost:8080}
+  audience: ${JWT_AUDIENCE:unipod-erp-api}
+  secret: ${JWT_SECRET:}
+  access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:PT15M}
   roles-claim: ${JWT_ROLES_CLAIM:roles}
   subject-claim: ${JWT_SUBJECT_CLAIM:sub}
+
+auth:
+  bootstrap-admin:
+    email: ${BOOTSTRAP_ADMIN_EMAIL:}
+    password: ${BOOTSTRAP_ADMIN_PASSWORD:}
 
 # CORS Configuration (Allowing your frontend app origins)
 cors:

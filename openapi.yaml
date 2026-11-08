@@ -13,6 +13,8 @@ servers:
 security:
   - bearerAuth: []
 tags:
+  - name: Authentication
+    description: Login and administrator-only account provisioning
   - name: Submissions
     description: Intake and registration
   - name: Reception
@@ -24,6 +26,63 @@ tags:
   - name: Case Files
     description: W4 case file aggregate, controls, stages, outcome, and document review
 paths:
+  /auth/login:
+    post:
+      tags: [Authentication]
+      operationId: login
+      summary: Exchange administrator-provisioned credentials for a bearer token
+      description: Public account registration is disabled. Login failures return the same response for unknown, disabled, or invalid credentials.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Short-lived bearer access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /admin/users:
+    post:
+      tags: [Authentication]
+      operationId: createApiUser
+      summary: Create an account with an application role
+      description: Administrator only. The password is never returned; public signup is not available.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateApiUserRequest'
+      responses:
+        '201':
+          description: Account created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiUser'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: An account with this email already exists
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /submissions:
     post:
       tags: [Submissions]
@@ -851,6 +910,72 @@ components:
         type: string
         format: uuid
   schemas:
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        password:
+          type: string
+          format: password
+          maxLength: 128
+    LoginResponse:
+      type: object
+      required: [tokenType, accessToken, expiresAt]
+      properties:
+        tokenType:
+          type: string
+          const: Bearer
+        accessToken:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+    CreateApiUserRequest:
+      type: object
+      required: [email, password, role]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        password:
+          type: string
+          format: password
+          minLength: 12
+          maxLength: 72
+        role:
+          $ref: '#/components/schemas/ApiUserRole'
+    ApiUser:
+      type: object
+      required: [id, email, role, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        role:
+          $ref: '#/components/schemas/ApiUserRole'
+        createdAt:
+          type: string
+          format: date-time
+    ApiUserRole:
+      type: string
+      enum:
+        - ADMINISTRATOR
+        - INNOVATION_COORDINATOR
+        - RECEPTIONIST
+        - FACT_FINDING_OFFICER
+        - REVIEWER
+        - SECTOR_OFFICER
+        - IP_LIAISON
+        - SUBMITTER
+        - OBSERVER
     CreateSubmissionRequest:
       type: object
       additionalProperties: false
