@@ -10,6 +10,7 @@ import org.springframework.stereotype.Repository;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -64,7 +65,7 @@ public class PipelineMetricsRepository {
                 (result, row) -> {
                     Map<SubmissionStage, Long> byStage = new EnumMap<>(SubmissionStage.class);
                     for (SubmissionStage stage : SubmissionStage.values()) {
-                        byStage.put(stage, result.getLong(stage.name().toLowerCase()));
+                        byStage.put(stage, result.getLong(stage.name().toLowerCase(Locale.ROOT)));
                     }
                     Map<DashboardPipelineStage, Long> pipeline = new EnumMap<>(DashboardPipelineStage.class);
                     pipeline.put(DashboardPipelineStage.INTAKE, result.getLong("intake"));

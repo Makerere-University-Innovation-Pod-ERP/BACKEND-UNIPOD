@@ -158,6 +158,24 @@ class CaseFileServiceTest {
     }
 
     @Test
+    void documentStatusUpdateRejectsStaleVersion() {
+        Authentication coordinator = authentication("coordinator", "ROLE_INNOVATION_COORDINATOR");
+        when(submissions.findByIdForUpdate(CASE_ID)).thenReturn(Optional.of(submission));
+
+        SubmissionConflictException exception = assertThrows(SubmissionConflictException.class,
+                () -> service.updateDocumentStatus(
+                        CASE_ID,
+                        UUID.randomUUID(),
+                        new DocumentStatusUpdateRequest(DocumentStatus.VERIFIED, 3L),
+                        coordinator
+                ));
+
+        assertEquals("This case was changed by another user. Reload it before saving.", exception.getMessage());
+        verify(documents, org.mockito.Mockito.never()).findByIdAndSubmissionId(any(), any());
+        verify(submissions, org.mockito.Mockito.never()).flush();
+    }
+
+    @Test
     void staleVersionCannotTransitionCase() {
         Authentication coordinator = authentication("coordinator", "ROLE_INNOVATION_COORDINATOR");
         when(submissions.findByIdForUpdate(CASE_ID)).thenReturn(Optional.of(submission));

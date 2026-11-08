@@ -28,9 +28,9 @@ group feature-specific classes inside each application layer:
 The Spring Boot application class stays at the base package so component and
 entity scanning cover each layer.
 
-`config.ClockConfiguration` provides a shared `Clock` configured for
-`Africa/Kampala`. Workflow services inject this clock for consistent,
-deterministic timestamps.
+`config.ClockConfiguration` provides a shared system `Clock` configured for
+`Africa/Kampala`, keeping production timestamps timezone-consistent. Tests can
+inject a fixed clock when deterministic timestamps are required.
 
 ## Waluube Case Workflow
 

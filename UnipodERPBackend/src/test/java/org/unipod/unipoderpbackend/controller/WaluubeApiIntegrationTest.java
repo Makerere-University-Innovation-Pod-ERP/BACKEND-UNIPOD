@@ -1,6 +1,7 @@
 package org.unipod.unipoderpbackend.controller;
 
 import java.util.UUID;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
@@ -333,6 +334,29 @@ class WaluubeApiIntegrationTest {
                 .andExpect(jsonPath("$.detail").value(
                         "Save stays disabled until the configured reviewer quorum is met"
                 ));
+
+        mockMvc.perform(post("/cases/{id}/transitions", id)
+                        .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"to_stage":"FACT_FINDING","version":-1}
+                                """))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(put("/cases/{id}/outcome", id)
+                        .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"decision":"Approve","version":-1}
+                                """))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(put("/cases/{id}/outcome", id)
+                        .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"decision":" ","note":"  ","version":4}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("Submission details are invalid or incomplete."));
     }
 
     @Test
@@ -432,6 +456,60 @@ class WaluubeApiIntegrationTest {
                 .andExpect(jsonPath("$.totalSubmissions").value(0))
                 .andExpect(jsonPath("$.awaitingReviewCount").value(0))
                 .andExpect(jsonPath("$.needsAttention").isEmpty());
+    }
+
+    @Test
+    void databaseRejectsInconsistentReceivedAndForwardedMetadata() {
+        org.springframework.dao.DataIntegrityViolationException receivedWithSector = org.junit.jupiter.api.Assertions
+                .assertThrows(org.springframework.dao.DataIntegrityViolationException.class, () ->
+                        jdbcTemplate.update("""
+                                INSERT INTO submissions (
+                                    id, category, title, purpose, problem_addressed, registered_by,
+                                    submitter_id, stage, code, received_at, receiving_officer,
+                                    responsible_sector_id, forwarded_at, created_at, updated_at
+                                ) VALUES (?, 'GENERAL', 'Invalid received', 'Purpose', 'Problem',
+                                    'actor', 'submitter', 'RECEIVED', 'GEN-2026-900001',
+                                    CURRENT_TIMESTAMP, 'officer', ?, CURRENT_TIMESTAMP,
+                                    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                                """, UUID.randomUUID(), UUID.randomUUID())
+                );
+        assertTrue(receivedWithSector.getMostSpecificCause().getMessage().contains(
+                "ck_submission_receipt_state"
+        ));
+    }
+
+    @Test
+    void databaseRejectsForwardedCaseWithoutSectorOrForwardedAt() {
+        org.springframework.dao.DataIntegrityViolationException forwardedWithoutSector =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        org.springframework.dao.DataIntegrityViolationException.class,
+                        () -> jdbcTemplate.update("""
+                                INSERT INTO submissions (
+                                    id, category, title, purpose, problem_addressed, registered_by,
+                                    submitter_id, stage, code, received_at, receiving_officer,
+                                    created_at, updated_at
+                                ) VALUES (?, 'GENERAL', 'Invalid forwarded', 'Purpose', 'Problem',
+                                    'actor', 'submitter', 'FORWARDED', 'GEN-2026-900002',
+                                    CURRENT_TIMESTAMP, 'officer', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                                """, UUID.randomUUID())
+                );
+        assertTrue(forwardedWithoutSector.getMostSpecificCause().getMessage().contains(
+                "ck_submission_receipt_state"
+        ));
+    }
+
+    @Test
+    void dashboardMetricsAreLocaleIndependent() throws Exception {
+        Locale originalLocale = Locale.getDefault();
+        try {
+            Locale.setDefault(Locale.forLanguageTag("tr-TR"));
+            mockMvc.perform(get("/dashboard/overview")
+                            .with(user("locale-reviewer").roles("REVIEWER")))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.byStage.IN_PROGRESS").value(0));
+        } finally {
+            Locale.setDefault(originalLocale);
+        }
     }
 
     @Test

@@ -127,15 +127,15 @@ public class CaseFileService {
             Authentication authentication
     ) {
         requireOperator(authentication);
-        Submission submission = mutableCase(id, request.version());
-        CaseFileEnrichmentProvider.ReviewPanel reviewPanel = enrichment.reviewPanel(id);
-        if (!reviewPanel.quorumAvailable() || !reviewPanel.quorumMet()) {
-            throw new SubmissionConflictException(QUORUM_REQUIRED);
-        }
         String decision = clean(request.decision());
         String note = clean(request.note());
         if (decision == null && note == null) {
             throw new InvalidSubmissionException("Provide an outcome decision or note.");
+        }
+        Submission submission = mutableCase(id, request.version());
+        CaseFileEnrichmentProvider.ReviewPanel reviewPanel = enrichment.reviewPanel(id);
+        if (!reviewPanel.quorumAvailable() || !reviewPanel.quorumMet()) {
+            throw new SubmissionConflictException(QUORUM_REQUIRED);
         }
         submission.saveOutcome(decision, note, authentication.getName(), clock.instant());
         submissions.flush();
