@@ -471,7 +471,7 @@ The demonstration catalog and ten demonstration submissions are opt-in. To
 enable them for a dedicated demo database, set the PostgreSQL connection option
 `app.demo_seed=true`; production connections must not set this option.
 
-Database URL and username have local defaults, but database credentials must be supplied through environment variables or a secrets manager.
+Database URL, username, and password must be supplied through environment variables or a secrets manager; the application does not fall back to a local database.
 
 Set `SPRING_PROFILES_ACTIVE` only when selecting a profile that actually exists in the deployment. The application does not silently activate a development profile.
 
@@ -578,7 +578,7 @@ Follow these steps to test the submission workflow.
 
 Start PostgreSQL and create the database configured by `JDBC_DATABASE_URL`.
 
-The local default database is:
+For local development, create and use this database:
 
 `makerere_hub_db`
 
