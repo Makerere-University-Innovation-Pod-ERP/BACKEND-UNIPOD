@@ -372,8 +372,8 @@ Configure the following environment variables in the deployment environment.
 
 | Environment Variable | Description |
 | -------------------- | ----------- |
-| `DATABASE_URL` | PostgreSQL JDBC URL. |
-| `DB_USER`, `DB_PASS` | PostgreSQL credentials. |
+| `JDBC_DATABASE_URL` | PostgreSQL JDBC URL, beginning with `jdbc:postgresql://`. |
+| `DB_USER`, `DATABASE_PASSWORD` | PostgreSQL credentials. |
 | `JWT_SECRET` | Base64-encoded random secret with at least 32 bytes; required on hosted deployments. |
 | `JWT_ISSUER_URI` | Issuer URI embedded in and checked against each JWT. |
 | `JWT_AUDIENCE` | Audience required for this API; defaults to `unipod-erp-api`. |
@@ -446,9 +446,9 @@ connection details (do not use the external database URL):
 | Variable | Value |
 | -------- | ----- |
 | `PORT` | `10000` |
-| `SPRING_DATASOURCE_URL` | `jdbc:postgresql://<internal-host>:<port>/<database>` |
-| `SPRING_DATASOURCE_USERNAME` | Render database username |
-| `SPRING_DATASOURCE_PASSWORD` | Render database password |
+| `JDBC_DATABASE_URL` | `jdbc:postgresql://<internal-host>:5432/<database>` |
+| `DB_USER` | Render database username |
+| `DATABASE_PASSWORD` | Render database password |
 | `JWT_SECRET` | Base64-encoded random secret with at least 32 bytes |
 | `JWT_ISSUER_URI` | The deployed backend's public origin, without `/api` |
 | `JWT_AUDIENCE` | `unipod-erp-api` |
@@ -576,7 +576,7 @@ Follow these steps to test the submission workflow.
 
 ### 1. Start PostgreSQL and the Backend
 
-Start PostgreSQL and create the database configured by `DATABASE_URL`.
+Start PostgreSQL and create the database configured by `JDBC_DATABASE_URL`.
 
 The local default database is:
 
@@ -585,9 +585,9 @@ The local default database is:
 Configure the required environment variables:
 
 ```powershell
-$env:DB_PASS="your_database_password"
+$env:DATABASE_PASSWORD="your_database_password"
 $env:DB_USER="your_database_username"
-$env:DATABASE_URL="jdbc:postgresql://localhost:5432/makerere_hub_db"
+$env:JDBC_DATABASE_URL="jdbc:postgresql://localhost:5432/makerere_hub_db"
 $env:JWT_ISSUER_URI="http://localhost:8080"
 $env:JWT_AUDIENCE="unipod-erp-api"
 $env:BOOTSTRAP_ADMIN_EMAIL="admin@example.com"

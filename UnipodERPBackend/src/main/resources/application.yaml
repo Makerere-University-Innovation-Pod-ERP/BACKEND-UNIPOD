@@ -4,9 +4,9 @@ spring:
 
   # Database Configuration (PostgreSQL)
   datasource:
-    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/makerere_hub_db}
+    url: ${JDBC_DATABASE_URL:jdbc:postgresql://localhost:5432/makerere_hub_db}
     username: ${DB_USER:postgres}
-    password: ${DB_PASS}
+    password: ${DATABASE_PASSWORD}
     driver-class-name: org.postgresql.Driver
 
   # JPA / Hibernate Configuration
