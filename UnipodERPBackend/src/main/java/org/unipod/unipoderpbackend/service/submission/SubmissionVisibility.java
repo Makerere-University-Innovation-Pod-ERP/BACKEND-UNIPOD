@@ -2,11 +2,11 @@ package org.unipod.unipoderpbackend.service.submission;
 
 import org.springframework.security.core.Authentication;
 
-final class SubmissionVisibility {
+public final class SubmissionVisibility {
     private SubmissionVisibility() {
     }
 
-    static String scope(Authentication authentication) {
+    public static String scope(Authentication authentication) {
         if (has(authentication, "ADMINISTRATOR", "INNOVATION_COORDINATOR", "RECEPTIONIST",
                 "FACT_FINDING_OFFICER", "IP_LIAISON", "OBSERVER")) {
             return "ALL";

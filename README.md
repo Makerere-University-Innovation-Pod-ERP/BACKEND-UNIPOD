@@ -13,8 +13,8 @@ group feature-specific classes inside each application layer:
 * `controller.submission`, `service.submission`, `model.submission`,
   `repository.submission`, and `dto.submission` — submission workflow.
 * `controller.reception` and `dto.reception` — reception queue.
-* `controller.dashboard`, `repository.dashboard`, and `dto.dashboard` —
-  dashboard overview.
+* `controller.dashboard`, `service.dashboard`, `repository.dashboard`, and
+  `dto.dashboard` — composed, role-scoped dashboard overview.
 * `controller.sector`, `dto.sector`, `model.sector`, `repository.sector`, and
   `service.sector` — sector catalog and membership.
 * `exception.submission`, `exception.sector`, and `exception.storage` contain
@@ -192,12 +192,24 @@ assignments and Sector Officer membership.
 
 `GET /api/dashboard/overview`
 
-Returns:
+The response combines Waluube database metrics with the Operations (Fidel),
+Finance and audit (David) module tiles. Results are cached for 30 seconds and
+workflow aggregates respect each caller's submission visibility scope:
 
-* Total submission count.
-* Submission counts by category.
-* Submission counts by lifecycle stage.
-* Number of submissions updated within the last 14 days.
+* All authenticated roles may view the dashboard and operational tiles.
+* Submitters, reviewers, and sector officers see only workflow cases within
+  their existing row-level visibility scope.
+* Only Administrators and Innovation Coordinators receive the finance tile.
+* Workflow metrics include category totals, awaiting review (Fact-Finding and
+  Forwarded), refinement requested, six grouped pipeline counts, and up to five
+  oldest open cases with an attention reason.
+
+The Operations, Finance, and audit modules are not connected in this backend.
+Their tiles return `NOT_CONFIGURED` with empty metric values until provider
+contracts and endpoints are configured; no external values are fabricated.
+The six pipeline groups combine Received with Registered, Fact-Finding with
+Forwarded, and Under Review with In Progress, followed by Refinement Requested,
+Further Handling, and Completed.
 
 ### Forwarding a Submission
 

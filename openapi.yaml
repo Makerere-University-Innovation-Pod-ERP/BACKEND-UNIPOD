@@ -806,10 +806,11 @@ paths:
     get:
       tags: [Dashboard]
       operationId: getDashboardOverview
-      summary: Get pipeline overview metrics
+      summary: Get the role-scoped dashboard composed from workflow and module summaries
+      description: Available to every authenticated role. Operational tiles are visible to all roles; finance data is returned only to Administrators and Innovation Coordinators. Results are cached for 30 seconds. Unconfigured external modules identify their availability rather than returning fabricated metrics.
       responses:
         '200':
-          description: Pipeline counts by stage and category
+          description: Waluube workflow metrics, attention items, and role-visible module tiles
           content:
             application/json:
               schema:
@@ -1316,7 +1317,7 @@ components:
           minimum: 0
     DashboardOverview:
       type: object
-      required: [totalSubmissions, byStage, studentSubmissions, generalSubmissions, awaitingActionCount, forwardedCount, completedCount, recentlyUpdatedCount]
+      required: [totalSubmissions, byStage, studentSubmissions, generalSubmissions, awaitingActionCount, forwardedCount, completedCount, recentlyUpdatedCount, awaitingReviewCount, refinementRequestedCount, pipelineAtAGlance, needsAttention, operations, finance, recentActivity]
       properties:
         totalSubmissions:
           type: integer
@@ -1344,6 +1345,120 @@ components:
         recentlyUpdatedCount:
           type: integer
           format: int64
+        awaitingReviewCount:
+          type: integer
+          format: int64
+          description: Fact-Finding and FORWARDED cases visible to the caller
+        refinementRequestedCount:
+          type: integer
+          format: int64
+        pipelineAtAGlance:
+          type: object
+          description: Six grouped lifecycle counts; intake combines RECEIVED and REGISTERED, Fact-Finding combines FACT_FINDING and FORWARDED, and review combines UNDER_REVIEW and IN_PROGRESS.
+          additionalProperties:
+            type: integer
+            format: int64
+        needsAttention:
+          type: array
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/DashboardAttentionCase'
+        operations:
+          $ref: '#/components/schemas/DashboardOperations'
+        finance:
+          oneOf:
+            - $ref: '#/components/schemas/DashboardFinance'
+            - type: 'null'
+          description: Present only for Administrators and Innovation Coordinators.
+        recentActivity:
+          $ref: '#/components/schemas/DashboardActivityFeed'
+    DashboardAttentionCase:
+      type: object
+      required: [id, title, stage, reason, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: [string, 'null']
+        title:
+          type: string
+        stage:
+          $ref: '#/components/schemas/SubmissionStage'
+        reason:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+    DashboardOperations:
+      type: object
+      required: [availability, reason, equipmentUnderRepair, bookingsToday, facilitiesFreeNow]
+      properties:
+        availability:
+          type: string
+          enum: [AVAILABLE, NOT_CONFIGURED]
+        reason:
+          type: [string, 'null']
+        equipmentUnderRepair:
+          type: [integer, 'null']
+          format: int64
+        bookingsToday:
+          type: [integer, 'null']
+          format: int64
+        facilitiesFreeNow:
+          type: [integer, 'null']
+          format: int64
+    DashboardFinance:
+      type: object
+      required: [availability, reason, incomeMonthToDate, incomeBars]
+      properties:
+        availability:
+          type: string
+          enum: [AVAILABLE, NOT_CONFIGURED]
+        reason:
+          type: [string, 'null']
+        incomeMonthToDate:
+          type: [number, 'null']
+          format: double
+        incomeBars:
+          type: array
+          items:
+            $ref: '#/components/schemas/DashboardIncomeBar'
+    DashboardIncomeBar:
+      type: object
+      required: [period, income]
+      properties:
+        period:
+          type: string
+        income:
+          type: number
+          format: double
+    DashboardActivityFeed:
+      type: object
+      required: [availability, reason, items]
+      properties:
+        availability:
+          type: string
+          enum: [AVAILABLE, NOT_CONFIGURED]
+        reason:
+          type: [string, 'null']
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DashboardActivity'
+    DashboardActivity:
+      type: object
+      required: [occurredAt, actor, action, summary]
+      properties:
+        occurredAt:
+          type: string
+          format: date-time
+        actor:
+          type: string
+        action:
+          type: string
+        summary:
+          type: string
     Submission:
       type: object
       required: [id, category, title, purpose, problemAddressed, registeredBy, stage, createdAt, updatedAt, version]

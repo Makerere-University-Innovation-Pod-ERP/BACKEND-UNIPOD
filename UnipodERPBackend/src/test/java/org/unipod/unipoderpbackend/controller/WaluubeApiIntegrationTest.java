@@ -351,6 +351,90 @@ class WaluubeApiIntegrationTest {
     }
 
     @Test
+    void dashboardIsAvailableToAllRolesAndHidesFinanceFromNonFinanceRoles() throws Exception {
+        for (String role : new String[] {
+                "ADMINISTRATOR", "INNOVATION_COORDINATOR", "RECEPTIONIST",
+                "FACT_FINDING_OFFICER", "REVIEWER", "SECTOR_OFFICER",
+                "IP_LIAISON", "SUBMITTER", "OBSERVER"
+        }) {
+            var request = mockMvc.perform(get("/dashboard/overview")
+                    .with(user("dashboard-" + role).roles(role)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.operations.availability").value("NOT_CONFIGURED"))
+                    .andExpect(jsonPath("$.recentActivity.availability").value("NOT_CONFIGURED"))
+                    .andExpect(jsonPath("$.pipelineAtAGlance.length()").value(6))
+                    .andExpect(jsonPath("$.needsAttention.length()").value(org.hamcrest.Matchers.lessThanOrEqualTo(5)));
+            if (role.equals("ADMINISTRATOR") || role.equals("INNOVATION_COORDINATOR")) {
+                request.andExpect(jsonPath("$.finance.availability").value("NOT_CONFIGURED"));
+            } else {
+                request.andExpect(jsonPath("$.finance").doesNotExist());
+            }
+        }
+    }
+
+    @Test
+    void dashboardMetricsRespectSubmitterScopeAndExplainOpenCases() throws Exception {
+        String actor = "dashboard-owner-" + UUID.randomUUID();
+        String otherSubmitter = "dashboard-other-" + UUID.randomUUID();
+        var receptionist = user("dashboard-intake").roles("RECEPTIONIST");
+        String created = mockMvc.perform(post("/submissions")
+                        .with(receptionist)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "category": "general",
+                                  "title": "Dashboard attention case",
+                                  "purpose": "Exercise scoped dashboard metrics",
+                                  "problemAddressed": "Dashboard metrics should respect row visibility",
+                                  "submitterId": "%s"
+                                }
+                                """.formatted(actor)))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        Matcher idMatcher = Pattern.compile("\"id\":\"([^\"]+)\"").matcher(created);
+        assertTrue(idMatcher.find(), "Create response should include the submission id.");
+        String id = idMatcher.group(1);
+        mockMvc.perform(post("/submissions/{id}/register", id).with(receptionist))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(1));
+        mockMvc.perform(post("/cases/{id}/transitions", id)
+                        .with(user("dashboard-coordinator").roles("INNOVATION_COORDINATOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"to_stage":"REGISTERED","version":1}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.submission.version").value(2));
+        mockMvc.perform(post("/cases/{id}/transitions", id)
+                        .with(user("dashboard-coordinator").roles("INNOVATION_COORDINATOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"to_stage":"FACT_FINDING","version":2}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.submission.version").value(3));
+
+        mockMvc.perform(get("/dashboard/overview").with(user(actor).roles("SUBMITTER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalSubmissions").value(1))
+                .andExpect(jsonPath("$.studentSubmissions").value(0))
+                .andExpect(jsonPath("$.generalSubmissions").value(1))
+                .andExpect(jsonPath("$.awaitingReviewCount").value(1))
+                .andExpect(jsonPath("$.pipelineAtAGlance.FACT_FINDING").value(1))
+                .andExpect(jsonPath("$.needsAttention.length()").value(1))
+                .andExpect(jsonPath("$.needsAttention[0].id").value(id))
+                .andExpect(jsonPath("$.needsAttention[0].reason").value("Assessment in progress"));
+
+        mockMvc.perform(get("/dashboard/overview").with(user(otherSubmitter).roles("SUBMITTER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalSubmissions").value(0))
+                .andExpect(jsonPath("$.awaitingReviewCount").value(0))
+                .andExpect(jsonPath("$.needsAttention").isEmpty());
+    }
+
+    @Test
     void sectorAdministrationIsRestrictedAndSupportsLifecycle() throws Exception {
         String name = "Sector API " + UUID.randomUUID();
         String body = """
