@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.server.ResponseStatusException;
 import org.unipod.unipoderpbackend.exception.sector.SectorConflictException;
 import org.unipod.unipoderpbackend.exception.storage.StorageObjectNotFoundException;
 import org.unipod.unipoderpbackend.exception.submission.InvalidSubmissionException;
@@ -51,6 +52,17 @@ class ApiExceptionHandlerTest {
         assertNotNull(response.getBody());
         assertEquals("Forbidden", response.getBody().getTitle());
         assertFalse(response.getBody().getDetail().contains("internal rule"));
+    }
+
+    @Test
+    void responseStatusExceptionsPreserveTheirStatusAndSafeReason() {
+        ResponseEntity<ProblemDetail> response = handler.handleResponseStatus(
+                new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid email or password.")
+        );
+
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals("Invalid email or password.", response.getBody().getDetail());
     }
 
     @Test
