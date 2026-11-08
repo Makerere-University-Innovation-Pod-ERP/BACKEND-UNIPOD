@@ -33,7 +33,6 @@ spring:
       enabled: false
 
   servlet:
-    context-path: /api
     multipart:
       max-file-size: ${S3_MAX_FILE_BYTES:10485760}
       max-request-size: ${S3_MAX_REQUEST_BYTES:11534336}
@@ -64,6 +63,8 @@ spring:
 
 server:
   port: ${PORT:${SERVER_PORT:8080}}
+  servlet:
+    context-path: /api
   error:
     include-exception: false
     include-message: never

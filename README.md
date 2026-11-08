@@ -423,7 +423,7 @@ For example:
 | `SECTOR_OFFICER`        | `ROLE_SECTOR_OFFICER`          |
 
 The bootstrap account is created only when the user table is empty. Configure
-both bootstrap variables together as Railway secrets; later restarts will not
+both bootstrap variables together as deployment secrets; later restarts will not
 replace existing credentials. If either value is missing, no administrator is
 created and the API remains protected.
 
