@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.unipod.unipoderpbackend.dto.sector.SectorMemberRequest;
 import org.unipod.unipoderpbackend.dto.sector.SectorRequest;
 import org.unipod.unipoderpbackend.dto.sector.SectorResponse;
+import org.unipod.unipoderpbackend.dto.sector.SectorFilterOption;
 import org.unipod.unipoderpbackend.service.sector.SectorMemberService;
 import org.unipod.unipoderpbackend.service.sector.SectorService;
 
@@ -36,6 +37,13 @@ public class SectorController {
     @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'RECEPTIONIST', 'FACT_FINDING_OFFICER')")
     public List<SectorResponse> activeSectors() {
         return sectors.activeSectors();
+    }
+
+    @GetMapping("/filter-options")
+    @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'RECEPTIONIST', "
+            + "'FACT_FINDING_OFFICER', 'IP_LIAISON', 'OBSERVER', 'SUBMITTER', 'REVIEWER', 'SECTOR_OFFICER')")
+    public List<SectorFilterOption> filterOptions() {
+        return sectors.filterOptions();
     }
 
     @GetMapping("/catalog")

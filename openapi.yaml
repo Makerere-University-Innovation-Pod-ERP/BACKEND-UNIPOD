@@ -725,6 +725,25 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /sectors/filter-options:
+    get:
+      tags: [Sectors]
+      operationId: listSectorFilterOptions
+      summary: List sector names for submission filters
+      description: Returns only sector IDs and names to roles permitted to read submissions.
+      responses:
+        '200':
+          description: Sectors ordered by name
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SectorFilterOption'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /sectors/{id}:
     put:
       tags: [Sectors]
@@ -1134,6 +1153,16 @@ components:
             updatedAt:
               type: string
               format: date-time
+    SectorFilterOption:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
     ReviewerAssignmentRequest:
       type: object
       additionalProperties: false

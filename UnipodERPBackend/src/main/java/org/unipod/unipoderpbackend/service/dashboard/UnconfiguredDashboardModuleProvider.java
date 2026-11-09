@@ -27,7 +27,7 @@ public class UnconfiguredDashboardModuleProvider {
             }
 
             @Override
-            public ActivityFeed recentActivity() {
+            public ActivityFeed recentActivity(String scope, String principal) {
                 return new ActivityFeed("NOT_CONFIGURED", "David audit integration is not configured.",
                         List.of());
             }

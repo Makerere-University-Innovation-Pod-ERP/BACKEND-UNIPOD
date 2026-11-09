@@ -9,5 +9,5 @@ public interface DashboardModuleProvider {
 
     FinanceSummary finance();
 
-    ActivityFeed recentActivity();
+    ActivityFeed recentActivity(String scope, String principal);
 }

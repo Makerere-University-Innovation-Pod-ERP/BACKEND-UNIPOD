@@ -6,7 +6,7 @@ final class DashboardVisibility {
     private DashboardVisibility() {
     }
 
-    static boolean canViewFinance(Authentication authentication) {
+    static boolean canViewRestrictedTiles(Authentication authentication) {
         return authentication.getAuthorities().stream()
                 .map(authority -> authority.getAuthority())
                 .anyMatch(role -> role.equals("ROLE_ADMINISTRATOR")

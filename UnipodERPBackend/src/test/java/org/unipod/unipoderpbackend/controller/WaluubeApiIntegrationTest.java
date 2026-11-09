@@ -56,6 +56,19 @@ class WaluubeApiIntegrationTest {
                                   "problemAddressed": "The workflow API needs end-to-end coverage",
                                   "submitterId": "%s"
                                 }
+
+                                @Test
+                                void operationalAndFinanceDashboardTilesAreRestrictedToAdministratorsAndCoordinators() throws Exception {
+                                    mockMvc.perform(get("/dashboard/overview").with(user("observer").roles("OBSERVER")))
+                                            .andExpect(status().isOk())
+                                            .andExpect(jsonPath("$.operations").doesNotExist())
+                                            .andExpect(jsonPath("$.finance").doesNotExist());
+
+                                    mockMvc.perform(get("/dashboard/overview").with(user("administrator").roles("ADMINISTRATOR")))
+                                            .andExpect(status().isOk())
+                                            .andExpect(jsonPath("$.operations.availability").value("NOT_CONFIGURED"))
+                                            .andExpect(jsonPath("$.finance.availability").value("NOT_CONFIGURED"));
+                                }
                                 """.formatted(submitter)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.stage").value("DRAFT"))
@@ -196,14 +209,14 @@ class WaluubeApiIntegrationTest {
         );
 
         mockMvc.perform(post("/submissions/{id}/transition", id)
-                        .with(receptionist)
+                        .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"stage\":\"IN_PROGRESS\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.stage").value("IN_PROGRESS"));
 
         mockMvc.perform(post("/submissions/{id}/transition", id)
-                        .with(receptionist)
+                        .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"stage\":\"COMPLETED\"}"))
                 .andExpect(status().isOk())
@@ -565,6 +578,26 @@ class WaluubeApiIntegrationTest {
         mockMvc.perform(get("/sectors/catalog").with(user("admin").roles("ADMINISTRATOR")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[?(@.id == '" + id + "')].active").value(false));
+    }
+
+    @Test
+    void sectorFilterOptionsAreAvailableToAllSubmissionReadersWithoutContactDetails() throws Exception {
+        String name = "Filter sector " + UUID.randomUUID();
+        var sector = sectors.create(new SectorRequest(name, "private@example.invalid", true));
+
+        mockMvc.perform(get("/sectors/filter-options").with(user("observer").roles("OBSERVER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id == '" + sector.id() + "')].name").value(name))
+                .andExpect(jsonPath("$[?(@.id == '" + sector.id() + "')].notificationEmail").isEmpty());
+    }
+
+    @Test
+    void receptionistCannotAdvanceLifecycleStages() throws Exception {
+        mockMvc.perform(post("/submissions/{id}/transition", UUID.randomUUID())
+                        .with(user("receptionist").roles("RECEPTIONIST"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"stage\":\"IN_PROGRESS\"}"))
+                .andExpect(status().isForbidden());
     }
 
     @Test

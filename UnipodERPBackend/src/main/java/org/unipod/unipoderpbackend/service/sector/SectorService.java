@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.unipod.unipoderpbackend.dto.sector.SectorRequest;
 import org.unipod.unipoderpbackend.dto.sector.SectorResponse;
+import org.unipod.unipoderpbackend.dto.sector.SectorFilterOption;
 import org.unipod.unipoderpbackend.exception.sector.SectorConflictException;
 import org.unipod.unipoderpbackend.exception.sector.SectorNotFoundException;
 import org.unipod.unipoderpbackend.model.sector.Sector;
@@ -35,6 +36,14 @@ public class SectorService {
         return sectors.findAllByOrderByNameAsc()
                 .stream()
                 .map(SectorResponse::from)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<SectorFilterOption> filterOptions() {
+        return sectors.findAllByOrderByNameAsc()
+                .stream()
+                .map(SectorFilterOption::from)
                 .toList();
     }
 

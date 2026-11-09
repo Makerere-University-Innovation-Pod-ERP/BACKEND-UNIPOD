@@ -32,16 +32,16 @@ public class DashboardService {
 
     public DashboardOverviewResponse overview(Authentication authentication) {
         String scope = SubmissionVisibility.scope(authentication);
-        boolean financeVisible = DashboardVisibility.canViewFinance(authentication);
+        boolean restrictedTilesVisible = DashboardVisibility.canViewRestrictedTiles(authentication);
         String principal = scope.equals("ALL") ? "" : authentication.getName();
-        CacheKey key = new CacheKey(scope, principal, financeVisible);
+        CacheKey key = new CacheKey(scope, principal, restrictedTilesVisible);
         Instant now = clock.instant();
         cache.entrySet().removeIf(entry -> !entry.getValue().expiresAt().isAfter(now));
         CachedOverview cached = cache.compute(key, (cacheKey, existing) -> {
             if (existing != null && existing.expiresAt().isAfter(now)) {
                 return existing;
             }
-            return new CachedOverview(load(authentication, scope, financeVisible), now.plus(CACHE_TTL));
+            return new CachedOverview(load(authentication, scope, restrictedTilesVisible), now.plus(CACHE_TTL));
         });
         return cached.response();
     }
@@ -49,7 +49,7 @@ public class DashboardService {
     private DashboardOverviewResponse load(
             Authentication authentication,
             String scope,
-            boolean financeVisible
+            boolean restrictedTilesVisible
     ) {
         DashboardOverviewResponse metricsResponse = metrics.overview(
                 clock.instant().minus(Duration.ofDays(14)),
@@ -69,13 +69,13 @@ public class DashboardService {
                 metricsResponse.refinementRequestedCount(),
                 metricsResponse.pipelineAtAGlance(),
                 metrics.needsAttention(scope, authentication.getName()),
-                modules.operations(),
-                financeVisible ? modules.finance() : null,
-                modules.recentActivity()
+                restrictedTilesVisible ? modules.operations() : null,
+                restrictedTilesVisible ? modules.finance() : null,
+                modules.recentActivity(scope, authentication.getName())
         );
     }
 
-    private record CacheKey(String scope, String principal, boolean financeVisible) {
+    private record CacheKey(String scope, String principal, boolean restrictedTilesVisible) {
     }
 
     private record CachedOverview(DashboardOverviewResponse response, Instant expiresAt) {

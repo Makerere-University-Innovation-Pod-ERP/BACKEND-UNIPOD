@@ -113,7 +113,7 @@ public class SubmissionController {
     }
 
     @PostMapping("/{id}/transition")
-    @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'RECEPTIONIST', 'FACT_FINDING_OFFICER')")
+    @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR')")
     public SubmissionResponse transition(
             @PathVariable UUID id,
             @Valid @RequestBody AdvanceSubmissionRequest request,

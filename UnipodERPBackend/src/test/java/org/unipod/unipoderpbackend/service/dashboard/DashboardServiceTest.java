@@ -13,6 +13,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.unipod.unipoderpbackend.dto.dashboard.DashboardOverviewResponse;
 import org.unipod.unipoderpbackend.dto.dashboard.DashboardOverviewResponse.FinanceSummary;
+import org.unipod.unipoderpbackend.dto.dashboard.DashboardOverviewResponse.OperationsSummary;
 import org.unipod.unipoderpbackend.repository.dashboard.PipelineMetricsRepository;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -30,7 +31,7 @@ class DashboardServiceTest {
     private static final Instant NOW = Instant.parse("2026-11-08T10:00:00Z");
 
     @Test
-    void cachesScopedResultsForThirtySecondsAndSeparatesFinanceVisibility() {
+    void cachesScopedResultsForThirtySecondsAndSeparatesRestrictedTileVisibility() {
         PipelineMetricsRepository metrics = mock(PipelineMetricsRepository.class);
         DashboardModuleProvider modules = mock(DashboardModuleProvider.class);
         MutableClock clock = new MutableClock(NOW);
@@ -42,18 +43,25 @@ class DashboardServiceTest {
         when(modules.finance()).thenReturn(new FinanceSummary(
                 "AVAILABLE", null, java.math.BigDecimal.ZERO, List.of()
         ));
+        when(modules.operations()).thenReturn(new OperationsSummary(
+                "AVAILABLE", null, 0L, 0L, 0L
+        ));
         DashboardService service = new DashboardService(metrics, modules, clock);
         Authentication administrator = authentication("admin", "ROLE_ADMINISTRATOR");
         Authentication observer = authentication("observer", "ROLE_OBSERVER");
 
         DashboardOverviewResponse adminResult = service.overview(administrator);
         assertNotNull(adminResult.finance());
+        assertNotNull(adminResult.operations());
         assertSame(adminResult, service.overview(administrator));
 
         DashboardOverviewResponse observerResult = service.overview(observer);
         assertNull(observerResult.finance());
+        assertNull(observerResult.operations());
         assertSame(observerResult, service.overview(observer));
         verify(modules, times(1)).finance();
+        verify(modules, times(1)).operations();
+        verify(modules).recentActivity("ALL", "admin");
         verify(metrics, times(2)).overview(any(), eq("ALL"), any());
 
         clock.advance(Duration.ofSeconds(31));
@@ -73,9 +81,12 @@ class DashboardServiceTest {
         DashboardService service = new DashboardService(metrics, modules, Clock.fixed(NOW, ZoneOffset.UTC));
 
         assertNull(service.overview(authentication("reviewer-1", "ROLE_REVIEWER")).finance());
+        assertNull(service.overview(authentication("reviewer-1", "ROLE_REVIEWER")).operations());
 
         verify(metrics).overview(any(), eq("REVIEWER"), eq("reviewer-1"));
         verify(modules, never()).finance();
+        verify(modules, never()).operations();
+        verify(modules).recentActivity("REVIEWER", "reviewer-1");
     }
 
     private static Authentication authentication(String name, String role) {

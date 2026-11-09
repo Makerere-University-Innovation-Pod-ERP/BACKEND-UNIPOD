@@ -105,6 +105,9 @@ This endpoint returns paginated drafts and queue counters:
 | GET    | `/api/submissions`                 | Lists all submissions.                                  |
 | GET    | `/api/submissions/search`           | Exact code search, then title substring search.         |
 | GET    | `/api/submissions/mine`            | Lists submissions registered by the authenticated user. |
+| GET    | `/api/me/submissions`               | Lists cases linked to the signed-in submitter.           |
+| GET    | `/api/me/capabilities`               | Returns submitter registration guidance and locked modules. |
+| GET    | `/api/sectors/filter-options`        | Returns sector IDs and names to authorized submission readers. |
 | GET    | `/api/submissions/{id}`            | Returns a submission, documents, and stage history.     |
 | POST   | `/api/submissions`                 | Creates a draft submission.                             |
 | POST   | `/api/submissions/{id}/register`   | Registers a submission and generates its case code.     |
@@ -178,7 +181,7 @@ title searches are treated as ordinary text, not wildcard operators.
 
 Visibility is enforced in the database query:
 
-* Submitters see submissions they registered.
+* Submitters see submissions linked to their submitter identity.
 * Reviewers see submissions assigned to their subject.
 * Sector Officers see submissions routed to sectors where they are members.
 * Administrators, Coordinators, Receptionists, Fact-Finding Officers,
@@ -196,10 +199,10 @@ The response combines Waluube database metrics with the Operations (Fidel),
 Finance and audit (David) module tiles. Results are cached for 30 seconds and
 workflow aggregates respect each caller's submission visibility scope:
 
-* All authenticated roles may view the dashboard and operational tiles.
+* All authenticated roles may view role-scoped Waluube dashboard metrics.
+* Only Administrators and Innovation Coordinators receive operations and finance tiles.
 * Submitters, reviewers, and sector officers see only workflow cases within
   their existing row-level visibility scope.
-* Only Administrators and Innovation Coordinators receive the finance tile.
 * Workflow metrics include category totals, awaiting review (Fact-Finding and
   Forwarded), refinement requested, six grouped pipeline counts, and up to five
   oldest open cases with an attention reason.
@@ -207,6 +210,8 @@ workflow aggregates respect each caller's submission visibility scope:
 The Operations, Finance, and audit modules are not connected in this backend.
 Their tiles return `NOT_CONFIGURED` with empty metric values until provider
 contracts and endpoints are configured; no external values are fabricated.
+Any audit provider must scope its feed using the supplied visibility scope and
+principal.
 The six pipeline groups combine Received with Registered, Fact-Finding with
 Forwarded, and Under Review with In Progress, followed by Refinement Requested,
 Further Handling, and Completed.
@@ -231,6 +236,7 @@ accepted for forwarding; each sector has a notification email address.
 | Method | Endpoint | Description |
 | ------ | -------- | ----------- |
 | GET | `/api/sectors` | Lists active sectors for intake roles. |
+| GET | `/api/sectors/filter-options` | Lists only sector IDs and names for submission-list filters, available to submission readers. |
 | GET | `/api/sectors/catalog` | Lists all sectors, including inactive ones (Administrator only). |
 | POST | `/api/sectors` | Creates a sector (Administrator only). |
 | PUT | `/api/sectors/{id}` | Updates or deactivates a sector (Administrator only). The request must include the current `version`; stale updates return `409 Conflict`. |
