@@ -63,7 +63,8 @@ public class FactFindingCommandService {
             Authentication authentication
     ) {
         requireLengthLimits(request);
-        Submission brief = visibleCase(briefId, authentication);
+Submission brief = submissions.findByIdForUpdate(briefId)
+                .orElseThrow(() -> new SubmissionNotFoundException(briefId));
         requireSavableStage(brief.getStage());
         FactFindingCheck check = saveAnswers(briefId, request, authentication.getName());
         return FactFindingResponse.from(brief, check);
