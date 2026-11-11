@@ -157,10 +157,21 @@ public class PipelineMetricsRepository {
 
     public QueueCounts receptionQueue(Instant since) {
         return jdbcTemplate.queryForObject("""
-                SELECT count(*) FILTER (WHERE stage = 'SUBMITTED') AS in_queue,
-                    count(*) FILTER (WHERE stage = 'AWAITING_INFORMATION') AS awaiting_action,
-                    count(*) FILTER (WHERE updated_at >= ?) AS recently_updated
-                FROM submissions
+                SELECT count(*) FILTER (WHERE s.stage = 'SUBMITTED') AS in_queue,
+                    count(*) FILTER (
+                        WHERE s.stage <> 'DRAFT'
+                          AND (
+                              s.stage = 'AWAITING_INFORMATION'
+                              OR EXISTS (
+                                  SELECT 1 FROM missing_items item
+                                  WHERE item.submission_id = s.id AND item.status = 'OPEN'
+                              )
+                          )
+                    ) AS awaiting_action,
+                    count(*) FILTER (
+                        WHERE s.stage <> 'DRAFT' AND s.updated_at >= ?
+                    ) AS recently_updated
+                FROM submissions s
                 """,
                 (result, row) -> new QueueCounts(
                         result.getLong("in_queue"),

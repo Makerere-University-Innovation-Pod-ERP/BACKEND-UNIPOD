@@ -281,6 +281,7 @@ public class Submission {
         }
         requireStudentDetails();
         requireServiceRequestDetails();
+        requireContactDetails();
         if (this.code == null) {
             this.code = caseCode;
         }
@@ -301,6 +302,7 @@ public class Submission {
         }
         requireStudentDetails();
         requireServiceRequestDetails();
+        requireContactDetails();
         this.briefVersion = Math.max(1, this.briefVersion) + 1;
         this.submittedAt = time;
         this.stage = SubmissionStage.SUBMITTED;
@@ -762,6 +764,20 @@ public class Submission {
                 && (isBlank(serviceRequested) || isBlank(expectedResult))) {
             throw new InvalidSubmissionException(
                     "Service requests require the service requested and the expected result."
+            );
+        }
+    }
+
+    /**
+     * The intake form requires a way to reach the submitter before the brief
+     * leaves DRAFT, but a draft may be saved without one.
+     */
+    private void requireContactDetails() {
+        boolean hasPhone = !isBlank(submitterPhone);
+        boolean hasEmail = !isBlank(submitterEmail) && submitterEmail.contains("@");
+        if (!hasPhone && !hasEmail) {
+            throw new InvalidSubmissionException(
+                    "A phone number or email address is required before submitting the brief."
             );
         }
     }

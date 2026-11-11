@@ -41,7 +41,7 @@ The Waluube API contract is documented in [`openapi.yaml`](./openapi.yaml).
 * `POST /api/submissions` creates a draft and atomically assigns its immutable tracking reference.
 * Submitters may create submissions for themselves. Their identity comes from the authenticated principal, not the request body. Intake staff may create a walk-in submission for a separate submitter.
 * `PUT /api/submissions/{id}` updates a draft. Submitters may update only their own drafts; intake staff may update drafts they manage.
-* `POST /api/submissions/{id}/submit` submits a completed draft for reception review and publishes a `submission.submitted` notification to the submitter.
+* `POST /api/submissions/{id}/submit` submits a completed draft for reception review and publishes `submission.submitted` notifications to the submitter and, when configured, to the reception mailbox.
 * `POST /api/submissions/{id}/reply` lets the owning submitter answer an information request while the brief is `SUBMITTED` or `AWAITING_INFORMATION`. Open information requests are resolved automatically and the brief returns to `SUBMITTED`.
 * `POST /api/submissions/{id}/register` records receipt in the legacy/assisted flow and adds the stage-history entry while preserving the original tracking reference.
 * `POST /api/submissions/{id}/forward` can register and forward a draft to a department in one transaction, or forward an already received/submitted submission. It accepts an optional handover `note`; forwarding a `SUBMITTED` brief requires a complete reception checklist.
@@ -122,10 +122,10 @@ Reception staff can use:
 This endpoint returns paginated submitted briefs and queue counters:
 
 * `inQueueCount`: Number of `SUBMITTED` briefs waiting for reception review.
-* `awaitingActionCount`: Number of briefs awaiting information from the submitter.
+* `awaitingActionCount`: Number of briefs with missing information or documents (awaiting a submitter reply or with open missing items).
 * `recentlyUpdatedCount`: Number of visible cases updated within the last 14 days.
 
-Drafts are private to their owner and do not appear in the queue.
+Drafts are private to their owner and do not appear in the queue. The list is ordered by submission date, newest first.
 
 ### Submission Endpoints
 
@@ -391,21 +391,21 @@ while the submission is `DRAFT`, `SUBMITTED`, or `RECEIVED`. Forwarding a
 
 | Key | Verifies |
 | --- | -------- |
-| `IDENTITY_CONFIRMED` | The submitter's identity. |
-| `CONTACT_DETAILS_CONFIRMED` | Email and phone details. |
-| `BRIEF_SUMMARY_CLEAR` | The brief summary is understandable. |
-| `DOCUMENTS_PRESENT` | Required documents are attached. |
+| `DETAILS_COMPLETE` | The submitter's details are complete. |
+| `DOCUMENTS_COMPLETE` | Documents are complete for the brief's type. |
+| `FILES_READABLE` | Every attached file can be opened. |
+| `CORRECT_TYPE` | Every document is the correct type. |
 
 ```json
 {
   "items": [
     {
-      "key": "IDENTITY_CONFIRMED",
+      "key": "DETAILS_COMPLETE",
       "checked": true,
       "note": "Student ID sighted"
     },
     {
-      "key": "DOCUMENTS_PRESENT",
+      "key": "DOCUMENTS_COMPLETE",
       "checked": false,
       "note": "Project brief still missing"
     }
@@ -547,6 +547,7 @@ Configure the following environment variables in the deployment environment.
 | `JWT_SUBJECT_CLAIM` | JWT claim used as the authenticated user identifier. Defaults to `sub`. |
 | `NOTIFICATION_EMAIL_ENABLED` | Enables the scheduled SMTP outbox worker; defaults to `false`. |
 | `NOTIFICATION_EMAIL_FROM` | Sender address for forwarding notifications. |
+| `NOTIFICATIONS_RECEPTION_EMAIL` | Reception mailbox notified when a brief is submitted or a submitter replies. Leave blank to skip those notifications. |
 | `SMTP_HOST`, `SMTP_PORT` | SMTP server and port (port defaults to `587`). |
 | `SMTP_USERNAME`, `SMTP_PASSWORD` | SMTP credentials when required by the provider. |
 | `SMTP_AUTH`, `SMTP_STARTTLS` | SMTP authentication and STARTTLS toggles (both default to `true`). |

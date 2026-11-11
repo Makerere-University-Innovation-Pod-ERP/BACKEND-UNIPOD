@@ -11,6 +11,7 @@ import java.util.UUID;
 import jakarta.mail.internet.AddressException;
 import jakarta.mail.internet.InternetAddress;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -70,6 +71,7 @@ public class SubmissionService {
     private final PipelineMetricsRepository metrics;
     private final SectorService sectorsCatalog;
     private final ReceptionChecklistService receptionChecklists;
+    private final String receptionEmail;
     private final Clock clock;
 
     @Autowired
@@ -83,6 +85,8 @@ public class SubmissionService {
             PipelineMetricsRepository metrics,
             SectorService sectorsCatalog,
             ReceptionChecklistService receptionChecklists,
+            @Value("${notifications.reception.email:}")
+            String receptionEmail,
             Clock clock
     ) {
         this.submissions = submissions;
@@ -94,6 +98,7 @@ public class SubmissionService {
         this.metrics = metrics;
         this.sectorsCatalog = sectorsCatalog;
         this.receptionChecklists = receptionChecklists;
+        this.receptionEmail = receptionEmail;
         this.clock = clock;
     }
 
@@ -243,6 +248,14 @@ public class SubmissionService {
                 actor,
                 now
         );
+        notifyReception(
+                submission,
+                "submission.submitted",
+                "New brief " + submission.getCode() + " submitted",
+                "A brief has been submitted and is waiting in the reception queue.",
+                actor,
+                now
+        );
         submissions.flush();
         return SubmissionResponse.from(submission);
     }
@@ -289,6 +302,14 @@ public class SubmissionService {
                 "submission.reply_received",
                 "Reply received for submission " + submission.getCode(),
                 "Your reply has been received and the brief is back with reception.",
+                actor,
+                now
+        );
+        notifyReception(
+                submission,
+                "submission.reply_received",
+                "Reply received for " + submission.getCode(),
+                "The submitter replied with the requested information; the brief is back in the reception queue.",
                 actor,
                 now
         );
@@ -684,7 +705,7 @@ public class SubmissionService {
     @Transactional(readOnly = true)
     public ReceptionQueueResponse receptionQueue(Pageable pageable) {
         Page<SubmissionResponse> page = submissions
-                .findAllByStageOrderByUpdatedAtDescIdAsc(SubmissionStage.SUBMITTED, pageable)
+                .findAllByStageOrderBySubmittedAtDescIdAsc(SubmissionStage.SUBMITTED, pageable)
                 .map(SubmissionResponse::from);
         PipelineMetricsRepository.QueueCounts counts = metrics.receptionQueue(
                 clock.instant().minus(Duration.ofDays(14))
@@ -754,6 +775,34 @@ public class SubmissionService {
                 eventType,
                 submission.getCode(),
                 recipient,
+                subject,
+                message,
+                actor,
+                occurredAt
+        );
+    }
+
+    /**
+     * Records the reception-facing intake notification. Delivery is skipped when
+     * the reception mailbox is not configured, so local and test environments do
+     * not accumulate undeliverable outbox rows.
+     */
+    private void notifyReception(
+            Submission submission,
+            String eventType,
+            String subject,
+            String message,
+            String actor,
+            Instant occurredAt
+    ) {
+        if (!isEmailAddress(receptionEmail)) {
+            return;
+        }
+        notificationOutbox.recordSubmitterNotification(
+                submission.getId(),
+                eventType,
+                submission.getCode(),
+                receptionEmail.trim(),
                 subject,
                 message,
                 actor,

@@ -41,7 +41,9 @@ public class UploadedDocumentService {
     /**
      * Document types reception accepts. Anything outside this list is rejected
      * rather than silently stored, because uploaded files are streamed back to
-     * reviewers.
+     * reviewers. Design formats (DXF, DWG, STL, SVG) are included for design
+     * jobs; browsers often report them as {@code application/octet-stream}, so
+     * an extension fallback is applied for that content type.
      */
     private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
             "application/pdf",
@@ -60,7 +62,24 @@ public class UploadedDocumentService {
             "image/png",
             "image/gif",
             "image/webp",
-            "image/tiff"
+            "image/tiff",
+            "image/svg+xml",
+            "application/acad",
+            "application/dxf",
+            "application/x-dxf",
+            "image/vnd.dxf",
+            "application/dwg",
+            "application/x-dwg",
+            "image/vnd.dwg",
+            "model/stl",
+            "application/sla",
+            "application/vnd.ms-pki.stl"
+    );
+
+    private static final Set<String> ALLOWED_EXTENSIONS = Set.of(
+            "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "rtf", "txt", "csv", "zip",
+            "jpg", "jpeg", "png", "gif", "webp", "tif", "tiff",
+            "svg", "dxf", "dwg", "stl"
     );
 
     private final SubmissionRepository submissions;
@@ -119,7 +138,7 @@ public class UploadedDocumentService {
             throw new InvalidSubmissionException("Document details are invalid.");
         }
         SubmissionService.requireSubmitterDocumentStatus(status, submitter);
-        String contentType = requireAllowedContentType(file.getContentType());
+        String contentType = requireAllowedContentType(file.getContentType(), file.getOriginalFilename());
         String originalFilename = safeFilename(file.getOriginalFilename(), documentName);
         transaction.execute(statusTransaction -> {
             Submission submission = submissions.findByIdForUpdate(submissionId)
@@ -228,19 +247,39 @@ public class UploadedDocumentService {
         }
     }
 
-    private static String requireAllowedContentType(String contentType) {
+    private static String requireAllowedContentType(String contentType, String originalFilename) {
         if (contentType == null || contentType.isBlank()) {
-            return DEFAULT_CONTENT_TYPE;
+            return hasAllowedExtension(originalFilename)
+                    ? DEFAULT_CONTENT_TYPE
+                    : unsupportedFileType();
         }
         String normalized = contentType.trim().toLowerCase(Locale.ROOT);
         if (normalized.length() > 255
                 || !normalized.matches("[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+")) {
             throw new InvalidSubmissionException("The uploaded file type is not supported.");
         }
-        if (!ALLOWED_CONTENT_TYPES.contains(normalized)) {
-            throw new InvalidSubmissionException("The uploaded file type is not supported.");
+        if (ALLOWED_CONTENT_TYPES.contains(normalized)) {
+            return normalized;
         }
-        return normalized;
+        if (DEFAULT_CONTENT_TYPE.equals(normalized) && hasAllowedExtension(originalFilename)) {
+            return normalized;
+        }
+        return unsupportedFileType();
+    }
+
+    private static String unsupportedFileType() {
+        throw new InvalidSubmissionException("The uploaded file type is not supported.");
+    }
+
+    private static boolean hasAllowedExtension(String filename) {
+        if (filename == null) {
+            return false;
+        }
+        int dot = filename.lastIndexOf('.');
+        if (dot < 0 || dot == filename.length() - 1) {
+            return false;
+        }
+        return ALLOWED_EXTENSIONS.contains(filename.substring(dot + 1).trim().toLowerCase(Locale.ROOT));
     }
 
     private static String safeFilename(String originalFilename, String fallback) {

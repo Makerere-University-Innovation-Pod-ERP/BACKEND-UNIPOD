@@ -823,9 +823,10 @@ class WaluubeApiIntegrationTest {
                                   "purpose": "Verify search fields",
                                   "problemAddressed": "Search must cover every display key",
                                   "submitterId": "submitter-%s",
-                                  "submitterName": "%s"
+                                  "submitterName": "%s",
+                                  "submitterEmail": "submitter-%s@example.test"
                                 }
-                                """.formatted(title, token, submitterName)))
+                                """.formatted(title, token, submitterName, token)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.submitterName").value(submitterName))
                 .andReturn()

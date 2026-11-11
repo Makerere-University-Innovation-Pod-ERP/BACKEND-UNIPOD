@@ -266,7 +266,7 @@ class FactFindingCommandApiIntegrationTest {
 
     @Test
     void briefInAnotherStageCannotBeSaved() throws Exception {
-        Submission brief = createDraftBrief("Draft stage");
+        Submission brief = createBrief("CASE-FF-C11", "Registered stage", SubmissionStage.REGISTERED);
 
         save(brief, answers("first"), OFFICER)
                 .andExpect(status().isConflict())
@@ -275,6 +275,16 @@ class FactFindingCommandApiIntegrationTest {
                 .andExpect(jsonPath("$.detail").value(
                         "Fact-finding answers can only be saved while the case is forwarded or in fact-finding."
                 ));
+
+        assertEquals(0L, countChecks(brief.getId()));
+    }
+
+    @Test
+    void draftOwnedByAnotherStaffMemberIsNotVisibleToOfficers() throws Exception {
+        Submission brief = createDraftBrief("Private draft");
+
+        save(brief, answers("first"), OFFICER)
+                .andExpect(status().isNotFound());
 
         assertEquals(0L, countChecks(brief.getId()));
     }

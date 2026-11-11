@@ -392,6 +392,9 @@ class SubmissionRegistrationIntegrationTest {
                         null,
                         null,
                         null,
+                        null,
+                        null,
+                        "queue-submitter@example.test",
                         null
                 ),
                 "receptionist-queue-test"

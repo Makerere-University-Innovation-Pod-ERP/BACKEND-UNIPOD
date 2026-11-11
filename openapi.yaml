@@ -78,7 +78,9 @@ info:
 
     `POST /submissions/{id}/documents/upload` accepts `multipart/form-data`; the server generates
     the opaque `fileReference`. Files are limited to 15 MB (15,728,640 bytes) and must be one of
-    PDF, Word, Excel, PowerPoint, RTF, ZIP, plain text, CSV, or common image types. `GET
+    PDF, Word, Excel, PowerPoint, RTF, ZIP, plain text, CSV, common image types, and the design
+    formats DXF, DWG, STL, and SVG (an allowed file extension is accepted when the browser reports
+    `application/octet-stream`). `GET
     /submissions/{id}/documents/{documentId}/file` streams the stored bytes as an attachment.
     Never construct a `fileReference` yourself. Uploading a document increments its per-type
     `version` and resolves a matching open document request.
@@ -1456,8 +1458,10 @@ paths:
       description: |
         Stores the file in configured object storage, or in Postgres when object storage is
         disabled. Files are limited to 15 MB (15,728,640 bytes); oversized files return `413`.
-        Accepted content types are PDF, Word, Excel, PowerPoint, RTF, ZIP, plain text, CSV, and
-        JPEG, PNG, GIF, WebP, or TIFF images; anything else returns `400`. Each upload receives
+        Accepted content types are PDF, Word, Excel, PowerPoint, RTF, ZIP, plain text, CSV,
+        JPEG, PNG, GIF, WebP, or TIFF images, and the design formats DXF, DWG, STL, and SVG
+        (an allowed file extension is accepted when the browser reports
+        `application/octet-stream`); anything else returns `400`. Each upload receives
         the next per-type `version` and resolves a matching open document request.
         `documentType` defaults to `OTHER` when omitted. Submitters may upload only while their
         brief is `DRAFT`, `SUBMITTED`, or `AWAITING_INFORMATION`.
@@ -2014,10 +2018,10 @@ components:
     ReceptionCheckItemKey:
       type: string
       enum:
-        - IDENTITY_CONFIRMED
-        - CONTACT_DETAILS_CONFIRMED
-        - BRIEF_SUMMARY_CLEAR
-        - DOCUMENTS_PRESENT
+        - DETAILS_COMPLETE
+        - DOCUMENTS_COMPLETE
+        - FILES_READABLE
+        - CORRECT_TYPE
     ReceptionCheckItemRequest:
       type: object
       additionalProperties: false

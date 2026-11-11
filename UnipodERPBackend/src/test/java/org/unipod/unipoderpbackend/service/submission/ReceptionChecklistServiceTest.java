@@ -54,11 +54,20 @@ class ReceptionChecklistServiceTest {
         assertEquals(4, response.totalCount());
         assertEquals(0, response.checkedCount());
         assertFalse(response.complete());
-        assertTrue(response.items().stream().anyMatch(item -> item.key().equals("IDENTITY_CONFIRMED")));
-        assertTrue(response.items().stream().anyMatch(item -> item.key().equals("CONTACT_DETAILS_CONFIRMED")));
-        assertTrue(response.items().stream().anyMatch(item -> item.key().equals("BRIEF_SUMMARY_CLEAR")));
-        assertTrue(response.items().stream().anyMatch(item -> item.key().equals("DOCUMENTS_PRESENT")));
+        assertTrue(response.items().stream().anyMatch(item -> item.key().equals("DETAILS_COMPLETE")));
+        assertTrue(response.items().stream().anyMatch(item -> item.key().equals("DOCUMENTS_COMPLETE")));
+        assertTrue(response.items().stream().anyMatch(item -> item.key().equals("FILES_READABLE")));
+        assertTrue(response.items().stream().anyMatch(item -> item.key().equals("CORRECT_TYPE")));
         assertTrue(response.items().stream().noneMatch(item -> item.key().equals("STUDENT_EVIDENCE")));
+        assertEquals(
+                List.of(
+                        "Details complete",
+                        "Documents complete for this type",
+                        "Files readable",
+                        "Correct type"
+                ),
+                response.items().stream().map(item -> item.label()).toList()
+        );
     }
 
     @Test
@@ -83,13 +92,13 @@ class ReceptionChecklistServiceTest {
         var response = service.update(
                 submission.getId(),
                 new ReceptionCheckUpdateRequest(List.of(
-                        new ReceptionCheckItemRequest("IDENTITY_CONFIRMED", true, " Student ID sighted ")
+                        new ReceptionCheckItemRequest("DETAILS_COMPLETE", true, " Student ID sighted ")
                 )),
                 "receptionist-1"
         );
 
         var item = response.items().stream()
-                .filter(entry -> entry.key().equals("IDENTITY_CONFIRMED"))
+                .filter(entry -> entry.key().equals("DETAILS_COMPLETE"))
                 .findFirst()
                 .orElseThrow();
         assertTrue(item.checked());
@@ -149,7 +158,7 @@ class ReceptionChecklistServiceTest {
                 () -> service.update(
                         submission.getId(),
                         new ReceptionCheckUpdateRequest(List.of(
-                                new ReceptionCheckItemRequest("IDENTITY_CONFIRMED", true, null)
+                                new ReceptionCheckItemRequest("DETAILS_COMPLETE", true, null)
                         )),
                         "receptionist-1"
                 )
@@ -173,3 +182,4 @@ class ReceptionChecklistServiceTest {
         );
     }
 }
+

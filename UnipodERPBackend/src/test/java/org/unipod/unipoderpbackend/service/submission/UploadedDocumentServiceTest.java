@@ -13,6 +13,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.web.multipart.MultipartFile;
 import org.unipod.unipoderpbackend.exception.storage.StorageObjectNotFoundException;
+import org.unipod.unipoderpbackend.exception.submission.InvalidSubmissionException;
 import org.unipod.unipoderpbackend.exception.submission.SubmissionNotFoundException;
 import org.unipod.unipoderpbackend.model.submission.DocumentStatus;
 import org.unipod.unipoderpbackend.model.submission.DocumentType;
@@ -156,13 +157,78 @@ class UploadedDocumentServiceTest {
         verify(missingItems).saveAll(List.of(openRequest));
     }
 
+    @Test
+    void acceptsDesignFormatsReportedAsOctetStream() throws Exception {
+        UUID id = UUID.randomUUID();
+        Submission submission = new Submission(
+                id, SubmissionCategory.GENERAL, "Title", "Purpose", "Problem",
+                "actor", null, null, null, null, Instant.parse("2026-03-01T00:00:00Z")
+        );
+        when(submissions.findByIdForUpdate(id)).thenReturn(Optional.of(submission));
+        when(storage.upload(any())).thenReturn("opaque-object");
+        when(documents.saveAndFlush(any(SubmissionDocument.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.upload(
+                id,
+                "design",
+                DocumentType.SUPPORTING_EVIDENCE,
+                DocumentStatus.SUBMITTED,
+                file("application/octet-stream", "layout.DWG"),
+                "actor",
+                false
+        );
+
+        verify(documents).saveAndFlush(argThat(document ->
+                "application/octet-stream".equals(document.getContentType())));
+    }
+
+    @Test
+    void acceptsSvgAndStlContentTypes() throws Exception {
+        UUID id = UUID.randomUUID();
+        Submission submission = new Submission(
+                id, SubmissionCategory.GENERAL, "Title", "Purpose", "Problem",
+                "actor", null, null, null, null, Instant.parse("2026-03-01T00:00:00Z")
+        );
+        when(submissions.findByIdForUpdate(id)).thenReturn(Optional.of(submission));
+        when(storage.upload(any())).thenReturn("opaque-object");
+        when(documents.saveAndFlush(any(SubmissionDocument.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.upload(id, "drawing", DocumentStatus.SUBMITTED,
+                file("image/svg+xml", "drawing.svg"), "actor");
+        service.upload(id, "model", DocumentStatus.SUBMITTED,
+                file("model/stl", "model.stl"), "actor");
+    }
+
+    @Test
+    void rejectsOctetStreamWithUnknownExtension() throws Exception {
+        UUID id = UUID.randomUUID();
+        Submission submission = new Submission(
+                id, SubmissionCategory.GENERAL, "Title", "Purpose", "Problem",
+                "actor", null, null, null, null, Instant.parse("2026-03-01T00:00:00Z")
+        );
+        when(submissions.findByIdForUpdate(id)).thenReturn(Optional.of(submission));
+
+        assertThrows(InvalidSubmissionException.class, () -> service.upload(
+                id, "payload", DocumentStatus.SUBMITTED,
+                file("application/octet-stream", "payload.exe"), "actor"
+        ));
+        verifyNoInteractions(storage);
+    }
+
     private static MultipartFile file() throws Exception {
+        return file("text/plain", "brief.txt");
+    }
+
+    private static MultipartFile file(String contentType, String filename) throws Exception {
         MultipartFile file = mock(MultipartFile.class);
         when(file.isEmpty()).thenReturn(false);
         when(file.getSize()).thenReturn(4L);
-        when(file.getContentType()).thenReturn("text/plain");
-        when(file.getOriginalFilename()).thenReturn("brief.txt");
+        when(file.getContentType()).thenReturn(contentType);
+        when(file.getOriginalFilename()).thenReturn(filename);
         when(file.getInputStream()).thenReturn(new ByteArrayInputStream(new byte[]{1, 2, 3, 4}));
         return file;
     }
 }
+

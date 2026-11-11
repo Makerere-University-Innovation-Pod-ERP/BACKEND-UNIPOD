@@ -4,18 +4,19 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * The canonical reception verification lines. The key is stable and is what the
- * API accepts; the label is the human-readable line shown to the receptionist.
+ * The canonical reception verification lines from the intake specification. The
+ * key is stable and is what the API accepts; the label is the human-readable
+ * line shown to the receptionist.
  *
  * <p>The four lines apply to every submission category. Category-specific
  * evidence (student number, recommendation letter, service requester) is
  * captured on the brief itself rather than as a separate checklist line.</p>
  */
 public enum ReceptionCheckItem {
-    IDENTITY_CONFIRMED("Submitter identity confirmed"),
-    CONTACT_DETAILS_CONFIRMED("Contact details confirmed"),
-    BRIEF_SUMMARY_CLEAR("Brief summary is clear"),
-    DOCUMENTS_PRESENT("Required documents present");
+    DETAILS_COMPLETE("Details complete"),
+    DOCUMENTS_COMPLETE("Documents complete for this type"),
+    FILES_READABLE("Files readable"),
+    CORRECT_TYPE("Correct type");
 
     private final String label;
 
