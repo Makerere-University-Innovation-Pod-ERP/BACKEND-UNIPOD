@@ -294,7 +294,8 @@ public class Submission {
         boolean validTransition = switch (stage) {
             case RECEIVED -> nextStage == SubmissionStage.REGISTERED;
             case REGISTERED -> nextStage == SubmissionStage.FACT_FINDING;
-            case FACT_FINDING, FORWARDED -> nextStage == SubmissionStage.UNDER_REVIEW;
+            case FACT_FINDING, FORWARDED -> nextStage == SubmissionStage.UNDER_REVIEW
+                    || nextStage == SubmissionStage.REFINEMENT_REQUESTED;
             case UNDER_REVIEW, IN_PROGRESS -> nextStage == SubmissionStage.REFINEMENT_REQUESTED;
             case REFINEMENT_REQUESTED -> nextStage == SubmissionStage.FURTHER_HANDLING;
             case FURTHER_HANDLING -> nextStage == SubmissionStage.COMPLETED;
