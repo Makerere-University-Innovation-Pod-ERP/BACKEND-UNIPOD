@@ -1,5 +1,7 @@
 package org.unipod.unipoderpbackend.controller;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.UUID;
 import java.util.Locale;
 import java.util.regex.Matcher;
@@ -800,5 +802,129 @@ class WaluubeApiIntegrationTest {
                         .param("code", "   "))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.title").value("Validation failed"));
+    }
+
+    @Test
+    void searchMatchesReferenceTitleAndSubmitterName() throws Exception {
+        String token = UUID.randomUUID().toString();
+        String title = "Solar tracker " + token;
+        String submitterName = "Amina Nsubuga " + token;
+        var receptionist = user("reception-" + token).roles("RECEPTIONIST");
+        var observer = user("observer-" + token).roles("OBSERVER");
+
+        String created = mockMvc.perform(post("/submissions")
+                        .with(receptionist)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "category": "general",
+                                  "title": "%s",
+                                  "purpose": "Verify search fields",
+                                  "problemAddressed": "Search must cover every display key",
+                                  "submitterId": "submitter-%s",
+                                  "submitterName": "%s"
+                                }
+                                """.formatted(title, token, submitterName)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.submitterName").value(submitterName))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        Matcher idMatcher = Pattern.compile("\"id\":\"([^\"]+)\"").matcher(created);
+        Matcher codeMatcher = Pattern.compile("\"code\":\"([^\"]+)\"").matcher(created);
+        assertTrue(idMatcher.find(), "Create response should include the submission id.");
+        assertTrue(codeMatcher.find(), "Create response should include the tracking reference.");
+        String id = idMatcher.group(1);
+        String code = codeMatcher.group(1);
+
+        mockMvc.perform(get("/submissions/search")
+                        .with(observer)
+                        .param("code", code))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].id").value(id));
+
+        mockMvc.perform(get("/submissions/search")
+                        .with(observer)
+                        .param("code", code.toLowerCase(Locale.ROOT)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].id").value(id));
+
+        mockMvc.perform(get("/submissions/search")
+                        .with(observer)
+                        .param("code", token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[?(@.id == '" + id + "')]").isNotEmpty());
+
+        mockMvc.perform(get("/submissions/search")
+                        .with(observer)
+                        .param("code", "Amina Nsubuga " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].id").value(id));
+
+        mockMvc.perform(get("/submissions")
+                        .with(observer)
+                        .param("q", token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[?(@.id == '" + id + "')]").isNotEmpty());
+    }
+
+    @Test
+    void submissionListFiltersByInclusiveReceivedDateRange() throws Exception {
+        String token = UUID.randomUUID().toString();
+        var receptionist = user("reception-" + token).roles("RECEPTIONIST");
+        var observer = user("observer-" + token).roles("OBSERVER");
+        LocalDate today = LocalDate.now(ZoneId.of("Africa/Kampala"));
+
+        String created = mockMvc.perform(post("/submissions")
+                        .with(receptionist)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "category": "general",
+                                  "title": "Dated case %s",
+                                  "purpose": "Verify the received date filter",
+                                  "problemAddressed": "Reception needs date filtering",
+                                  "submitterId": "submitter-%s"
+                                }
+                                """.formatted(token, token)))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        Matcher idMatcher = Pattern.compile("\"id\":\"([^\"]+)\"").matcher(created);
+        assertTrue(idMatcher.find(), "Create response should include the submission id.");
+        String id = idMatcher.group(1);
+
+        mockMvc.perform(post("/submissions/{id}/register", id).with(receptionist))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.receivedAt").isNotEmpty());
+
+        mockMvc.perform(get("/submissions")
+                        .with(observer)
+                        .param("q", token)
+                        .param("receivedFrom", today.toString())
+                        .param("receivedTo", today.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[?(@.id == '" + id + "')]").isNotEmpty());
+
+        mockMvc.perform(get("/submissions")
+                        .with(observer)
+                        .param("q", token)
+                        .param("receivedFrom", today.plusDays(1).toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0));
+
+        mockMvc.perform(get("/submissions")
+                        .with(observer)
+                        .param("q", token)
+                        .param("receivedTo", today.minusDays(1).toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0));
+
+        mockMvc.perform(get("/submissions")
+                        .with(observer)
+                        .param("receivedFrom", today.toString())
+                        .param("receivedTo", today.minusDays(1).toString()))
+                .andExpect(status().isBadRequest());
     }
 }

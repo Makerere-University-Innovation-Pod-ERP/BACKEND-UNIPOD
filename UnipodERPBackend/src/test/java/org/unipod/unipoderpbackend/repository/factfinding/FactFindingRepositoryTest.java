@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
@@ -22,6 +23,8 @@ import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.unipod.unipoderpbackend.model.factfinding.FactFindingCheck;
 import org.unipod.unipoderpbackend.model.factfinding.FactFindingResult;
+import org.unipod.unipoderpbackend.model.submission.Submission;
+import org.unipod.unipoderpbackend.model.submission.SubmissionCategory;
 
 @DataJpaTest(showSql = false)
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -38,6 +41,29 @@ class FactFindingRepositoryTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @BeforeEach
+    void createReferencedBriefs() {
+        for (long value = 501; value <= 513; value++) {
+            Submission brief = new Submission(
+                    brief(value),
+                    SubmissionCategory.GENERAL,
+                    "Brief " + value,
+                    "Purpose " + value,
+                    "Problem " + value,
+                    "receptionist@example.test",
+                    "submitter@example.test",
+                    null,
+                    null,
+                    null,
+                    null,
+                    Instant.parse("2026-11-01T08:00:00Z")
+            );
+            brief.assignTrackingReference("CASE-FF-" + value);
+            entityManager.persist(brief);
+        }
+        entityManager.flush();
+    }
 
     @Test
     void savesAndReadsBackEveryField() {

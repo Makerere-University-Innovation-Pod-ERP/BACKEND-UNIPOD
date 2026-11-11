@@ -63,8 +63,7 @@ public class FactFindingCommandService {
             Authentication authentication
     ) {
         requireLengthLimits(request);
-Submission brief = submissions.findByIdForUpdate(briefId)
-                .orElseThrow(() -> new SubmissionNotFoundException(briefId));
+        Submission brief = visibleCaseForUpdate(briefId, authentication);
         requireSavableStage(brief.getStage());
         FactFindingCheck check = saveAnswers(briefId, request, authentication.getName());
         return FactFindingResponse.from(brief, check);
@@ -77,8 +76,7 @@ Submission brief = submissions.findByIdForUpdate(briefId)
             CompleteFactFindingRequest request,
             Authentication authentication
     ) {
-        Submission brief = submissions.findByIdForUpdate(briefId)
-                .orElseThrow(() -> new SubmissionNotFoundException(briefId));
+        Submission brief = visibleCaseForUpdate(briefId, authentication);
         requireCompletableStage(brief.getStage());
         FactFindingCheck check = checks.findTopByBriefIdOrderByRoundDesc(briefId)
                 .orElseThrow(() -> new SubmissionConflictException(
@@ -201,9 +199,9 @@ Submission brief = submissions.findByIdForUpdate(briefId)
         }
     }
 
-    private Submission visibleCase(UUID briefId, Authentication authentication) {
+    private Submission visibleCaseForUpdate(UUID briefId, Authentication authentication) {
         String scope = SubmissionVisibility.scope(authentication);
-        return submissions.findVisibleById(briefId, scope, authentication.getName())
+        return submissions.findVisibleByIdForUpdate(briefId, scope, authentication.getName())
                 .orElseThrow(() -> new SubmissionNotFoundException(briefId));
     }
 

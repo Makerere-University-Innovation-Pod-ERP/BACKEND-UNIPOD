@@ -48,7 +48,7 @@ class FactFindingCommandServiceTest {
     @Test
     void optimisticLockFailureBecomesConflict() {
         Submission brief = factFindingBrief();
-        when(submissions.findByIdForUpdate(brief.getId())).thenReturn(Optional.of(brief));
+        when(submissions.findVisibleByIdForUpdate(brief.getId(), "ALL", OFFICER)).thenReturn(Optional.of(brief));
         when(checks.findTopByBriefIdOrderByRoundDesc(brief.getId())).thenReturn(Optional.empty());
         when(checks.saveAndFlush(any(FactFindingCheck.class)))
                 .thenThrow(new ObjectOptimisticLockingFailureException(FactFindingCheck.class, 7L));
@@ -64,7 +64,7 @@ class FactFindingCommandServiceTest {
     @Test
     void briefRoundUniqueViolationBecomesConflict() {
         Submission brief = factFindingBrief();
-        when(submissions.findByIdForUpdate(brief.getId())).thenReturn(Optional.of(brief));
+        when(submissions.findVisibleByIdForUpdate(brief.getId(), "ALL", OFFICER)).thenReturn(Optional.of(brief));
         when(checks.findTopByBriefIdOrderByRoundDesc(brief.getId())).thenReturn(Optional.empty());
         when(checks.saveAndFlush(any(FactFindingCheck.class)))
                 .thenThrow(new DataIntegrityViolationException(
@@ -86,7 +86,7 @@ class FactFindingCommandServiceTest {
     @Test
     void unrelatedIntegrityViolationIsRethrownUnchanged() {
         Submission brief = factFindingBrief();
-        when(submissions.findByIdForUpdate(brief.getId())).thenReturn(Optional.of(brief));
+        when(submissions.findVisibleByIdForUpdate(brief.getId(), "ALL", OFFICER)).thenReturn(Optional.of(brief));
         when(checks.findTopByBriefIdOrderByRoundDesc(brief.getId())).thenReturn(Optional.empty());
         DataIntegrityViolationException failure = new DataIntegrityViolationException(
                 "null value in column \"officer_id\" violates not-null constraint",

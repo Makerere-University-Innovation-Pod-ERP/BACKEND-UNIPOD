@@ -5,11 +5,10 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Callable;
-import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -32,7 +31,6 @@ import org.unipod.unipoderpbackend.model.submission.CaseStageHistory;
 import org.unipod.unipoderpbackend.model.submission.Submission;
 import org.unipod.unipoderpbackend.model.submission.SubmissionCategory;
 import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
-import org.unipod.unipoderpbackend.repository.factfinding.FactFindingRepository;
 import org.unipod.unipoderpbackend.repository.submission.CaseStageHistoryRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
 import tools.jackson.databind.ObjectMapper;
@@ -59,9 +57,6 @@ class FactFindingCompleteAtomicityTest {
 
     @Autowired
     private SubmissionRepository submissions;
-
-    @MockitoSpyBean
-    private FactFindingRepository checks;
 
     @MockitoSpyBean
     private CaseStageHistoryRepository historyRepository;
@@ -119,21 +114,24 @@ class FactFindingCompleteAtomicityTest {
     }
 
     @Test
-    void concurrentFirstDraftsYieldOneSuccessAndOneConflict() throws Exception {
+    void concurrentFirstDraftsSerializeToOneSuccessAndOneReload() throws Exception {
         Submission brief = createBrief("CASE-FF-R2", "Cold room");
-        CyclicBarrier bothHaveReadNothing = new CyclicBarrier(2);
-        Mockito.doAnswer(invocation -> {
-            bothHaveReadNothing.await(20, TimeUnit.SECONDS);
-            // Both transactions hold no row yet, so an uncommitted insert is invisible to either.
-            return Optional.empty();
-        }).when(checks).findTopByBriefIdOrderByRoundDesc(Mockito.any(UUID.class));
+        CountDownLatch bothMayStart = new CountDownLatch(1);
 
         ExecutorService pool = Executors.newFixedThreadPool(2);
         try {
-            Callable<Outcome> firstSave = () -> saveOnce(brief.getId(), answers("first"));
-            Callable<Outcome> secondSave = () -> saveOnce(brief.getId(), answers("second"));
+            Callable<Outcome> firstSave = () -> {
+                bothMayStart.await(20, TimeUnit.SECONDS);
+                return saveOnce(brief.getId(), answers("first"));
+            };
+            Callable<Outcome> secondSave = () -> {
+                bothMayStart.await(20, TimeUnit.SECONDS);
+                return saveOnce(brief.getId(), answers("second"));
+            };
             Future<Outcome> first = pool.submit(firstSave);
             Future<Outcome> second = pool.submit(secondSave);
+            bothMayStart.countDown();
+
             List<Outcome> outcomes = List.of(
                     first.get(60, TimeUnit.SECONDS),
                     second.get(60, TimeUnit.SECONDS)
@@ -142,16 +140,15 @@ class FactFindingCompleteAtomicityTest {
             Set<Integer> statuses = outcomes.stream()
                     .map(Outcome::status)
                     .collect(Collectors.toSet());
-            assertEquals(Set.of(200, 409), statuses);
+            assertEquals(Set.of(200, 422), statuses);
 
-            Outcome conflict = outcomes.stream()
-                    .filter(outcome -> outcome.status() == 409)
+            Outcome rejected = outcomes.stream()
+                    .filter(outcome -> outcome.status() == 422)
                     .findFirst()
                     .orElseThrow();
-            assertTrue(conflict.body().contains(
-                    "This fact-finding check was changed by another user. Reload it before saving."
+            assertTrue(rejected.body().contains(
+                    "version is required when updating an existing fact-finding check."
             ));
-            assertTrue(conflict.body().contains("Submission conflict"));
         } finally {
             pool.shutdownNow();
         }
