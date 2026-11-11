@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 // Unknown properties are ignored: officer, round, result and completedAt are server-owned,
 // while the global Jackson setting rejects unknown fields on every other endpoint.
-@JsonIgnoreProperties(ignoreUnknown = true)
+@JsonIgnoreProperties(value = {"officerId", "round", "result", "completedAt"})
 public record SaveFactFindingRequest(
         Boolean titleClear,
         String titleNote,
