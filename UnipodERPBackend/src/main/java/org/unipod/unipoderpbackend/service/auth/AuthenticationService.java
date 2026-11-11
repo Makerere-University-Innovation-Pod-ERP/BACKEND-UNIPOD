@@ -1,5 +1,6 @@
 package org.unipod.unipoderpbackend.service.auth;
 
+import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -19,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 import org.unipod.unipoderpbackend.dto.auth.ApiUserResponse;
+import org.unipod.unipoderpbackend.dto.auth.ChangePasswordRequest;
 import org.unipod.unipoderpbackend.dto.auth.CreateApiUserRequest;
 import org.unipod.unipoderpbackend.dto.auth.LoginRequest;
 import org.unipod.unipoderpbackend.dto.auth.LoginResponse;
@@ -29,6 +31,10 @@ import org.unipod.unipoderpbackend.repository.auth.ApiUserRepository;
 @Service
 public class AuthenticationService {
     private static final Duration MAX_TOKEN_TTL = Duration.ofHours(1);
+    private static final String TEMPORARY_PASSWORD_ALPHABET =
+            "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&*";
+    private static final int TEMPORARY_PASSWORD_LENGTH = 16;
+    private static final SecureRandom RANDOM = new SecureRandom();
 
     private final ApiUserRepository users;
     private final PasswordEncoder passwordEncoder;
@@ -84,7 +90,68 @@ public class AuthenticationService {
                 JwsHeader.with(MacAlgorithm.HS256).build(),
                 claims
         )).getTokenValue();
-        return new LoginResponse("Bearer", token, expiresAt);
+        return new LoginResponse("Bearer", token, expiresAt, user.isMustChangePassword());
+    }
+
+    @Transactional
+    public AssistedAccount createAssistedSubmitter(String email) {
+        String normalizedEmail = normalizeEmail(email);
+        if (users.existsByEmailIgnoreCase(normalizedEmail)) {
+            return new AssistedAccount(normalizedEmail, false, null);
+        }
+
+        String temporaryPassword = temporaryPassword();
+        Instant now = clock.instant();
+        ApiUser user = new ApiUser(
+                UUID.randomUUID(),
+                normalizedEmail,
+                passwordEncoder.encode(temporaryPassword),
+                ApiUserRole.SUBMITTER,
+                true,
+                now
+        );
+        try {
+            users.saveAndFlush(user);
+        } catch (DataIntegrityViolationException exception) {
+            // Another request created the account first. Roll back this attempt; a retry
+            // will find the existing account and reuse it without exposing a password.
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "An account with this email was created concurrently. Retry the assisted submission."
+            );
+        }
+        return new AssistedAccount(normalizedEmail, true, temporaryPassword);
+    }
+
+    @Transactional
+    public void changePassword(String email, ChangePasswordRequest request) {
+        ApiUser user = users.findByEmailIgnoreCase(normalizeEmail(email))
+                .filter(ApiUser::isEnabled)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.UNAUTHORIZED,
+                        "A valid account is required."
+                ));
+        if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The current password is incorrect.");
+        }
+        if (passwordEncoder.matches(request.newPassword(), user.getPasswordHash())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "The new password must be different from the current password."
+            );
+        }
+        user.changePassword(passwordEncoder.encode(request.newPassword()), clock.instant());
+        users.save(user);
+    }
+
+    private static String temporaryPassword() {
+        StringBuilder password = new StringBuilder(TEMPORARY_PASSWORD_LENGTH);
+        for (int i = 0; i < TEMPORARY_PASSWORD_LENGTH; i++) {
+            password.append(TEMPORARY_PASSWORD_ALPHABET.charAt(
+                    RANDOM.nextInt(TEMPORARY_PASSWORD_ALPHABET.length())
+            ));
+        }
+        return password.toString();
     }
 
     @Transactional
@@ -129,5 +196,8 @@ public class AuthenticationService {
 
     private static String normalizeEmail(String email) {
         return email.trim().toLowerCase(Locale.ROOT);
+    }
+
+    public record AssistedAccount(String email, boolean created, String temporaryPassword) {
     }
 }

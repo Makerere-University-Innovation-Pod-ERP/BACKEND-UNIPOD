@@ -20,6 +20,7 @@ import org.unipod.unipoderpbackend.dto.submission.CaseStageHistoryResponse;
 import org.unipod.unipoderpbackend.dto.submission.CreateDocumentRequest;
 import org.unipod.unipoderpbackend.dto.submission.CreateSubmissionRequest;
 import org.unipod.unipoderpbackend.dto.submission.DocumentResponse;
+import org.unipod.unipoderpbackend.dto.submission.MissingItemRequest;
 import org.unipod.unipoderpbackend.dto.submission.SubmissionResponse;
 import org.unipod.unipoderpbackend.dto.submission.SubmitterSubmissionResponse;
 import org.unipod.unipoderpbackend.dto.submission.RequestInformationRequest;
@@ -29,6 +30,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.unipod.unipoderpbackend.model.sector.Sector;
 import org.unipod.unipoderpbackend.model.submission.CaseStageHistory;
 import org.unipod.unipoderpbackend.model.submission.DocumentStatus;
+import org.unipod.unipoderpbackend.model.submission.MissingItem;
 import org.unipod.unipoderpbackend.model.submission.RecommendationLetterStatus;
 import org.unipod.unipoderpbackend.model.submission.Submission;
 import org.unipod.unipoderpbackend.model.submission.SubmissionCategory;
@@ -36,6 +38,7 @@ import org.unipod.unipoderpbackend.model.submission.SubmissionDocument;
 import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
 import org.unipod.unipoderpbackend.repository.dashboard.PipelineMetricsRepository;
 import org.unipod.unipoderpbackend.repository.submission.CaseStageHistoryRepository;
+import org.unipod.unipoderpbackend.repository.submission.MissingItemRepository;
 import org.unipod.unipoderpbackend.repository.submission.NotificationOutbox;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionDocumentRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
@@ -50,6 +53,7 @@ public class SubmissionService {
     private final CaseStageHistoryRepository stageHistory;
     private final CaseCodeGenerator caseCodeGenerator;
     private final SubmissionDocumentRepository documents;
+    private final MissingItemRepository missingItems;
     private final NotificationOutbox notificationOutbox;
     private final PipelineMetricsRepository metrics;
     private final SectorService sectorsCatalog;
@@ -61,6 +65,7 @@ public class SubmissionService {
             CaseStageHistoryRepository stageHistory,
             CaseCodeGenerator caseCodeGenerator,
             SubmissionDocumentRepository documents,
+            MissingItemRepository missingItems,
             NotificationOutbox notificationOutbox,
             PipelineMetricsRepository metrics,
             SectorService sectorsCatalog,
@@ -70,6 +75,7 @@ public class SubmissionService {
         this.stageHistory = stageHistory;
         this.caseCodeGenerator = caseCodeGenerator;
         this.documents = documents;
+        this.missingItems = missingItems;
         this.notificationOutbox = notificationOutbox;
         this.metrics = metrics;
         this.sectorsCatalog = sectorsCatalog;
@@ -235,33 +241,77 @@ public class SubmissionService {
         Submission submission = submissions.findByIdForUpdate(id)
                 .orElseThrow(() -> new SubmissionNotFoundException(id));
         Instant now = clock.instant();
-        String note = request.note().trim();
+        List<MissingItemRequest> requestedItems = request.items() == null
+                ? List.of()
+                : request.items();
+        String note = clean(request.note());
+        if (note == null && requestedItems.isEmpty()) {
+            throw new InvalidSubmissionException(
+                    "A reason or at least one missing item is required when requesting more information."
+            );
+        }
         if (!isEmailAddress(submission.getSubmitterEmail())) {
             throw new InvalidSubmissionException(
                     "A submitter email address is required before requesting more information."
             );
         }
-        submission.requestInformation(note, actor, now);
+        String summary = note == null ? summarize(requestedItems) : note;
+        submission.requestInformation(summary, actor, now);
         stageHistory.save(new CaseStageHistory(
                 UUID.randomUUID(),
                 submission.getId(),
                 SubmissionStage.DRAFT,
                 SubmissionStage.DRAFT,
                 actor,
-                note,
+                summary,
                 now
         ));
+        for (MissingItemRequest item : requestedItems) {
+            if (item.label() == null || item.label().isBlank()) {
+                throw new InvalidSubmissionException("A label is required for every missing item.");
+            }
+            missingItems.save(item.documentType() == null
+                    ? MissingItem.information(
+                            UUID.randomUUID(),
+                            submission.getId(),
+                            item.label().trim(),
+                            clean(item.note()),
+                            actor,
+                            now
+                    )
+                    : MissingItem.document(
+                            UUID.randomUUID(),
+                            submission.getId(),
+                            item.label().trim(),
+                            clean(item.note()),
+                            item.documentType(),
+                            actor,
+                            now
+                    ));
+        }
         notificationOutbox.recordInformationRequested(
                 submission.getId(),
                 submission.getCode(),
                 submission.getSubmitterId(),
                 submission.getSubmitterEmail(),
-                note,
+                summary,
                 actor,
                 now
         );
         submissions.flush();
         return SubmissionResponse.from(submission);
+    }
+
+    private static String summarize(List<MissingItemRequest> items) {
+        String summary = items.stream()
+                .map(MissingItemRequest::label)
+                .filter(label -> label != null && !label.isBlank())
+                .map(String::trim)
+                .collect(java.util.stream.Collectors.joining("; "));
+        if (summary.isBlank()) {
+            throw new InvalidSubmissionException("A label is required for every missing item.");
+        }
+        return summary.length() <= 2000 ? summary : summary.substring(0, 2000);
     }
 
     @Transactional
@@ -464,7 +514,7 @@ public class SubmissionService {
         return isEmailAddress(submitterId) ? submitterId : null;
     }
 
-    private static boolean isEmailAddress(String email) {
+    static boolean isEmailAddress(String email) {
         if (email == null || email.isBlank()) {
             return false;
         }

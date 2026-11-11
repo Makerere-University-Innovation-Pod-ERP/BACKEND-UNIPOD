@@ -43,7 +43,11 @@ The Waluube API contract is documented in [`openapi.yaml`](./openapi.yaml).
 * `PUT /api/submissions/{id}` updates a draft. Submitters may update only their own drafts; intake staff may update drafts they manage.
 * `POST /api/submissions/{id}/register` records receipt and adds the stage-history entry while preserving the original tracking reference.
 * `POST /api/submissions/{id}/forward` can register and forward a draft to a department in one transaction, or forward an already received submission.
-* Intake staff can use `POST /api/submissions/{id}/request-information` to attach a note to a draft and enqueue a notification. Updating the draft clears the outstanding request.
+* Intake staff can use `POST /api/submissions/{id}/request-information` to attach a note, or a list of missing items, to a draft and enqueue a notification. Updating the draft clears the outstanding request.
+* `GET|PUT /api/submissions/{id}/reception-checklist` records the reception verification lines, with an optional note per line. The checklist can be changed while the submission is `DRAFT` or `RECEIVED`.
+* `GET /api/submissions/{id}/missing-items` lists outstanding and resolved information and document requests. `POST /api/submissions/{id}/missing-documents` records documents the submitter still owes.
+* `POST /api/submissions/{id}/reminders` marks open missing items as reminded and enqueues a reminder notification. `POST /api/submissions/{id}/missing-items/{itemId}/resolve` closes an item manually; uploading a matching document closes it automatically.
+* `POST /api/submissions/assisted` captures a walk-in brief and creates a minimal `SUBMITTER` account. The one-time temporary password is returned once, and the login response flags that the submitter should change it.
 
 Case codes follow these formats:
 
@@ -125,6 +129,14 @@ This endpoint returns paginated drafts and queue counters:
 | POST   | `/api/submissions/{id}/forward`    | Registers a draft if needed, then forwards it to a sector. |
 | POST   | `/api/submissions/{id}/transition` | Advances a submission to the next lifecycle stage.      |
 | POST   | `/api/submissions/{id}/documents`  | Adds typed document metadata.                           |
+| POST   | `/api/submissions/assisted`         | Creates a walk-in draft and a minimal submitter account. |
+| GET    | `/api/submissions/{id}/reception-checklist` | Returns the reception verification checklist.   |
+| PUT    | `/api/submissions/{id}/reception-checklist` | Ticks checklist lines with a note per line.      |
+| GET    | `/api/submissions/{id}/missing-items` | Lists missing information and document requests.    |
+| POST   | `/api/submissions/{id}/missing-documents` | Records documents the submitter still owes.      |
+| POST   | `/api/submissions/{id}/missing-items/{itemId}/resolve` | Resolves a missing item.            |
+| POST   | `/api/submissions/{id}/reminders`   | Sends the submitter a reminder about open items.        |
+| POST   | `/api/auth/change-password`         | Changes the authenticated account's password.           |
 | GET    | `/api/queues/reception`            | Returns the reception queue and counters.               |
 | GET    | `/api/dashboard/overview`          | Returns dashboard statistics.                           |
 
@@ -326,6 +338,64 @@ bucket. Otherwise (the default) they are stored in Postgres in the
 `document_blobs` table, so no external storage account is required. Both modes
 expose the same endpoints and reference format.
 
+### Reception Checklist, Missing Items, and Reminders
+
+Reception verifies a draft with:
+
+`GET /api/submissions/{id}/reception-checklist`
+
+`PUT /api/submissions/{id}/reception-checklist`
+
+Each line has a stable `key`, a human-readable `label`, and an optional `note`.
+Student-only lines are returned only for student submissions. The checklist can
+be updated while the submission is `DRAFT` or `RECEIVED`.
+
+```json
+{
+  "items": [
+    {
+      "key": "IDENTITY_CONFIRMED",
+      "checked": true,
+      "note": "Student ID sighted"
+    },
+    {
+      "key": "DOCUMENTS_PRESENT",
+      "checked": false,
+      "note": "Project brief still missing"
+    }
+  ]
+}
+```
+
+`POST /api/submissions/{id}/request-information` accepts either a single `note`
+or an `items` array, or both. Each item becomes an open missing item. A
+`documentType` on an item records a document request; without one it is an
+information request.
+
+Missing documents and reminders use:
+
+* `POST /api/submissions/{id}/missing-documents`
+* `GET /api/submissions/{id}/missing-items`
+* `POST /api/submissions/{id}/missing-items/{itemId}/resolve`
+* `POST /api/submissions/{id}/reminders`
+
+```json
+{
+  "items": [
+    {
+      "label": "Signed recommendation letter",
+      "note": "Please upload the signed copy",
+      "documentType": "RECOMMENDATION_LETTER"
+    }
+  ]
+}
+```
+
+Uploading a document with a matching `documentType` automatically resolves open
+document requests of that type. Reminders are written to the notification outbox
+as `submission.reminder_sent` and delivered asynchronously when email delivery is
+enabled.
+
 The configured multipart and object size limits are enforced from
 `S3_MAX_FILE_BYTES` (with a separate request envelope limit
 `S3_MAX_REQUEST_BYTES`). Upload cleanup is attempted if the corresponding
@@ -391,8 +461,11 @@ before integrating Kafka.
 The backend issues short-lived bearer JWTs through `POST /api/auth/login`.
 Accounts cannot self-register; the first Administrator is bootstrapped from
 Railway secrets, and only Administrators can create additional accounts through
-`POST /api/admin/users`. Passwords are stored as PBKDF2 hashes and are never
-returned by the API.
+`POST /api/admin/users`. Assisted submission can create a minimal `SUBMITTER`
+account and returns its one-time temporary password; the login response sets
+`mustChangePassword`, and the submitter changes it with
+`POST /api/auth/change-password`. Passwords are stored as PBKDF2 hashes and are
+never returned by the API.
 
 Configure the following environment variables in the deployment environment.
 
@@ -646,7 +719,9 @@ On Linux/macOS:
 
 The backend issues a short-lived access token from `POST /api/auth/login`.
 Use credentials for an existing provisioned account; public account
-registration is disabled. Login returns `accessToken` and `expiresAt`.
+registration is disabled. Login returns `accessToken`, `expiresAt`, and
+`mustChangePassword`. Accounts created by assisted submission must change their
+temporary password with `POST /api/auth/change-password`.
 
 The authenticated user must have one of the following roles:
 

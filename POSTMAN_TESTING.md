@@ -1,7 +1,7 @@
 # Postman API testing guide
 
 The Postman files in [`postman/`](./postman/) were generated from
-[`openapi.yaml`](./openapi.yaml) and contain all 34 documented operations:
+[`openapi.yaml`](./openapi.yaml) and contain all 42 documented operations:
 
 - [`Waluube API.postman_collection.json`](./postman/Waluube%20API.postman_collection.json)
 - [`Local API.postman_environment.json`](./postman/Local%20API.postman_environment.json)
@@ -55,7 +55,7 @@ include a valid example body. Replace example values as appropriate.
 
 | # | Request | Required role / conditions | What to check |
 |---:|---|---|---|
-| 1 | `POST /auth/login` | Any provisioned, enabled account | `200`; response contains `accessToken`, `tokenType`, `expiresAt`; token is saved in the selected environment. |
+| 1 | `POST /auth/login` | Any provisioned, enabled account | `200`; response contains `accessToken`, `tokenType`, `expiresAt`, and `mustChangePassword`; token is saved in the selected environment. |
 | 2 | `POST /admin/users` | Administrator | `201`; creates the requested role. Password is never returned. Use the created email and password to log in as that role. |
 | 3 | `POST /submissions` | Administrator, Coordinator, Receptionist, Fact-Finding Officer, or Submitter | `201`; stage is `DRAFT`, code is assigned immediately (`STU-...` or `GEN-...`). A Submitter's `submitterId` is taken from the authenticated identity. Intake staff creating a walk-in case may set `submitterId` and `submitterEmail` separately. |
 | 4 | `GET /submissions` | Administrator, Coordinator, Receptionist, Fact-Finding Officer, IP Liaison, Observer, Submitter, Reviewer, or Sector Officer | `200`; check pagination and optional `category`, `stage`, `sector`, and `q` filters. Results are scoped to role. |
@@ -64,7 +64,7 @@ include a valid example body. Replace example values as appropriate.
 | 7 | `GET /me/submissions` | Submitter | `200`; contains only cases linked to the signed-in submitter, without staff-only fields. |
 | 8 | `GET /me/capabilities` | Submitter | `200`; shows submitter guidance and locked modules; submitters cannot register cases. |
 | 9 | `POST /submissions/{id}/register` | Administrator, Coordinator, Receptionist, or Fact-Finding Officer | `200`; DRAFT becomes `RECEIVED`, with the same code assigned at creation. Student cases require student number, programme, supervisor, and recommendation-letter status. Repeating registration returns `409`. |
-| 10 | `POST /submissions/{id}/request-information` | Administrator, Coordinator, Receptionist, or Fact-Finding Officer; case must be DRAFT and have a valid submitter email | `200`; note appears on the draft and an information-request outbox event with the recipient email is stored. A missing email returns `400`. |
+| 10 | `POST /submissions/{id}/request-information` | Administrator, Coordinator, Receptionist, or Fact-Finding Officer; case must be DRAFT and have a valid submitter email | `200`; `note`, `items`, or both appear on the draft. Each item becomes an open missing item and an information-request outbox event with the recipient email is stored. A missing email or empty request returns `400`. |
 | 11 | `PUT /submissions/{id}/reviewer` | Administrator | `200`; reviewer assignment is updated. |
 | 12 | `GET /submissions/{id}` | Administrator, Coordinator, Receptionist, or Fact-Finding Officer | `200`; check submission, documents, and stage history. |
 | 13 | `PUT /submissions/{id}` | Intake roles, or Submitter for their own DRAFT | `200`; code and ownership remain unchanged. A submitter changing another user's case or a non-draft receives `403`. Updating the draft clears an outstanding information request. |
@@ -77,7 +77,7 @@ include a valid example body. Replace example values as appropriate.
 | 20 | `POST /submissions/{id}/forward` | Administrator, Coordinator, Receptionist, or Fact-Finding Officer; active sector required | `200`; a DRAFT is registered and forwarded atomically, or a RECEIVED case is forwarded. Check stage history, assigned sector, and outbox event. |
 | 21 | `POST /submissions/{id}/transition` | Administrator or Coordinator | `200` for allowed legacy lifecycle transition; test the current stage rules and confirm invalid/skipped transitions are rejected. |
 | 22 | `POST /submissions/{id}/documents` | Intake roles; Submitter may add submitted documents to their own DRAFT | `201`; response includes `documentType`. Submitters cannot mark a document `VERIFIED`. `fileReference` must be an opaque reference, not a URL or path. |
-| 23 | `POST /submissions/{id}/documents/upload` | Intake roles; Submitter may upload to their own DRAFT | `201`; set `name`, `status`, `documentType`, and a local file in Postman's form-data. Files are stored in Postgres by default, or in S3 when `S3_STORAGE_ENABLED=true`. |
+| 23 | `POST /submissions/{id}/documents/upload` | Intake roles; Submitter may upload to their own DRAFT | `201`; set `name`, `status`, `documentType`, and a local file in Postman's form-data. Files are stored in Postgres by default, or in S3 when `S3_STORAGE_ENABLED=true`. Uploading a document resolves open document requests with the same `documentType`. |
 | 24 | `GET /submissions/{id}/documents/{documentId}/file` | Administrator, Coordinator, Receptionist, or Fact-Finding Officer | `200` attachment with `nosniff`; otherwise check the documented not-found/storage response. |
 | 25 | `GET /sectors` | Administrator, Coordinator, Receptionist, or Fact-Finding Officer | `200`; lists active sectors. |
 | 26 | `POST /sectors` | Administrator | `201`; use the returned `id` (`{{sectorId}}`) for forwarding and membership tests. |
@@ -89,6 +89,14 @@ include a valid example body. Replace example values as appropriate.
 | 32 | `DELETE /sectors/{id}/members?subject=...` | Administrator | `204`; membership is removed. |
 | 33 | `GET /queues/reception` | Administrator, Coordinator, Receptionist, or Fact-Finding Officer | `200`; check paginated DRAFT queue and the three queue counters. |
 | 34 | `GET /dashboard/overview` | Any authenticated role | `200`; workflow metrics are role-scoped. Operations and finance fields are available only to Administrators and Coordinators. |
+| 35 | `POST /auth/change-password` | Any authenticated account | `204`; current password must match, and the new password must be 12-72 characters and different. Log in again with the new password. |
+| 36 | `POST /submissions/assisted` | Administrator, Coordinator, Receptionist, or Fact-Finding Officer | `201`; creates a draft and, when the email is new, a minimal `SUBMITTER` account. `temporaryPassword` is returned once and `mustChangePassword` is true at login. |
+| 37 | `GET /submissions/{id}/reception-checklist` | Administrator, Coordinator, Receptionist, or Fact-Finding Officer | `200`; returns the applicable checklist lines. Student-only lines appear only for student submissions. |
+| 38 | `PUT /submissions/{id}/reception-checklist` | Same roles; case must be DRAFT or RECEIVED | `200`; ticks lines with a note per line and returns `checkedCount`/`totalCount`. Changing the checklist after forwarding returns `409`. |
+| 39 | `GET /submissions/{id}/missing-items` | Administrator, Coordinator, Receptionist, or Fact-Finding Officer | `200`; lists information and document requests with `openCount` and resolved history. |
+| 40 | `POST /submissions/{id}/missing-documents` | Same roles; case must not be COMPLETED | `201`; each line requires a `documentType` and becomes an open document request. |
+| 41 | `POST /submissions/{id}/missing-items/{itemId}/resolve` | Same roles | `200`; records the resolver and optional note. Unknown item returns `404`. |
+| 42 | `POST /submissions/{id}/reminders` | Same roles; case must have a valid submitter email and open items | `200`; marks open items reminded and stores a `submission.reminder_sent` outbox event. No open items returns `409`. |
 
 ## Suggested end-to-end sequence
 

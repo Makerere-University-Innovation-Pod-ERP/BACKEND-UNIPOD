@@ -4,6 +4,7 @@ import java.io.ByteArrayInputStream;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,9 +15,14 @@ import org.springframework.web.multipart.MultipartFile;
 import org.unipod.unipoderpbackend.exception.storage.StorageObjectNotFoundException;
 import org.unipod.unipoderpbackend.exception.submission.SubmissionNotFoundException;
 import org.unipod.unipoderpbackend.model.submission.DocumentStatus;
+import org.unipod.unipoderpbackend.model.submission.DocumentType;
+import org.unipod.unipoderpbackend.model.submission.MissingItem;
+import org.unipod.unipoderpbackend.model.submission.MissingItemKind;
+import org.unipod.unipoderpbackend.model.submission.MissingItemStatus;
 import org.unipod.unipoderpbackend.model.submission.Submission;
 import org.unipod.unipoderpbackend.model.submission.SubmissionCategory;
 import org.unipod.unipoderpbackend.model.submission.SubmissionDocument;
+import org.unipod.unipoderpbackend.repository.submission.MissingItemRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionDocumentRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
 import org.unipod.unipoderpbackend.service.storage.DocumentStorage;
@@ -35,6 +41,7 @@ class UploadedDocumentServiceTest {
     private static final Instant FIXED_TIME = Instant.parse("2026-03-10T09:30:00Z");
     private final SubmissionRepository submissions = mock(SubmissionRepository.class);
     private final SubmissionDocumentRepository documents = mock(SubmissionDocumentRepository.class);
+    private final MissingItemRepository missingItems = mock(MissingItemRepository.class);
     private final DocumentStorage storage = mock(DocumentStorage.class);
     private final PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
     private final Clock clock = Clock.fixed(FIXED_TIME, ZoneId.of("Africa/Kampala"));
@@ -44,7 +51,7 @@ class UploadedDocumentServiceTest {
     void setUp() {
         when(transactionManager.getTransaction(any())).thenReturn(mock(TransactionStatus.class));
         service = new UploadedDocumentService(
-                submissions, documents, storage, clock, transactionManager, 10_000
+                submissions, documents, missingItems, storage, clock, transactionManager, 10_000
         );
     }
 
@@ -105,6 +112,48 @@ class UploadedDocumentServiceTest {
 
         assertThrows(StorageObjectNotFoundException.class, () -> service.download(submissionId, documentId));
         verifyNoInteractions(storage);
+    }
+
+    @Test
+    void uploadingMatchingDocumentResolvesOpenDocumentRequest() throws Exception {
+        UUID id = UUID.randomUUID();
+        Submission submission = new Submission(
+                id, SubmissionCategory.GENERAL, "Title", "Purpose", "Problem",
+                "actor", null, null, null, null, Instant.parse("2026-03-01T00:00:00Z")
+        );
+        MissingItem openRequest = MissingItem.document(
+                UUID.randomUUID(),
+                id,
+                "Project brief",
+                null,
+                DocumentType.PROJECT_BRIEF,
+                "receptionist-1",
+                FIXED_TIME
+        );
+        when(submissions.findByIdForUpdate(id)).thenReturn(Optional.of(submission));
+        when(storage.upload(any())).thenReturn("opaque-object");
+        when(documents.saveAndFlush(any(SubmissionDocument.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(missingItems.findAllBySubmissionIdAndKindAndDocumentTypeAndStatus(
+                id,
+                MissingItemKind.DOCUMENT,
+                DocumentType.PROJECT_BRIEF,
+                MissingItemStatus.OPEN
+        )).thenReturn(List.of(openRequest));
+
+        service.upload(
+                id,
+                "brief",
+                DocumentType.PROJECT_BRIEF,
+                DocumentStatus.SUBMITTED,
+                file(),
+                "actor",
+                false
+        );
+
+        assertEquals(MissingItemStatus.RESOLVED, openRequest.getStatus());
+        assertEquals("actor", openRequest.getResolvedBy());
+        verify(missingItems).saveAll(List.of(openRequest));
     }
 
     private static MultipartFile file() throws Exception {

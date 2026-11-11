@@ -87,6 +87,42 @@ public class NotificationOutbox {
         );
     }
 
+    public void recordReminderSent(
+            UUID submissionId,
+            String caseCode,
+            String submitterEmail,
+            String note,
+            String actor,
+            Instant occurredAt
+    ) {
+        jdbcTemplate.update("""
+                INSERT INTO notification_outbox (
+                    id, aggregate_id, event_type, payload, occurred_at, next_attempt_at
+                )
+                VALUES (
+                    ?, ?, 'submission.reminder_sent',
+                    jsonb_build_object(
+                        'submissionId', ?::text,
+                        'caseCode', ?::text,
+                        'notificationEmail', ?::text,
+                        'note', ?::text,
+                        'requestedBy', ?::text
+                    ),
+                    ?, ?
+                )
+                """,
+                UUID.randomUUID(),
+                submissionId,
+                submissionId.toString(),
+                caseCode,
+                submitterEmail,
+                note,
+                actor,
+                Timestamp.from(occurredAt),
+                Timestamp.from(occurredAt)
+        );
+    }
+
     public record ForwardedNotification(
             UUID submissionId,
             UUID sectorId,

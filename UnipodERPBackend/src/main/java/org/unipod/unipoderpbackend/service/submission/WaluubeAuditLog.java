@@ -15,6 +15,7 @@ public class WaluubeAuditLog {
     public static final List<String> PATH_PATTERNS = List.of(
             "/submissions",
             "/submissions/**",
+            "/auth/change-password",
             "/cases",
             "/cases/**",
             "/queues/reception",

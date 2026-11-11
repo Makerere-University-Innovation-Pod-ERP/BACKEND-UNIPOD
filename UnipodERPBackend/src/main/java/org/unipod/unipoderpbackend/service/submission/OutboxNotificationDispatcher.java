@@ -33,7 +33,11 @@ public class OutboxNotificationDispatcher {
             WITH candidate AS (
                 SELECT id
                 FROM notification_outbox
-                WHERE event_type IN ('submission.forwarded', 'submission.information_requested')
+                WHERE event_type IN (
+                    'submission.forwarded',
+                    'submission.information_requested',
+                    'submission.reminder_sent'
+                )
                     AND published_at IS NULL
                     AND (locked_until IS NULL OR locked_until <= CURRENT_TIMESTAMP)
                     AND dead_lettered_at IS NULL
@@ -131,6 +135,17 @@ public class OutboxNotificationDispatcher {
                         Case code: %s
                         Requested by: %s
                         Details: %s
+                        """.formatted(caseCode, safeHeader(requestedBy), note));
+            } else if ("submission.reminder_sent".equals(event.eventType())) {
+                String note = required(payload, "note");
+                String requestedBy = required(payload, "requestedBy");
+                message.setSubject("Reminder: information still needed for submission " + caseCode);
+                message.setText("""
+                        This is a reminder that reception is still waiting for information about your submission.
+
+                        Case code: %s
+                        Requested by: %s
+                        Outstanding items: %s
                         """.formatted(caseCode, safeHeader(requestedBy), note));
             } else {
                 throw new IllegalArgumentException("Unsupported notification event type.");

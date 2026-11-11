@@ -130,6 +130,31 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /auth/change-password:
+    post:
+      tags: [Authentication]
+      operationId: changePassword
+      x-required-roles: []
+      summary: Change the authenticated account's password
+      description: |
+        Requires a valid bearer token. The current password must match, and the new
+        password must be 12-72 characters and different from the current password.
+        A successful change clears the temporary-password flag returned by login.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '204':
+          description: Password changed
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /admin/users:
     post:
       tags: [Authentication]
@@ -259,6 +284,41 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /submissions/assisted:
+    post:
+      tags: [Submissions]
+      operationId: createAssistedSubmission
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
+      summary: Create a walk-in submission with a minimal submitter account
+      description: |
+        Reception can capture a walk-in brief and create a minimal `SUBMITTER`
+        account in one step. If the email already has an account it is reused.
+        When a new account is created, `temporaryPassword` is returned exactly
+        once and `mustChangePassword` is set so the submitter changes it at first
+        login. The account and draft are committed together.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssistedSubmissionRequest'
+      responses:
+        '201':
+          description: Draft and submitter account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssistedSubmissionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /submissions/search:
     get:
       tags: [Submissions]
@@ -382,7 +442,12 @@ paths:
       operationId: requestSubmissionInformation
       x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
       summary: Ask a submitter to complete or correct a draft
-      description: Intake roles can attach a required-information note to a draft with a known submitter email. A missing email returns 400. The change and notification outbox event are committed together.
+      description: |
+        Intake roles can attach a required-information note, a list of missing
+        items, or both to a draft with a known submitter email. Each item becomes
+        an open missing item; a `documentType` marks it as a document request.
+        A missing email or an empty request returns 400. The change, missing
+        items, and notification outbox event are committed together.
       security:
         - bearerAuth: []
       parameters:
@@ -400,6 +465,213 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Submission'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /submissions/{id}/reception-checklist:
+    get:
+      tags: [Submissions]
+      operationId: getReceptionChecklist
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
+      summary: Read the reception verification checklist
+      description: |
+        Returns the canonical checklist lines that apply to the submission
+        category, including student-only lines for student submissions. Lines
+        that have not been saved yet are returned unchecked.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      responses:
+        '200':
+          description: Reception checklist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceptionCheckResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Submissions]
+      operationId: updateReceptionChecklist
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
+      summary: Tick reception checklist lines with a note per line
+      description: |
+        Updates one or more checklist lines. A note can be recorded per line.
+        The checklist can only be changed while the submission is `DRAFT` or
+        `RECEIVED`; it becomes read-only once the submission is forwarded.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReceptionCheckUpdateRequest'
+      responses:
+        '200':
+          description: Updated reception checklist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceptionCheckResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /submissions/{id}/missing-items:
+    get:
+      tags: [Submissions]
+      operationId: listMissingItems
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
+      summary: List missing information and missing documents
+      description: |
+        Returns every outstanding and resolved missing item for the submission.
+        Items requested through `request-information` and the missing-documents
+        endpoint appear here. Uploading a document automatically resolves a
+        matching open document request.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      responses:
+        '200':
+          description: Missing items
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissingItemsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /submissions/{id}/missing-documents:
+    post:
+      tags: [Submissions]
+      operationId: addMissingDocuments
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
+      summary: Record the documents a submitter still owes
+      description: |
+        Adds one open document request per line. A `documentType` is required
+        for every line. Use `POST /submissions/{id}/reminders` to notify the
+        submitter.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MissingItemsRequest'
+      responses:
+        '201':
+          description: Missing items after the documents were recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissingItemsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /submissions/{id}/missing-items/{itemId}/resolve:
+    post:
+      tags: [Submissions]
+      operationId: resolveMissingItem
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
+      summary: Mark a missing item resolved
+      description: |
+        Records who resolved the item and an optional resolution note. Uploading
+        a matching document resolves document requests automatically.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveMissingItemRequest'
+      responses:
+        '200':
+          description: Resolved missing item
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissingItemResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /submissions/{id}/reminders:
+    post:
+      tags: [Submissions]
+      operationId: sendMissingItemsReminder
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
+      summary: Send the submitter a reminder about open missing items
+      description: |
+        Marks every open missing item as reminded and publishes a
+        `submission.reminder_sent` notification. A missing submitter email
+        returns 400; no open items returns 409.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendReminderRequest'
+      responses:
+        '200':
+          description: Missing items after the reminder
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissingItemsResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1270,7 +1542,7 @@ components:
           maxLength: 128
     LoginResponse:
       type: object
-      required: [tokenType, accessToken, expiresAt]
+      required: [tokenType, accessToken, expiresAt, mustChangePassword]
       properties:
         tokenType:
           type: string
@@ -1280,6 +1552,25 @@ components:
         expiresAt:
           type: string
           format: date-time
+        mustChangePassword:
+          type: boolean
+          description: |
+            True when the account was created through assisted submission and
+            still uses its one-time temporary password.
+    ChangePasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword:
+          type: string
+          format: password
+          maxLength: 72
+        newPassword:
+          type: string
+          format: password
+          minLength: 12
+          maxLength: 72
     CreateApiUserRequest:
       type: object
       required: [email, password, role]
@@ -1375,12 +1666,238 @@ components:
     RequestInformationRequest:
       type: object
       additionalProperties: false
-      required: [note]
+      description: |
+        Provide `note`, `items`, or both. The single `note` form remains
+        supported for older clients. Each item becomes an open missing item.
+      anyOf:
+        - required: [note]
+        - required: [items]
       properties:
         note:
           type: string
           minLength: 1
           maxLength: 2000
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/MissingItemRequest'
+    ReceptionCheckItemKey:
+      type: string
+      enum:
+        - IDENTITY_CONFIRMED
+        - CONTACT_DETAILS_CONFIRMED
+        - BRIEF_SUMMARY_CLEAR
+        - PROBLEM_STATEMENT_CLEAR
+        - DOCUMENTS_PRESENT
+        - DUPLICATE_CHECK
+        - STUDENT_EVIDENCE
+        - RECOMMENDATION_LETTER
+    ReceptionCheckItemRequest:
+      type: object
+      additionalProperties: false
+      required: [key, checked]
+      properties:
+        key:
+          $ref: '#/components/schemas/ReceptionCheckItemKey'
+        checked:
+          type: boolean
+        note:
+          type: string
+          maxLength: 2000
+    ReceptionCheckUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ReceptionCheckItemRequest'
+    ReceptionCheckItemResponse:
+      type: object
+      required: [key, label, checked]
+      properties:
+        key:
+          $ref: '#/components/schemas/ReceptionCheckItemKey'
+        label:
+          type: string
+        checked:
+          type: boolean
+        note:
+          type: [string, 'null']
+        checkedBy:
+          type: [string, 'null']
+        checkedAt:
+          type: [string, 'null']
+          format: date-time
+        updatedAt:
+          type: [string, 'null']
+          format: date-time
+    ReceptionCheckResponse:
+      type: object
+      required: [submissionId, complete, checkedCount, totalCount, items]
+      properties:
+        submissionId:
+          type: string
+          format: uuid
+        complete:
+          type: boolean
+        checkedCount:
+          type: integer
+        totalCount:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReceptionCheckItemResponse'
+    MissingItemKind:
+      type: string
+      enum: [INFORMATION, DOCUMENT]
+    MissingItemStatus:
+      type: string
+      enum: [OPEN, RESOLVED]
+    MissingItemRequest:
+      type: object
+      additionalProperties: false
+      required: [label]
+      properties:
+        label:
+          type: string
+          minLength: 1
+          maxLength: 255
+        note:
+          type: string
+          maxLength: 2000
+        documentType:
+          $ref: '#/components/schemas/DocumentType'
+    MissingItemsRequest:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/MissingItemRequest'
+    MissingItemResponse:
+      type: object
+      required: [id, kind, label, status, requestedBy, requestedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          $ref: '#/components/schemas/MissingItemKind'
+        label:
+          type: string
+        note:
+          type: [string, 'null']
+        documentType:
+          oneOf:
+            - $ref: '#/components/schemas/DocumentType'
+            - type: 'null'
+        status:
+          $ref: '#/components/schemas/MissingItemStatus'
+        requestedBy:
+          type: string
+        requestedAt:
+          type: string
+          format: date-time
+        lastRemindedAt:
+          type: [string, 'null']
+          format: date-time
+        resolvedBy:
+          type: [string, 'null']
+        resolvedAt:
+          type: [string, 'null']
+          format: date-time
+        resolutionNote:
+          type: [string, 'null']
+    MissingItemsResponse:
+      type: object
+      required: [submissionId, openCount, items]
+      properties:
+        submissionId:
+          type: string
+          format: uuid
+        openCount:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MissingItemResponse'
+    ResolveMissingItemRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        note:
+          type: string
+          maxLength: 2000
+    SendReminderRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        note:
+          type: string
+          maxLength: 2000
+    AssistedSubmissionRequest:
+      type: object
+      additionalProperties: false
+      required: [submitterEmail, category, title, purpose, problemAddressed]
+      properties:
+        submitterEmail:
+          type: string
+          format: email
+          maxLength: 254
+        category:
+          type: string
+          enum: [student, general]
+        title:
+          type: string
+          minLength: 1
+          maxLength: 240
+        purpose:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        problemAddressed:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        studentNumber:
+          type: string
+          maxLength: 80
+        programme:
+          type: string
+          maxLength: 200
+        supervisor:
+          type: string
+          maxLength: 255
+        recommendationLetterStatus:
+          $ref: '#/components/schemas/RecommendationLetterStatus'
+    AssistedAccountResponse:
+      type: object
+      required: [email, created]
+      properties:
+        email:
+          type: string
+          format: email
+        created:
+          type: boolean
+        temporaryPassword:
+          type: [string, 'null']
+          description: Returned only once when a new account is created.
+    AssistedSubmissionResponse:
+      type: object
+      required: [submission, account]
+      properties:
+        submission:
+          $ref: '#/components/schemas/Submission'
+        account:
+          $ref: '#/components/schemas/AssistedAccountResponse'
     RecommendationLetterStatus:
       type: string
       enum: [verified, submitted, one_file, not_required]

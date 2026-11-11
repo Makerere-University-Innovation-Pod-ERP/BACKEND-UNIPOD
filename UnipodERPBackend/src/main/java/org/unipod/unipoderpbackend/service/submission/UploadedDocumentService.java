@@ -3,6 +3,7 @@ package org.unipod.unipoderpbackend.service.submission;
 import java.io.IOException;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,9 +20,13 @@ import org.unipod.unipoderpbackend.exception.submission.SubmissionConflictExcept
 import org.unipod.unipoderpbackend.exception.submission.SubmissionNotFoundException;
 import org.unipod.unipoderpbackend.model.submission.DocumentStatus;
 import org.unipod.unipoderpbackend.model.submission.DocumentType;
+import org.unipod.unipoderpbackend.model.submission.MissingItem;
+import org.unipod.unipoderpbackend.model.submission.MissingItemKind;
+import org.unipod.unipoderpbackend.model.submission.MissingItemStatus;
 import org.unipod.unipoderpbackend.model.submission.Submission;
 import org.unipod.unipoderpbackend.model.submission.SubmissionDocument;
 import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
+import org.unipod.unipoderpbackend.repository.submission.MissingItemRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionDocumentRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
 import org.unipod.unipoderpbackend.service.storage.DocumentStorage;
@@ -33,6 +38,7 @@ public class UploadedDocumentService {
 
     private final SubmissionRepository submissions;
     private final SubmissionDocumentRepository documents;
+    private final MissingItemRepository missingItems;
     private final DocumentStorage storage;
     private final Clock clock;
     private final long maxFileSize;
@@ -41,6 +47,7 @@ public class UploadedDocumentService {
     public UploadedDocumentService(
             SubmissionRepository submissions,
             SubmissionDocumentRepository documents,
+            MissingItemRepository missingItems,
             DocumentStorage storage,
             Clock clock,
             PlatformTransactionManager transactionManager,
@@ -51,6 +58,7 @@ public class UploadedDocumentService {
         }
         this.submissions = submissions;
         this.documents = documents;
+        this.missingItems = missingItems;
         this.storage = storage;
         this.clock = clock;
         this.maxFileSize = maxFileSize;
@@ -110,7 +118,7 @@ public class UploadedDocumentService {
                 SubmissionService.requireSubmitterOwnership(submission, actor, submitter);
                 Instant now = clock.instant();
                 submission.touch(now);
-                return documents.saveAndFlush(new SubmissionDocument(
+                SubmissionDocument saved = documents.saveAndFlush(new SubmissionDocument(
                         UUID.randomUUID(),
                         submissionId,
                         documentName,
@@ -123,6 +131,8 @@ public class UploadedDocumentService {
                         actor,
                         now
                 ));
+                resolveMissingDocuments(submissionId, documentType, documentName, actor, now);
+                return saved;
             });
             return DocumentResponse.from(document);
         } catch (RuntimeException exception) {
@@ -136,6 +146,29 @@ public class UploadedDocumentService {
                 .findByIdAndSubmissionId(documentId, submissionId)
                 .orElseThrow(StorageObjectNotFoundException::new));
         return new DownloadedDocument(document, storage.download(document.getFileReference()));
+    }
+
+    private void resolveMissingDocuments(
+            UUID submissionId,
+            DocumentType documentType,
+            String documentName,
+            String actor,
+            Instant now
+    ) {
+        List<MissingItem> openItems = missingItems
+                .findAllBySubmissionIdAndKindAndDocumentTypeAndStatus(
+                        submissionId,
+                        MissingItemKind.DOCUMENT,
+                        documentType,
+                        MissingItemStatus.OPEN
+                );
+        if (openItems.isEmpty()) {
+            return;
+        }
+        for (MissingItem item : openItems) {
+            item.resolve(actor, "Document uploaded: " + documentName, now);
+        }
+        missingItems.saveAll(openItems);
     }
 
     private void deleteAfterFailure(String reference, RuntimeException originalException) {
