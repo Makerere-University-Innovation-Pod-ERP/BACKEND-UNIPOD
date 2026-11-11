@@ -10,6 +10,7 @@ import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
 public record SubmitterSubmissionResponse(
         UUID id,
         String code,
+        String submitterName,
         SubmissionCategory category,
         String title,
         String purpose,
@@ -30,6 +31,7 @@ public record SubmitterSubmissionResponse(
         return new SubmitterSubmissionResponse(
                 submission.getId(),
                 submission.getCode(),
+                submission.getSubmitterName(),
                 submission.getCategory(),
                 submission.getTitle(),
                 submission.getPurpose(),

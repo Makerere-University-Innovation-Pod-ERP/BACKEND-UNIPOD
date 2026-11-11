@@ -231,23 +231,38 @@ paths:
         - $ref: '#/components/parameters/Size'
         - name: category
           in: query
+          description: Submission type.
           schema:
             type: string
             enum: [student, general]
         - name: stage
           in: query
+          description: Current submission status.
           schema:
             $ref: '#/components/schemas/SubmissionStage'
         - name: sector
           in: query
+          description: Responsible department.
           schema:
             type: string
             format: uuid
         - name: q
           in: query
-          description: Case-insensitive title substring.
+          description: Case-insensitive substring match on tracking reference, title, or submitter name.
           schema:
             type: string
+        - name: receivedFrom
+          in: query
+          description: Inclusive lower bound on the received date (Africa/Kampala).
+          schema:
+            type: string
+            format: date
+        - name: receivedTo
+          in: query
+          description: Inclusive upper bound on the received date (Africa/Kampala).
+          schema:
+            type: string
+            format: date
       responses:
         '200':
           description: A page of submissions
@@ -264,8 +279,10 @@ paths:
       tags: [Submissions]
       operationId: searchSubmissions
       x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, IP_LIAISON, OBSERVER, SUBMITTER, REVIEWER, SECTOR_OFFICER]
-      summary: Search submissions by exact code or title
-      description: Exact case-code matches are returned first; otherwise code is treated as a title substring.
+      summary: Search submissions by reference, title, or submitter name
+      description: |
+        An exact tracking-reference match is returned first. Otherwise the value is matched as a
+        case-insensitive substring against the tracking reference (project code), title, and submitter name.
       parameters:
         - name: code
           in: query
@@ -1567,6 +1584,8 @@ components:
           format: uuid
         code:
           type: [string, 'null']
+        submitterName:
+          type: [string, 'null']
         category:
           type: string
           enum: [student, general]
@@ -1983,6 +2002,9 @@ components:
           type: string
         submitterId:
           type: string
+        submitterName:
+          type: [string, 'null']
+          description: Display name supplied for the submitter, when available.
         receivingOfficer:
           type: [string, 'null']
         assignedReviewerSubject:

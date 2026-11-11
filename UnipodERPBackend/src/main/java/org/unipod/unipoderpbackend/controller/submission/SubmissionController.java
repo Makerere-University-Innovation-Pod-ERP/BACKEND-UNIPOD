@@ -4,8 +4,10 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import java.time.LocalDate;
 import java.util.UUID;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -76,10 +78,13 @@ public class SubmissionController {
             @RequestParam(required = false) SubmissionStage stage,
             @RequestParam(required = false) UUID sector,
             @RequestParam(required = false) String q,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate receivedFrom,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate receivedTo,
             Authentication authentication
     ) {
         return PageResponse.from(submissions.search(
-                parseCategory(category), stage, sector, q, pageable(page, size), authentication
+                parseCategory(category), stage, sector, q, receivedFrom, receivedTo,
+                pageable(page, size), authentication
         ));
     }
 
