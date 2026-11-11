@@ -18,6 +18,7 @@ ALTER TABLE fact_finding_checks
     ADD COLUMN officer_id VARCHAR(100) NOT NULL;
 
 ALTER TABLE fact_finding_checks
+    ADD CONSTRAINT fk_fact_finding_checks_submission
+        FOREIGN KEY (brief_id) REFERENCES submissions (id) ON DELETE CASCADE,
     ADD CONSTRAINT uq_fact_finding_checks_brief_round UNIQUE (brief_id, round);
-
 CREATE INDEX ix_fact_finding_checks_brief_id ON fact_finding_checks (brief_id);
