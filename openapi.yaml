@@ -3,11 +3,75 @@ info:
   title: Makerere Innovation Hub ERP API
   version: 1.0.0
   description: |
-    Waluube intake and case workflow contract. A submission receives its
-    tracking reference when it is created, remains a draft while information
-    is being completed, and can be registered and forwarded to a sector.
-    Student evidence is required before registration; general-public cases
-    must not include student-specific fields.
+    REST contract for the Makerere Innovation Hub ERP intake and case workflow.
+
+    A submission receives its tracking reference when it is created, remains a draft while
+    information is being completed, and can be registered and forwarded to a sector. Student
+    evidence is required before registration; general-public cases must not include
+    student-specific fields.
+
+    ## Base URL
+
+    All paths are relative to the API base URL. Production:
+    `https://backend-unipod.onrender.com/api`. Local development: `http://localhost:8080/api`.
+
+    ## Authentication
+
+    1. Call `POST /auth/login` with an administrator-provisioned email and password.
+    2. Send the returned `accessToken` on every protected request as
+       `Authorization: Bearer <accessToken>`.
+    3. Tokens are short-lived (default 15 minutes, exposed as `expiresAt`). There is no refresh
+       endpoint; log in again before expiry.
+
+    Public signup is disabled. Accounts are created by an Administrator with
+    `POST /admin/users`.
+
+    ## Roles
+
+    Role names are the exact upper-case values from `ApiUserRole`. Each operation lists the roles
+    it accepts in its `x-required-roles` extension and its description. `401` means the token is
+    missing, expired, or invalid; `403` means the token is valid but the role is not allowed.
+
+    ## CORS
+
+    Browser requests are allowed from these exact origins by default:
+
+    - `http://localhost:5173` (Vite development server)
+    - `http://localhost:3000`
+
+    Additional origins are configured on the backend with `CORS_ALLOWED_ORIGINS`
+    (comma-separated exact origins; wildcards are not used). Allowed methods are `GET`, `POST`,
+    `PUT`, `PATCH`, `DELETE`, and `OPTIONS`; all request headers are accepted; credentials are
+    enabled; the `Location` response header is exposed; preflight results are cached for 3600
+    seconds. To integrate a new frontend origin, add it to `CORS_ALLOWED_ORIGINS` and redeploy.
+
+    ## Errors
+
+    Errors use RFC 7807 `application/problem+json` with `type`, `title`, `status`, and `detail`.
+    Unexpected `500` responses also include a support `reference`. Validation failures return
+    `400`; authorization `403`; missing resources `404`; state or version conflicts `409`;
+    unprocessable fact-finding payloads `422`; oversized uploads `413`.
+
+    ## Pagination
+
+    List endpoints accept `page` (zero-based, default `0`) and `size` (default `25`, maximum
+    `100`), and return `items`, `page`, `size`, `totalElements`, and `totalPages`.
+
+    ## Concurrency
+
+    Case, document, sector, and fact-finding writes require the current `version`. Send the
+    version you last read; a stale version returns `409` and the resource must be reloaded.
+
+    ## Identifiers and timestamps
+
+    IDs are UUID strings. Case codes follow `(STU|GEN)-<year>-<sequence>`. Timestamps are ISO-8601
+    instants in UTC (for example `2026-03-10T09:30:00Z`).
+
+    ## Files
+
+    `POST /submissions/{id}/documents/upload` accepts `multipart/form-data`; the server generates
+    the opaque `fileReference`. `GET /submissions/{id}/documents/{documentId}/file` streams the
+    stored bytes as an attachment. Never construct a `fileReference` yourself.
 servers:
   - url: https://backend-unipod.onrender.com/api
     description: Production API on Render
@@ -19,7 +83,7 @@ tags:
   - name: Authentication
     description: Login and administrator-only account provisioning
   - name: Submissions
-    description: Intake and registration
+    description: Intake, registration, documents, and forwarding
   - name: Reception
     description: Reception work queue
   - name: Dashboard
@@ -27,12 +91,25 @@ tags:
   - name: Sectors
     description: Sector catalog and routing
   - name: Case Files
-    description: W4 case file aggregate, controls, stages, outcome, and document review
+    description: Case file aggregate, controls, stages, outcome, and document review
+  - name: Fact-Finding
+    description: Structured brief assessment and readiness for review
+x-cors:
+  allowedOrigins:
+    - http://localhost:5173
+    - http://localhost:3000
+  configurableVia: CORS_ALLOWED_ORIGINS
+  allowedMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
+  allowedHeaders: ['*']
+  exposedHeaders: [Location]
+  allowCredentials: true
+  maxAgeSeconds: 3600
 paths:
   /auth/login:
     post:
       tags: [Authentication]
       operationId: login
+      x-required-roles: []
       summary: Exchange administrator-provisioned credentials for a bearer token
       description: Public account registration is disabled. Login failures return the same response for unknown, disabled, or invalid credentials.
       security: []
@@ -57,6 +134,7 @@ paths:
     post:
       tags: [Authentication]
       operationId: createApiUser
+      x-required-roles: [ADMINISTRATOR]
       summary: Create an account with an application role
       description: Administrator only. The password is never returned; public signup is not available.
       security:
@@ -90,6 +168,7 @@ paths:
     post:
       tags: [Submissions]
       operationId: createSubmission
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, SUBMITTER]
       summary: Create an intake draft
       description: |
         Available to Administrator, Innovation Coordinator, Receptionist,
@@ -144,6 +223,7 @@ paths:
     get:
       tags: [Submissions]
       operationId: listSubmissions
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, IP_LIAISON, OBSERVER, SUBMITTER, REVIEWER, SECTOR_OFFICER]
       summary: List all submissions
       description: Results are role-scoped, filtered, paginated, and stably ordered by received date then id.
       parameters:
@@ -183,6 +263,7 @@ paths:
     get:
       tags: [Submissions]
       operationId: searchSubmissions
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, IP_LIAISON, OBSERVER, SUBMITTER, REVIEWER, SECTOR_OFFICER]
       summary: Search submissions by exact code or title
       description: Exact case-code matches are returned first; otherwise code is treated as a title substring.
       parameters:
@@ -208,6 +289,7 @@ paths:
     get:
       tags: [Submissions]
       operationId: listMySubmissions
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
       summary: List submissions created by the authenticated user
       parameters:
         - $ref: '#/components/parameters/Page'
@@ -227,6 +309,7 @@ paths:
     get:
       tags: [Submissions]
       operationId: listMySubmitterSubmissions
+      x-required-roles: [SUBMITTER]
       summary: List cases linked to the authenticated submitter
       security:
         - bearerAuth: []
@@ -248,6 +331,7 @@ paths:
     get:
       tags: [Submissions]
       operationId: getSubmitterCapabilities
+      x-required-roles: [SUBMITTER]
       summary: Return submitter navigation capabilities
       security:
         - bearerAuth: []
@@ -266,6 +350,7 @@ paths:
     post:
       tags: [Submissions]
       operationId: registerSubmission
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
       summary: Register a submission as received
       description: |
         Available to Administrator, Innovation Coordinator, Receptionist, and
@@ -295,6 +380,7 @@ paths:
     post:
       tags: [Submissions]
       operationId: requestSubmissionInformation
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
       summary: Ask a submitter to complete or correct a draft
       description: Intake roles can attach a required-information note to a draft with a known submitter email. A missing email returns 400. The change and notification outbox event are committed together.
       security:
@@ -328,6 +414,7 @@ paths:
     put:
       tags: [Submissions]
       operationId: assignSubmissionReviewer
+      x-required-roles: [ADMINISTRATOR]
       summary: Assign or clear a reviewer
       security:
         - bearerAuth: []
@@ -360,6 +447,7 @@ paths:
     get:
       tags: [Submissions]
       operationId: getCaseFile
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
       summary: Get the case file, documents, and stage history
       security:
         - bearerAuth: []
@@ -381,6 +469,7 @@ paths:
     put:
       tags: [Submissions]
       operationId: updateSubmissionDraft
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, SUBMITTER]
       summary: Update an owned draft
       description: Submitters can update only their own drafts; intake roles can update drafts they manage. Updating a draft clears its outstanding information request. The tracking reference and submitter ownership remain unchanged.
       security:
@@ -414,6 +503,7 @@ paths:
     get:
       tags: [Case Files]
       operationId: getCaseFileAggregate
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
       summary: Get the W4 case file aggregate
       description: |
         Available to Administrator, Innovation Coordinator, Fact-Finding
@@ -440,6 +530,7 @@ paths:
     get:
       tags: [Case Files]
       operationId: getCaseFileCapabilities
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
       summary: Get enabled state and reason for each case-file control
       parameters:
         - $ref: '#/components/parameters/SubmissionId'
@@ -450,6 +541,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CaseFileCapabilities'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -458,6 +551,7 @@ paths:
     get:
       tags: [Case Files]
       operationId: getAllowedCaseTransitions
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
       summary: Get valid next case stages for the actor
       parameters:
         - $ref: '#/components/parameters/SubmissionId'
@@ -468,6 +562,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AllowedCaseTransitions'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -476,6 +572,7 @@ paths:
     post:
       tags: [Case Files]
       operationId: transitionCase
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR]
       summary: Move a case to its next allowed stage
       description: Only Administrator and Innovation Coordinator may transition cases. Leaving Fact-Finding is coordinator-controlled; a FACT_FINDING or FORWARDED case may move to REFINEMENT_REQUESTED to return a brief to the submitter for more information. Moving to UNDER_REVIEW from FACT_FINDING or FORWARDED requires a completed fact-finding check (FR-008). The current version is required to reject stale writes.
       parameters:
@@ -493,6 +590,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CaseFileAggregate'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -503,6 +602,7 @@ paths:
     put:
       tags: [Case Files]
       operationId: saveCaseOutcome
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR]
       summary: Save case outcome
       description: Only Administrator and Innovation Coordinator may save outcomes. Save is rejected with 409 until Mark's configured reviewer quorum is available and met.
       parameters:
@@ -520,6 +620,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CaseFileAggregate'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -530,6 +632,7 @@ paths:
     patch:
       tags: [Case Files]
       operationId: updateCaseDocumentStatus
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR]
       summary: Update document verification status
       description: Only Administrator and Innovation Coordinator may update status. Include the current case version.
       parameters:
@@ -553,16 +656,138 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CaseFileAggregate'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+  /cases/{id}/fact-finding:
+    get:
+      tags: [Fact-Finding]
+      operationId: getFactFinding
+      summary: Get the current fact-finding check
+      description: |
+        Available to Administrator, Innovation Coordinator, and Fact-Finding Officer.
+        Returns `state: NOT_STARTED` with null answers when no check has been saved yet.
+        Results are visibility-scoped to the caller.
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, FACT_FINDING_OFFICER]
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      responses:
+        '200':
+          description: Current fact-finding check or an empty NOT_STARTED record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FactFindingCheck'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Fact-Finding]
+      operationId: saveFactFinding
+      summary: Save fact-finding answers as a draft
+      description: |
+        Fact-Finding Officer only. Answers can be saved only while the case stage is `FORWARDED`
+        or `FACT_FINDING`. Omit `version` to start a new round; include the current `version` to
+        update the open draft. Server-owned fields (`officerId`, `round`, `result`,
+        `completedAt`) are ignored if sent. Note fields are limited to 1000 characters and
+        `missingItems` to 2000 characters.
+      x-required-roles: [FACT_FINDING_OFFICER]
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveFactFindingRequest'
+            examples:
+              newDraft:
+                summary: Start a new check
+                value:
+                  titleClear: true
+                  titleNote: Title states the problem clearly.
+                  purposeClear: true
+                  evidenceEnough: false
+                  evidenceNote: No supporting budget attached.
+                  relevantToHub: true
+                  missingItems: Budget breakdown
+              updateDraft:
+                summary: Update the open check
+                value:
+                  titleClear: true
+                  purposeClear: true
+                  evidenceEnough: true
+                  relevantToHub: true
+                  missingItems: null
+                  version: 0
+      responses:
+        '200':
+          description: Saved draft check
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FactFindingCheck'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+    post:
+      tags: [Fact-Finding]
+      operationId: completeFactFinding
+      summary: Complete the check and move the case to review
+      description: |
+        Fact-Finding Officer only. Requires an open draft with all four questions answered and the
+        current `version`. On success the check is marked `COMPLETED` and the case moves to
+        `UNDER_REVIEW`, satisfying the FR-008 guard for the review transition.
+      x-required-roles: [FACT_FINDING_OFFICER]
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteFactFindingRequest'
+      responses:
+        '200':
+          description: Completed check and updated case stage
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FactFindingCheck'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
   /submissions/{id}/forward:
     post:
       tags: [Submissions]
       operationId: forwardSubmission
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
       summary: Register and forward a draft, or forward a received submission
       description: A draft is registered and forwarded in one transaction. Stores the sector assignment, stage history, and durable submission.forwarded outbox event in the same transaction.
       security:
@@ -596,6 +821,7 @@ paths:
     post:
       tags: [Submissions]
       operationId: advanceSubmission
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR]
       summary: Advance a forwarded submission through the pipeline
       description: Only FORWARDED to IN_PROGRESS and IN_PROGRESS to COMPLETED are allowed. Backward transitions and skipped stages are rejected.
       parameters:
@@ -627,8 +853,13 @@ paths:
     post:
       tags: [Submissions]
       operationId: addSubmissionDocument
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, SUBMITTER]
       summary: Add document metadata to a case
-      description: Accepts an opaque storage reference, not a URL, filesystem path, or file bytes. File storage is provided by an external storage integration.
+      description: |
+        Records document metadata only. `fileReference` is optional and, when present, must be an
+        opaque `[A-Za-z0-9_-]` identifier such as the value returned by the upload endpoint; URLs,
+        filesystem paths, and raw file bytes are rejected. Submitters may only set status
+        `SUBMITTED` and only for their own drafts.
       parameters:
         - $ref: '#/components/parameters/SubmissionId'
       requestBody:
@@ -658,8 +889,12 @@ paths:
     post:
       tags: [Submissions]
       operationId: uploadSubmissionDocument
-      summary: Upload a document to configured storage
-      description: Stores the file in the configured S3-compatible bucket, or in Postgres when S3 is disabled. Files are limited by the configured server-side upload limit.
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, SUBMITTER]
+      summary: Upload a document file
+      description: |
+        Stores the file in configured object storage, or in Postgres when object storage is
+        disabled. Files are limited by the server-side upload limit; oversized files return
+        `413`. `documentType` defaults to `OTHER` when omitted.
       parameters:
         - $ref: '#/components/parameters/SubmissionId'
       requestBody:
@@ -675,6 +910,10 @@ paths:
                   maxLength: 255
                 status:
                   $ref: '#/components/schemas/DocumentStatus'
+                documentType:
+                  allOf:
+                    - $ref: '#/components/schemas/DocumentType'
+                  default: OTHER
                 file:
                   type: string
                   format: binary
@@ -699,10 +938,13 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /submissions/{id}/documents/{documentId}/file:
     get:
       tags: [Submissions]
       operationId: downloadSubmissionDocument
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
       summary: Download a case document
       description: The response is always an attachment with an octet-stream content type and nosniff protection.
       parameters:
@@ -739,6 +981,7 @@ paths:
     get:
       tags: [Sectors]
       operationId: listActiveSectors
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
       summary: List active sectors
       responses:
         '200':
@@ -756,6 +999,7 @@ paths:
     post:
       tags: [Sectors]
       operationId: createSector
+      x-required-roles: [ADMINISTRATOR]
       summary: Create a sector
       description: Administrator only.
       requestBody:
@@ -783,6 +1027,7 @@ paths:
     get:
       tags: [Sectors]
       operationId: listAllSectors
+      x-required-roles: [ADMINISTRATOR]
       summary: List active and inactive sectors
       description: Administrator only; use this list to reactivate a deactivated sector.
       responses:
@@ -802,6 +1047,7 @@ paths:
     get:
       tags: [Sectors]
       operationId: listSectorFilterOptions
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, IP_LIAISON, OBSERVER, SUBMITTER, REVIEWER, SECTOR_OFFICER]
       summary: List sector names for submission filters
       description: Returns only sector IDs and names to roles permitted to read submissions.
       responses:
@@ -821,6 +1067,7 @@ paths:
     put:
       tags: [Sectors]
       operationId: updateSector
+      x-required-roles: [ADMINISTRATOR]
       summary: Update or deactivate a sector
       description: Administrator only. Deactivation is soft; existing cases retain their sector reference.
       parameters:
@@ -857,6 +1104,7 @@ paths:
     get:
       tags: [Sectors]
       operationId: listSectorMembers
+      x-required-roles: [ADMINISTRATOR]
       summary: List sector officer subjects
       parameters:
         - name: id
@@ -881,6 +1129,7 @@ paths:
     post:
       tags: [Sectors]
       operationId: addSectorMember
+      x-required-roles: [ADMINISTRATOR]
       summary: Add a sector officer subject
       parameters:
         - name: id
@@ -913,6 +1162,7 @@ paths:
     delete:
       tags: [Sectors]
       operationId: removeSectorMember
+      x-required-roles: [ADMINISTRATOR]
       summary: Remove a sector officer subject
       parameters:
         - name: id
@@ -939,6 +1189,7 @@ paths:
     get:
       tags: [Reception]
       operationId: getReceptionQueue
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
       summary: Get draft reception queue and queue counters
       description: The queue contains DRAFT submissions. Awaiting action counts RECEIVED submissions; recently updated counts all submissions updated in the last 14 days.
       parameters:
@@ -959,6 +1210,7 @@ paths:
     get:
       tags: [Dashboard]
       operationId: getDashboardOverview
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
       summary: Get the role-scoped dashboard composed from workflow and module summaries
       description: Available to every authenticated role. Operational tiles are visible to all roles; finance data is returned only to Administrators and Innovation Coordinators. Results are cached for 30 seconds. Unconfigured external modules identify their availability rather than returning fabricated metrics.
       responses:
@@ -1560,8 +1812,6 @@ components:
       properties:
         status:
           $ref: '#/components/schemas/DocumentStatus'
-        documentType:
-          $ref: '#/components/schemas/DocumentType'
         version:
           type: integer
           format: int64
@@ -1786,6 +2036,106 @@ components:
           type: array
           items:
             type: string
+    FactFindingState:
+      type: string
+      enum: [NOT_STARTED, DRAFT, COMPLETED]
+    FactFindingResult:
+      type: string
+      enum: [READY_FOR_REVIEW, NEEDS_MORE_INFORMATION]
+    FactFindingCheck:
+      type: object
+      description: Fact-finding answers for the latest round of a brief.
+      required: [briefId, briefTitle, briefType, round, state]
+      properties:
+        briefId:
+          type: string
+          format: uuid
+        briefTitle:
+          type: string
+        trackingReference:
+          type: [string, 'null']
+          description: Case code when the brief has been registered.
+        briefType:
+          type: string
+          enum: [student, general]
+        round:
+          type: integer
+          minimum: 1
+        officerId:
+          type: [string, 'null']
+        titleClear:
+          type: [boolean, 'null']
+        titleNote:
+          type: [string, 'null']
+        purposeClear:
+          type: [boolean, 'null']
+        purposeNote:
+          type: [string, 'null']
+        evidenceEnough:
+          type: [boolean, 'null']
+        evidenceNote:
+          type: [string, 'null']
+        relevantToHub:
+          type: [boolean, 'null']
+        relevantNote:
+          type: [string, 'null']
+        missingItems:
+          type: [string, 'null']
+        result:
+          anyOf:
+            - $ref: '#/components/schemas/FactFindingResult'
+            - type: 'null'
+        completedAt:
+          type: [string, 'null']
+          format: date-time
+        state:
+          $ref: '#/components/schemas/FactFindingState'
+        version:
+          type: [integer, 'null']
+          format: int64
+    SaveFactFindingRequest:
+      type: object
+      additionalProperties: false
+      description: |
+        Partial answers for the open draft. Omit `version` when starting a new round; include it
+        when updating an existing draft. Server-owned fields are ignored.
+      properties:
+        titleClear:
+          type: boolean
+        titleNote:
+          type: [string, 'null']
+          maxLength: 1000
+        purposeClear:
+          type: boolean
+        purposeNote:
+          type: [string, 'null']
+          maxLength: 1000
+        evidenceEnough:
+          type: boolean
+        evidenceNote:
+          type: [string, 'null']
+          maxLength: 1000
+        relevantToHub:
+          type: boolean
+        relevantNote:
+          type: [string, 'null']
+          maxLength: 1000
+        missingItems:
+          type: [string, 'null']
+          maxLength: 2000
+        version:
+          type: [integer, 'null']
+          format: int64
+          minimum: 0
+    CompleteFactFindingRequest:
+      type: object
+      required: [version]
+      properties:
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Current version of the open draft check.
     Problem:
       type: object
       required: [type, title, status, detail]
@@ -1818,19 +2168,25 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
     Forbidden:
-      description: Authenticated user lacks an allowed intake role
+      description: Authenticated user lacks a role allowed by this operation
       content:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
     NotFound:
-      description: Submission does not exist
+      description: The requested resource does not exist
       content:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
     Conflict:
-      description: Submission has already been registered
+      description: The request conflicts with the current state or version of the resource
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    UnprocessableEntity:
+      description: The payload is valid JSON but cannot be processed in its current form
       content:
         application/problem+json:
           schema:

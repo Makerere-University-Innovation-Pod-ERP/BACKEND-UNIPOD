@@ -649,7 +649,7 @@
                 }
               }
             },
-            "description": "Add document metadata to a case\n\nAccepts an opaque storage reference, not a URL, filesystem path, or file bytes. File storage is provided by an external storage integration.\n\nExpected documented status codes: 201, 400, 401, 403, 404, 409"
+            "description": "Add document metadata to a case\n\nRecords document metadata only. fileReference is optional and, when present, must be an opaque [A-Za-z0-9_-] identifier such as the value returned by the upload endpoint; URLs, filesystem paths, and raw file bytes are rejected. Submitters may only set status SUBMITTED and only for their own drafts.\n\nExpected documented status codes: 201, 400, 401, 403, 404, 409"
           },
           "response": [],
           "event": [
