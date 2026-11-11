@@ -7,7 +7,6 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -25,17 +24,16 @@ import org.unipod.unipoderpbackend.model.submission.SubmissionDocument;
 import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionDocumentRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
-import org.unipod.unipoderpbackend.service.storage.S3DocumentStorage;
+import org.unipod.unipoderpbackend.service.storage.DocumentStorage;
 
 @Service
-@ConditionalOnProperty(name = "storage.s3.enabled", havingValue = "true")
 public class UploadedDocumentService {
     private static final Logger log = LoggerFactory.getLogger(UploadedDocumentService.class);
     private static final String DEFAULT_CONTENT_TYPE = "application/octet-stream";
 
     private final SubmissionRepository submissions;
     private final SubmissionDocumentRepository documents;
-    private final S3DocumentStorage storage;
+    private final DocumentStorage storage;
     private final Clock clock;
     private final long maxFileSize;
     private final TransactionTemplate transaction;
@@ -43,13 +41,13 @@ public class UploadedDocumentService {
     public UploadedDocumentService(
             SubmissionRepository submissions,
             SubmissionDocumentRepository documents,
-            S3DocumentStorage storage,
+            DocumentStorage storage,
             Clock clock,
             PlatformTransactionManager transactionManager,
             @Value("${storage.s3.max-file-size}") long maxFileSize
     ) {
         if (maxFileSize <= 0) {
-            throw new IllegalStateException("S3_MAX_FILE_BYTES must be greater than zero.");
+            throw new IllegalStateException("The storage file size limit must be greater than zero.");
         }
         this.submissions = submissions;
         this.documents = documents;

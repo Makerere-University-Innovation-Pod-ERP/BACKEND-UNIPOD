@@ -5,7 +5,6 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -32,7 +31,6 @@ import org.unipod.unipoderpbackend.service.submission.UploadedDocumentService;
 @RestController
 @RequestMapping("/submissions/{id}/documents")
 @Validated
-@ConditionalOnProperty(name = "storage.s3.enabled", havingValue = "true")
 public class DocumentUploadController {
     private final UploadedDocumentService documents;
 

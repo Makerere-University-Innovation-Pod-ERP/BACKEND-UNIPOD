@@ -19,7 +19,7 @@ import org.unipod.unipoderpbackend.model.submission.SubmissionCategory;
 import org.unipod.unipoderpbackend.model.submission.SubmissionDocument;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionDocumentRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
-import org.unipod.unipoderpbackend.service.storage.S3DocumentStorage;
+import org.unipod.unipoderpbackend.service.storage.DocumentStorage;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -35,7 +35,7 @@ class UploadedDocumentServiceTest {
     private static final Instant FIXED_TIME = Instant.parse("2026-03-10T09:30:00Z");
     private final SubmissionRepository submissions = mock(SubmissionRepository.class);
     private final SubmissionDocumentRepository documents = mock(SubmissionDocumentRepository.class);
-    private final S3DocumentStorage storage = mock(S3DocumentStorage.class);
+    private final DocumentStorage storage = mock(DocumentStorage.class);
     private final PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
     private final Clock clock = Clock.fixed(FIXED_TIME, ZoneId.of("Africa/Kampala"));
     private UploadedDocumentService service;
