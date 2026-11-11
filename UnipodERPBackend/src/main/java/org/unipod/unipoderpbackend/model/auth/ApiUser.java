@@ -32,6 +32,12 @@ public class ApiUser {
     @Column(name = "must_change_password", nullable = false)
     private boolean mustChangePassword;
 
+    @Column(name = "password_setup_token_hash", length = 64)
+    private String passwordSetupTokenHash;
+
+    @Column(name = "password_setup_expires_at")
+    private Instant passwordSetupExpiresAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -72,7 +78,29 @@ public class ApiUser {
     public void changePassword(String newPasswordHash, Instant now) {
         this.passwordHash = newPasswordHash;
         this.mustChangePassword = false;
+        this.passwordSetupTokenHash = null;
+        this.passwordSetupExpiresAt = null;
         this.updatedAt = now;
+    }
+
+    public void issuePasswordSetupToken(String tokenHash, Instant expiresAt, Instant now) {
+        this.passwordSetupTokenHash = tokenHash;
+        this.passwordSetupExpiresAt = expiresAt;
+        this.updatedAt = now;
+    }
+
+    public boolean hasValidPasswordSetupToken(Instant now) {
+        return passwordSetupTokenHash != null
+                && passwordSetupExpiresAt != null
+                && passwordSetupExpiresAt.isAfter(now);
+    }
+
+    public String getPasswordSetupTokenHash() {
+        return passwordSetupTokenHash;
+    }
+
+    public Instant getPasswordSetupExpiresAt() {
+        return passwordSetupExpiresAt;
     }
 
     public UUID getId() {

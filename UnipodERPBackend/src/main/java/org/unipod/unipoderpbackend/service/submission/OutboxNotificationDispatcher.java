@@ -36,7 +36,13 @@ public class OutboxNotificationDispatcher {
                 WHERE event_type IN (
                     'submission.forwarded',
                     'submission.information_requested',
-                    'submission.reminder_sent'
+                    'submission.reminder_sent',
+                    'submission.submitted',
+                    'submission.reply_received',
+                    'submission.forwarded_copy',
+                    'submission.confirmed_as_project',
+                    'submission.rejected',
+                    'auth.password_setup'
                 )
                     AND published_at IS NULL
                     AND (locked_until IS NULL OR locked_until <= CURRENT_TIMESTAMP)
@@ -107,7 +113,6 @@ public class OutboxNotificationDispatcher {
         try {
             JsonNode payload = objectMapper.readTree(event.payload());
             String recipient = required(payload, "notificationEmail");
-            String caseCode = required(payload, "caseCode");
             if (!isValidAddress(recipient)) {
                 throw new IllegalArgumentException("Notification recipient is not a valid email address.");
             }
@@ -115,7 +120,29 @@ public class OutboxNotificationDispatcher {
             message = new SimpleMailMessage();
             message.setFrom(fromAddress);
             message.setTo(recipient);
-            if ("submission.forwarded".equals(event.eventType())) {
+            if ("auth.password_setup".equals(event.eventType())) {
+                String setPasswordUrl = required(payload, "setPasswordUrl");
+                message.setSubject("Set up your UNIPOD account password");
+                message.setText("""
+                        An account has been created for you on the UNIPOD innovation portal.
+
+                        Choose your password using this one-time link:
+                        %s
+
+                        If you did not expect this email, you can ignore it.
+                        """.formatted(setPasswordUrl));
+            } else if (isSubmitterLifecycleEvent(event.eventType())) {
+                String caseCode = required(payload, "caseCode");
+                String subject = required(payload, "subject");
+                String body = required(payload, "message");
+                message.setSubject(safeHeader(subject));
+                message.setText("""
+                        %s
+
+                        Case code: %s
+                        """.formatted(body, caseCode));
+            } else if ("submission.forwarded".equals(event.eventType())) {
+                String caseCode = required(payload, "caseCode");
                 String sectorName = required(payload, "sectorName");
                 String title = required(payload, "submissionTitle");
                 message.setSubject("Submission " + caseCode + " forwarded to " + safeHeader(sectorName));
@@ -126,6 +153,7 @@ public class OutboxNotificationDispatcher {
                         Title: %s
                         """.formatted(caseCode, title));
             } else if ("submission.information_requested".equals(event.eventType())) {
+                String caseCode = required(payload, "caseCode");
                 String note = required(payload, "note");
                 String requestedBy = required(payload, "requestedBy");
                 message.setSubject("More information needed for submission " + caseCode);
@@ -137,6 +165,7 @@ public class OutboxNotificationDispatcher {
                         Details: %s
                         """.formatted(caseCode, safeHeader(requestedBy), note));
             } else if ("submission.reminder_sent".equals(event.eventType())) {
+                String caseCode = required(payload, "caseCode");
                 String note = required(payload, "note");
                 String requestedBy = required(payload, "requestedBy");
                 message.setSubject("Reminder: information still needed for submission " + caseCode);
@@ -210,8 +239,18 @@ public class OutboxNotificationDispatcher {
         );
     }
 
-    private static String required(JsonNode payload, String field) {
-        JsonNode value = payload.get(field);
+    private static boolean isSubmitterLifecycleEvent(String eventType) {
+        return switch (eventType) {
+            case "submission.submitted",
+                 "submission.reply_received",
+                 "submission.forwarded_copy",
+                 "submission.confirmed_as_project",
+                 "submission.rejected" -> true;
+            default -> false;
+        };
+    }
+
+    private static String required(JsonNode payload, String field) {        JsonNode value = payload.get(field);
         if (value == null || value.isNull() || value.asText().isBlank()) {
             throw new IllegalArgumentException("Required notification field is missing.");
         }

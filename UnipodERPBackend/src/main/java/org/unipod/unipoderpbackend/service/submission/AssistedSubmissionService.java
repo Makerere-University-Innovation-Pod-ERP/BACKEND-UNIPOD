@@ -37,13 +37,26 @@ public class AssistedSubmissionService {
                         request.programme(),
                         request.supervisor(),
                         request.recommendationLetterStatus(),
-                        account.email()
+                        account.email(),
+                        null,
+                        request.submitterPhone(),
+                        request.serviceRequested(),
+                        request.serviceRequester(),
+                        request.department(),
+                        request.expectedResult(),
+                        request.acceptedRulesVersion()
                 ),
                 actor
         );
         return new AssistedSubmissionResponse(
                 submission,
-                new AssistedAccountResponse(account.email(), account.created(), account.temporaryPassword())
+                new AssistedAccountResponse(
+                        account.email(),
+                        account.created(),
+                        account.temporaryPassword(),
+                        account.setPasswordToken(),
+                        account.setPasswordUrl()
+                )
         );
     }
 }

@@ -18,7 +18,6 @@ import org.unipod.unipoderpbackend.exception.submission.SubmissionNotFoundExcept
 import org.unipod.unipoderpbackend.model.submission.ReceptionCheck;
 import org.unipod.unipoderpbackend.model.submission.ReceptionCheckItem;
 import org.unipod.unipoderpbackend.model.submission.Submission;
-import org.unipod.unipoderpbackend.model.submission.SubmissionCategory;
 import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
 import org.unipod.unipoderpbackend.repository.submission.ReceptionCheckRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
@@ -60,7 +59,6 @@ public class ReceptionChecklistService {
         Map<ReceptionCheckItem, ReceptionCheck> existing = existingByKey(submissionId);
         for (ReceptionCheckItemRequest itemRequest : request.items()) {
             ReceptionCheckItem item = requireItem(itemRequest.key());
-            requireApplicable(item, submission.getCategory());
             ReceptionCheck check = existing.get(item);
             if (check == null) {
                 check = checks.save(new ReceptionCheck(
@@ -84,8 +82,27 @@ public class ReceptionChecklistService {
         return response(submission, existing);
     }
 
+    /**
+     * Reports whether every applicable reception line has been checked. Used as
+     * the forward gate for submitter-created briefs.
+     */
+    @Transactional(readOnly = true)
+    public boolean isComplete(UUID submissionId) {
+        return get(submissionId).complete();
+    }
+
+    @Transactional(readOnly = true)
+    public void requireComplete(UUID submissionId) {
+        if (!isComplete(submissionId)) {
+            throw new SubmissionConflictException(
+                    "Complete the reception checklist before forwarding the submission."
+            );
+        }
+    }
+
     private static void requireCheckable(Submission submission) {
         if (submission.getStage() != SubmissionStage.DRAFT
+                && submission.getStage() != SubmissionStage.SUBMITTED
                 && submission.getStage() != SubmissionStage.RECEIVED) {
             throw new SubmissionConflictException(
                     "The reception checklist can only be changed before the submission is forwarded."
@@ -98,14 +115,6 @@ public class ReceptionChecklistService {
             return ReceptionCheckItem.fromKey(key.trim());
         } catch (IllegalArgumentException exception) {
             throw new InvalidSubmissionException("The reception checklist item is unknown.");
-        }
-    }
-
-    private static void requireApplicable(ReceptionCheckItem item, SubmissionCategory category) {
-        if (item.studentOnly() && category != SubmissionCategory.STUDENT) {
-            throw new InvalidSubmissionException(
-                    "The reception checklist item does not apply to this submission."
-            );
         }
     }
 

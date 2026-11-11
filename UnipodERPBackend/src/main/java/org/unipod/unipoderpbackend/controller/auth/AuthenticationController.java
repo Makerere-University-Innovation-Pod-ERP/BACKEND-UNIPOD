@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.unipod.unipoderpbackend.dto.auth.ChangePasswordRequest;
 import org.unipod.unipoderpbackend.dto.auth.LoginRequest;
 import org.unipod.unipoderpbackend.dto.auth.LoginResponse;
+import org.unipod.unipoderpbackend.dto.auth.SetPasswordRequest;
 import org.unipod.unipoderpbackend.service.auth.AuthenticationService;
 
 @RestController
@@ -37,5 +38,11 @@ public class AuthenticationController {
             Authentication authentication
     ) {
         this.authentication.changePassword(authentication.getName(), request);
+    }
+
+    @PostMapping("/set-password")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void setPassword(@Valid @RequestBody SetPasswordRequest request) {
+        authentication.setPassword(request);
     }
 }

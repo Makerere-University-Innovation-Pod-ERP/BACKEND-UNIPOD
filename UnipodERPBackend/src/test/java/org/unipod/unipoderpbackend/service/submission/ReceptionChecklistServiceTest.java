@@ -44,29 +44,33 @@ class ReceptionChecklistServiceTest {
     }
 
     @Test
-    void getReturnsGeneralChecklistWithoutStudentOnlyLines() {
+    void getReturnsTheFourCanonicalLinesForGeneralSubmission() {
         Submission submission = submission(SubmissionCategory.GENERAL);
         when(submissions.findById(submission.getId())).thenReturn(Optional.of(submission));
         when(checks.findAllBySubmissionIdOrderByItemKeyAsc(submission.getId())).thenReturn(List.of());
 
         var response = service.get(submission.getId());
 
-        assertEquals(6, response.totalCount());
+        assertEquals(4, response.totalCount());
         assertEquals(0, response.checkedCount());
         assertFalse(response.complete());
+        assertTrue(response.items().stream().anyMatch(item -> item.key().equals("IDENTITY_CONFIRMED")));
+        assertTrue(response.items().stream().anyMatch(item -> item.key().equals("CONTACT_DETAILS_CONFIRMED")));
+        assertTrue(response.items().stream().anyMatch(item -> item.key().equals("BRIEF_SUMMARY_CLEAR")));
+        assertTrue(response.items().stream().anyMatch(item -> item.key().equals("DOCUMENTS_PRESENT")));
         assertTrue(response.items().stream().noneMatch(item -> item.key().equals("STUDENT_EVIDENCE")));
     }
 
     @Test
-    void getIncludesStudentOnlyLinesForStudentSubmission() {
+    void getUsesTheSameCanonicalLinesForStudentSubmissions() {
         Submission submission = submission(SubmissionCategory.STUDENT);
         when(submissions.findById(submission.getId())).thenReturn(Optional.of(submission));
         when(checks.findAllBySubmissionIdOrderByItemKeyAsc(submission.getId())).thenReturn(List.of());
 
         var response = service.get(submission.getId());
 
-        assertEquals(8, response.totalCount());
-        assertTrue(response.items().stream().anyMatch(item -> item.key().equals("RECOMMENDATION_LETTER")));
+        assertEquals(4, response.totalCount());
+        assertTrue(response.items().stream().noneMatch(item -> item.key().equals("RECOMMENDATION_LETTER")));
     }
 
     @Test
@@ -97,7 +101,7 @@ class ReceptionChecklistServiceTest {
     }
 
     @Test
-    void updateRejectsStudentOnlyLineForGeneralSubmission() {
+    void updateRejectsRetiredChecklistKey() {
         Submission submission = submission(SubmissionCategory.GENERAL);
         when(submissions.findByIdForUpdate(submission.getId())).thenReturn(Optional.of(submission));
         when(checks.findAllBySubmissionIdOrderByItemKeyAsc(submission.getId())).thenReturn(List.of());

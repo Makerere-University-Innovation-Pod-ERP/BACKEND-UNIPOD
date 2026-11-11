@@ -195,7 +195,8 @@ class WaluubeApiIntegrationTest {
         assertEquals(
                 "sector@example.invalid",
                 jdbcTemplate.queryForObject(
-                        "SELECT payload ->> 'notificationEmail' FROM notification_outbox WHERE aggregate_id = ?",
+                        "SELECT payload ->> 'notificationEmail' FROM notification_outbox "
+                                + "WHERE aggregate_id = ? AND event_type = 'submission.forwarded'",
                         String.class,
                         UUID.fromString(id)
                 )
@@ -836,6 +837,10 @@ class WaluubeApiIntegrationTest {
         assertTrue(codeMatcher.find(), "Create response should include the tracking reference.");
         String id = idMatcher.group(1);
         String code = codeMatcher.group(1);
+
+        mockMvc.perform(post("/submissions/" + id + "/submit")
+                        .with(receptionist))
+                .andExpect(status().isOk());
 
         mockMvc.perform(get("/submissions/search")
                         .with(observer)

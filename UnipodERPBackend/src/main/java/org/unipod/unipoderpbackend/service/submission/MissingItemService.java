@@ -59,27 +59,78 @@ public class MissingItemService {
             MissingItemsRequest request,
             String actor
     ) {
+        return addMissingItems(submissionId, request, actor, true);
+    }
+
+    /**
+     * Records outstanding information and/or document requests. The
+     * {@code requireDocumentType} flag keeps the legacy missing-documents
+     * endpoint strict while allowing the general endpoint to mix both kinds.
+     */
+    @Transactional
+    public MissingItemsResponse addMissingItems(
+            UUID submissionId,
+            MissingItemsRequest request,
+            String actor
+    ) {
+        return addMissingItems(submissionId, request, actor, false);
+    }
+
+    private MissingItemsResponse addMissingItems(
+            UUID submissionId,
+            MissingItemsRequest request,
+            String actor,
+            boolean requireDocumentType
+    ) {
         Submission submission = submissions.findByIdForUpdate(submissionId)
                 .orElseThrow(() -> new SubmissionNotFoundException(submissionId));
-        requireNotCompleted(submission);
+        requireOpen(submission);
         Instant now = clock.instant();
         for (MissingItemRequest itemRequest : request.items()) {
-            if (itemRequest.documentType() == null) {
+            if (requireDocumentType && itemRequest.documentType() == null) {
                 throw new InvalidSubmissionException("A document type is required for every missing document.");
             }
-            items.save(MissingItem.document(
-                    UUID.randomUUID(),
-                    submissionId,
-                    requireLabel(itemRequest.label()),
-                    clean(itemRequest.note()),
-                    itemRequest.documentType(),
-                    actor,
-                    now
-            ));
+            items.save(createItem(submissionId, itemRequest, actor, now));
         }
         submission.touch(now);
         items.flush();
         return response(submissionId, items.findAllBySubmissionIdOrderByRequestedAtAscIdAsc(submissionId));
+    }
+
+    private static MissingItem createItem(
+            UUID submissionId,
+            MissingItemRequest itemRequest,
+            String actor,
+            Instant now
+    ) {
+        String label = requireLabel(itemRequest.label());
+        String note = clean(itemRequest.note());
+        String reason = clean(itemRequest.reason());
+        String message = clean(itemRequest.message());
+        return itemRequest.documentType() == null
+                ? MissingItem.information(
+                        UUID.randomUUID(),
+                        submissionId,
+                        label,
+                        note,
+                        reason,
+                        itemRequest.dueAt(),
+                        message,
+                        actor,
+                        now
+                )
+                : MissingItem.document(
+                        UUID.randomUUID(),
+                        submissionId,
+                        label,
+                        note,
+                        reason,
+                        itemRequest.dueAt(),
+                        message,
+                        itemRequest.documentType(),
+                        actor,
+                        now
+                );
     }
 
     @Transactional
@@ -91,6 +142,7 @@ public class MissingItemService {
     ) {
         Submission submission = submissions.findByIdForUpdate(submissionId)
                 .orElseThrow(() -> new SubmissionNotFoundException(submissionId));
+        requireOpen(submission);
         MissingItem item = items.findByIdAndSubmissionId(itemId, submissionId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
@@ -111,7 +163,7 @@ public class MissingItemService {
     ) {
         Submission submission = submissions.findByIdForUpdate(submissionId)
                 .orElseThrow(() -> new SubmissionNotFoundException(submissionId));
-        requireNotCompleted(submission);
+        requireOpen(submission);
         List<MissingItem> openItems = items
                 .findAllBySubmissionIdAndStatusOrderByRequestedAtAscIdAsc(
                         submissionId,
@@ -150,9 +202,10 @@ public class MissingItemService {
         }
     }
 
-    private static void requireNotCompleted(Submission submission) {
-        if (submission.getStage() == SubmissionStage.COMPLETED) {
-            throw new SubmissionConflictException("Completed submissions cannot be changed.");
+    private static void requireOpen(Submission submission) {
+        if (submission.getStage() == SubmissionStage.COMPLETED
+                || submission.getStage() == SubmissionStage.REJECTED) {
+            throw new SubmissionConflictException("Closed submissions cannot be changed.");
         }
     }
 

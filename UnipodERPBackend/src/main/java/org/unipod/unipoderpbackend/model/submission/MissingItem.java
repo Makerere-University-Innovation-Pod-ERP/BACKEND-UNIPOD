@@ -9,6 +9,13 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
 
+/**
+ * A single outstanding information or document request raised during intake.
+ *
+ * <p>{@code label} is the short line shown in lists, {@code reason} explains why
+ * the item is needed, and {@code message} carries the longer submitter-facing
+ * instruction. {@code dueAt} is the optional response deadline.</p>
+ */
 @Entity
 @Table(name = "missing_items")
 public class MissingItem {
@@ -27,6 +34,15 @@ public class MissingItem {
 
     @Column(columnDefinition = "text")
     private String note;
+
+    @Column(length = 255)
+    private String reason;
+
+    @Column(name = "due_at")
+    private Instant dueAt;
+
+    @Column(columnDefinition = "text")
+    private String message;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "document_type", length = 32)
@@ -63,6 +79,9 @@ public class MissingItem {
             MissingItemKind kind,
             String label,
             String note,
+            String reason,
+            Instant dueAt,
+            String message,
             DocumentType documentType,
             String requestedBy,
             Instant requestedAt
@@ -72,6 +91,9 @@ public class MissingItem {
         this.kind = kind;
         this.label = label;
         this.note = note;
+        this.reason = reason;
+        this.dueAt = dueAt;
+        this.message = message;
         this.documentType = documentType;
         this.status = MissingItemStatus.OPEN;
         this.requestedBy = requestedBy;
@@ -86,8 +108,23 @@ public class MissingItem {
             String requestedBy,
             Instant requestedAt
     ) {
+        return information(id, submissionId, label, note, null, null, null, requestedBy, requestedAt);
+    }
+
+    public static MissingItem information(
+            UUID id,
+            UUID submissionId,
+            String label,
+            String note,
+            String reason,
+            Instant dueAt,
+            String message,
+            String requestedBy,
+            Instant requestedAt
+    ) {
         return new MissingItem(
-                id, submissionId, MissingItemKind.INFORMATION, label, note, null, requestedBy, requestedAt
+                id, submissionId, MissingItemKind.INFORMATION, label, note,
+                reason, dueAt, message, null, requestedBy, requestedAt
         );
     }
 
@@ -100,8 +137,25 @@ public class MissingItem {
             String requestedBy,
             Instant requestedAt
     ) {
+        return document(id, submissionId, label, note, null, null, null,
+                documentType, requestedBy, requestedAt);
+    }
+
+    public static MissingItem document(
+            UUID id,
+            UUID submissionId,
+            String label,
+            String note,
+            String reason,
+            Instant dueAt,
+            String message,
+            DocumentType documentType,
+            String requestedBy,
+            Instant requestedAt
+    ) {
         return new MissingItem(
-                id, submissionId, MissingItemKind.DOCUMENT, label, note, documentType, requestedBy, requestedAt
+                id, submissionId, MissingItemKind.DOCUMENT, label, note,
+                reason, dueAt, message, documentType, requestedBy, requestedAt
         );
     }
 
@@ -137,6 +191,18 @@ public class MissingItem {
 
     public String getNote() {
         return note;
+    }
+
+    public String getReason() {
+        return reason;
+    }
+
+    public Instant getDueAt() {
+        return dueAt;
+    }
+
+    public String getMessage() {
+        return message;
     }
 
     public DocumentType getDocumentType() {

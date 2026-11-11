@@ -24,10 +24,13 @@ import org.springframework.web.bind.annotation.RestController;
 import org.unipod.unipoderpbackend.dto.PageResponse;
 import org.unipod.unipoderpbackend.dto.submission.AdvanceSubmissionRequest;
 import org.unipod.unipoderpbackend.dto.submission.CaseFileResponse;
+import org.unipod.unipoderpbackend.dto.submission.ConfirmProjectRequest;
 import org.unipod.unipoderpbackend.dto.submission.CreateDocumentRequest;
 import org.unipod.unipoderpbackend.dto.submission.CreateSubmissionRequest;
 import org.unipod.unipoderpbackend.dto.submission.DocumentResponse;
 import org.unipod.unipoderpbackend.dto.submission.ForwardSubmissionRequest;
+import org.unipod.unipoderpbackend.dto.submission.RejectSubmissionRequest;
+import org.unipod.unipoderpbackend.dto.submission.ReplySubmissionRequest;
 import org.unipod.unipoderpbackend.dto.submission.ReviewerAssignmentRequest;
 import org.unipod.unipoderpbackend.dto.submission.RequestInformationRequest;
 import org.unipod.unipoderpbackend.dto.submission.SubmissionResponse;
@@ -121,6 +124,50 @@ public class SubmissionController {
         return submissions.register(id, authentication.getName());
     }
 
+    @PostMapping("/{id}/submit")
+    @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'RECEPTIONIST', 'FACT_FINDING_OFFICER', 'SUBMITTER')")
+    public SubmissionResponse submit(@PathVariable UUID id, Authentication authentication) {
+        return submissions.submit(
+                id,
+                authentication.getName(),
+                SubmitterAuthorization.hasSubmitterRole(authentication)
+        );
+    }
+
+    @PostMapping("/{id}/reply")
+    @PreAuthorize("hasRole('SUBMITTER')")
+    public SubmissionResponse reply(
+            @PathVariable UUID id,
+            @Valid @RequestBody ReplySubmissionRequest request,
+            Authentication authentication
+    ) {
+        return submissions.reply(id, request, authentication.getName());
+    }
+
+    @PostMapping("/{id}/confirm-project")
+    @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'RECEPTIONIST', 'FACT_FINDING_OFFICER')")
+    public SubmissionResponse confirmProject(
+            @PathVariable UUID id,
+            @Valid @RequestBody(required = false) ConfirmProjectRequest request,
+            Authentication authentication
+    ) {
+        return submissions.confirmAsProject(
+                id,
+                request == null ? new ConfirmProjectRequest(null, null) : request,
+                authentication.getName()
+        );
+    }
+
+    @PostMapping("/{id}/reject")
+    @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'RECEPTIONIST', 'FACT_FINDING_OFFICER')")
+    public SubmissionResponse reject(
+            @PathVariable UUID id,
+            @Valid @RequestBody RejectSubmissionRequest request,
+            Authentication authentication
+    ) {
+        return submissions.reject(id, request, authentication.getName());
+    }
+
     @PostMapping("/{id}/forward")
     @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'RECEPTIONIST', 'FACT_FINDING_OFFICER')")
     public SubmissionResponse forward(
@@ -128,11 +175,11 @@ public class SubmissionController {
             @Valid @RequestBody ForwardSubmissionRequest request,
             Authentication authentication
     ) {
-        return submissions.forward(id, request.sectorId(), authentication.getName());
+        return submissions.forward(id, request.sectorId(), request.note(), authentication.getName());
     }
 
     @PostMapping("/{id}/request-information")
-    @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'RECEPTIONIST', 'FACT_FINDING_OFFICER')")
+    @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'RECEPTIONIST', 'FACT_FINDING_OFFICER', 'REVIEWER', 'SECTOR_OFFICER')")
     public SubmissionResponse requestInformation(
             @PathVariable UUID id,
             @Valid @RequestBody RequestInformationRequest request,

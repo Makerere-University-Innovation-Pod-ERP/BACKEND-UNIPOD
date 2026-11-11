@@ -4,6 +4,8 @@ import java.io.IOException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,6 +37,31 @@ import org.unipod.unipoderpbackend.service.storage.DocumentStorage;
 public class UploadedDocumentService {
     private static final Logger log = LoggerFactory.getLogger(UploadedDocumentService.class);
     private static final String DEFAULT_CONTENT_TYPE = "application/octet-stream";
+
+    /**
+     * Document types reception accepts. Anything outside this list is rejected
+     * rather than silently stored, because uploaded files are streamed back to
+     * reviewers.
+     */
+    private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
+            "application/pdf",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.ms-powerpoint",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "application/rtf",
+            "application/zip",
+            "text/plain",
+            "text/csv",
+            "text/rtf",
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp",
+            "image/tiff"
+    );
 
     private final SubmissionRepository submissions;
     private final SubmissionDocumentRepository documents;
@@ -92,14 +119,12 @@ public class UploadedDocumentService {
             throw new InvalidSubmissionException("Document details are invalid.");
         }
         SubmissionService.requireSubmitterDocumentStatus(status, submitter);
+        String contentType = requireAllowedContentType(file.getContentType());
         String originalFilename = safeFilename(file.getOriginalFilename(), documentName);
         transaction.execute(statusTransaction -> {
             Submission submission = submissions.findByIdForUpdate(submissionId)
                     .orElseThrow(() -> new SubmissionNotFoundException(submissionId));
-            SubmissionService.requireSubmitterOwnership(submission, actor, submitter);
-            if (submission.getStage() == SubmissionStage.COMPLETED) {
-                throw new SubmissionConflictException("The submission cannot be changed in its current state.");
-            }
+            requireDocumentStage(submission, actor, submitter);
             return null;
         });
 
@@ -110,15 +135,15 @@ public class UploadedDocumentService {
             throw new DocumentStorageException(exception);
         }
 
-        String contentType = safeContentType(file.getContentType());
         try {
             SubmissionDocument document = transaction.execute(statusTransaction -> {
                 Submission submission = submissions.findByIdForUpdate(submissionId)
                         .orElseThrow(() -> new SubmissionNotFoundException(submissionId));
-                SubmissionService.requireSubmitterOwnership(submission, actor, submitter);
+                requireDocumentStage(submission, actor, submitter);
                 Instant now = clock.instant();
                 submission.touch(now);
-                SubmissionDocument saved = documents.saveAndFlush(new SubmissionDocument(
+                long version = documents.maxVersion(submissionId, documentType) + 1;
+                SubmissionDocument pending = new SubmissionDocument(
                         UUID.randomUUID(),
                         submissionId,
                         documentName,
@@ -130,7 +155,9 @@ public class UploadedDocumentService {
                         originalFilename,
                         actor,
                         now
-                ));
+                );
+                pending.assignVersion(version);
+                SubmissionDocument saved = documents.saveAndFlush(pending);
                 resolveMissingDocuments(submissionId, documentType, documentName, actor, now);
                 return saved;
             });
@@ -146,6 +173,27 @@ public class UploadedDocumentService {
                 .findByIdAndSubmissionId(documentId, submissionId)
                 .orElseThrow(StorageObjectNotFoundException::new));
         return new DownloadedDocument(document, storage.download(document.getFileReference()));
+    }
+
+    private static void requireDocumentStage(Submission submission, String actor, boolean submitter) {
+        SubmissionStage stage = submission.getStage();
+        if (stage == SubmissionStage.COMPLETED || stage == SubmissionStage.REJECTED) {
+            throw new SubmissionConflictException("The submission cannot be changed in its current state.");
+        }
+        if (submitter) {
+            if (!submission.getSubmitterId().equals(actor)) {
+                throw new org.springframework.security.access.AccessDeniedException(
+                        "Submitters may only attach documents to their own submissions."
+                );
+            }
+            if (stage != SubmissionStage.DRAFT
+                    && stage != SubmissionStage.SUBMITTED
+                    && stage != SubmissionStage.AWAITING_INFORMATION) {
+                throw new org.springframework.security.access.AccessDeniedException(
+                        "Submitters may only attach documents before the submission is forwarded."
+                );
+            }
+        }
     }
 
     private void resolveMissingDocuments(
@@ -180,12 +228,19 @@ public class UploadedDocumentService {
         }
     }
 
-    private static String safeContentType(String contentType) {
-        if (contentType == null || contentType.length() > 255
-                || !contentType.matches("[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+")) {
+    private static String requireAllowedContentType(String contentType) {
+        if (contentType == null || contentType.isBlank()) {
             return DEFAULT_CONTENT_TYPE;
         }
-        return contentType;
+        String normalized = contentType.trim().toLowerCase(Locale.ROOT);
+        if (normalized.length() > 255
+                || !normalized.matches("[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+")) {
+            throw new InvalidSubmissionException("The uploaded file type is not supported.");
+        }
+        if (!ALLOWED_CONTENT_TYPES.contains(normalized)) {
+            throw new InvalidSubmissionException("The uploaded file type is not supported.");
+        }
+        return normalized;
     }
 
     private static String safeFilename(String originalFilename, String fallback) {

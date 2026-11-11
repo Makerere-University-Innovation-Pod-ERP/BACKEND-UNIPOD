@@ -352,7 +352,8 @@ class SubmissionRegistrationIntegrationTest {
         assertEquals(
                 "sector@example.invalid",
                 jdbcTemplate.queryForObject(
-                        "SELECT payload ->> 'notificationEmail' FROM notification_outbox WHERE aggregate_id = ?",
+                        "SELECT payload ->> 'notificationEmail' FROM notification_outbox "
+                                + "WHERE aggregate_id = ? AND event_type = 'submission.forwarded'",
                         String.class,
                         draft.id()
                 )
@@ -395,6 +396,7 @@ class SubmissionRegistrationIntegrationTest {
                 ),
                 "receptionist-queue-test"
         );
+        submissions.submit(draft.id(), "receptionist-queue-test", false);
 
         ReceptionQueueResponse queue = submissions.receptionQueue(
                 PageRequest.of(0, 10)
@@ -411,7 +413,7 @@ class SubmissionRegistrationIntegrationTest {
         assertEquals(1, mine.getTotalElements());
         assertTrue(overview.totalSubmissions() >= 1);
         assertTrue(overview.generalSubmissions() >= 1);
-        assertTrue(overview.byStage().get(SubmissionStage.DRAFT) >= 1);
+        assertTrue(overview.byStage().get(SubmissionStage.SUBMITTED) >= 1);
     }
 
     @Test

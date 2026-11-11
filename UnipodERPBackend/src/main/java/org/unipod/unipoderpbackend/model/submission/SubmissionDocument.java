@@ -42,6 +42,9 @@ public class SubmissionDocument {
     @Column(name = "original_filename", length = 255)
     private String originalFilename;
 
+    @Column(nullable = false)
+    private long version;
+
     @Column(name = "created_by", nullable = false)
     private String createdBy;
 
@@ -112,6 +115,18 @@ public class SubmissionDocument {
 
     public void updateStatus(DocumentStatus status) {
         this.status = status;
+    }
+
+    /**
+     * Assigns the next document revision number for the submission/type pair.
+     * Revisions start at 1 and increase monotonically.
+     */
+    public void assignVersion(long version) {
+        this.version = Math.max(1, version);
+    }
+
+    public long getVersion() {
+        return version;
     }
 
     public String getFileReference() {

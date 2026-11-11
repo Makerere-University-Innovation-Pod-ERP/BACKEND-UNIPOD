@@ -6,37 +6,29 @@ import java.util.List;
 /**
  * The canonical reception verification lines. The key is stable and is what the
  * API accepts; the label is the human-readable line shown to the receptionist.
+ *
+ * <p>The four lines apply to every submission category. Category-specific
+ * evidence (student number, recommendation letter, service requester) is
+ * captured on the brief itself rather than as a separate checklist line.</p>
  */
 public enum ReceptionCheckItem {
-    IDENTITY_CONFIRMED("Submitter identity confirmed", false),
-    CONTACT_DETAILS_CONFIRMED("Contact details confirmed", false),
-    BRIEF_SUMMARY_CLEAR("Brief summary is clear", false),
-    PROBLEM_STATEMENT_CLEAR("Problem statement is clear", false),
-    DOCUMENTS_PRESENT("Required documents present", false),
-    DUPLICATE_CHECK("No duplicate brief found", false),
-    STUDENT_EVIDENCE("Student number, programme and supervisor confirmed", true),
-    RECOMMENDATION_LETTER("Recommendation letter status confirmed", true);
+    IDENTITY_CONFIRMED("Submitter identity confirmed"),
+    CONTACT_DETAILS_CONFIRMED("Contact details confirmed"),
+    BRIEF_SUMMARY_CLEAR("Brief summary is clear"),
+    DOCUMENTS_PRESENT("Required documents present");
 
     private final String label;
-    private final boolean studentOnly;
 
-    ReceptionCheckItem(String label, boolean studentOnly) {
+    ReceptionCheckItem(String label) {
         this.label = label;
-        this.studentOnly = studentOnly;
     }
 
     public String label() {
         return label;
     }
 
-    public boolean studentOnly() {
-        return studentOnly;
-    }
-
     public static List<ReceptionCheckItem> applicableTo(SubmissionCategory category) {
-        return Arrays.stream(values())
-                .filter(item -> !item.studentOnly || category == SubmissionCategory.STUDENT)
-                .toList();
+        return List.of(values());
     }
 
     public static ReceptionCheckItem fromKey(String key) {

@@ -276,13 +276,13 @@ public class CaseFileService {
     private static CaseStage caseStage(SubmissionStage stage) {
         return switch (stage) {
             case DRAFT -> null;
-            case RECEIVED -> CaseStage.RECEIVED;
+            case SUBMITTED, AWAITING_INFORMATION, RECEIVED -> CaseStage.RECEIVED;
             case REGISTERED -> CaseStage.REGISTERED;
             case FACT_FINDING, FORWARDED -> CaseStage.FACT_FINDING;
             case UNDER_REVIEW, IN_PROGRESS -> CaseStage.UNDER_REVIEW;
             case REFINEMENT_REQUESTED -> CaseStage.REFINEMENT_REQUESTED;
-            case FURTHER_HANDLING -> CaseStage.FURTHER_HANDLING;
-            case COMPLETED -> CaseStage.COMPLETED;
+            case FURTHER_HANDLING, CONFIRMED_AS_PROJECT -> CaseStage.FURTHER_HANDLING;
+            case REJECTED, COMPLETED -> CaseStage.COMPLETED;
         };
     }
 

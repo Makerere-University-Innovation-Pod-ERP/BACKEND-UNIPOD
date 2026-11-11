@@ -24,6 +24,10 @@ import org.unipod.unipoderpbackend.service.submission.MissingItemService;
 @RequestMapping("/submissions/{id}")
 @Validated
 public class MissingItemController {
+    private static final String OPERATIONAL_ROLES =
+            "hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'RECEPTIONIST', "
+                    + "'FACT_FINDING_OFFICER', 'REVIEWER', 'SECTOR_OFFICER')";
+
     private final MissingItemService missingItems;
 
     public MissingItemController(MissingItemService missingItems) {
@@ -31,14 +35,31 @@ public class MissingItemController {
     }
 
     @GetMapping("/missing-items")
-    @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'RECEPTIONIST', 'FACT_FINDING_OFFICER')")
+    @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'RECEPTIONIST', "
+            + "'FACT_FINDING_OFFICER', 'REVIEWER', 'SECTOR_OFFICER', 'OBSERVER')")
     public MissingItemsResponse list(@PathVariable UUID id) {
         return missingItems.list(id);
     }
 
+    /**
+     * Records outstanding information and/or document requests. A missing item
+     * with a {@code documentType} is a document request; otherwise it is an
+     * information request.
+     */
+    @PostMapping("/missing-items")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize(OPERATIONAL_ROLES)
+    public MissingItemsResponse addMissingItems(
+            @PathVariable UUID id,
+            @Valid @RequestBody MissingItemsRequest request,
+            Authentication authentication
+    ) {
+        return missingItems.addMissingItems(id, request, authentication.getName());
+    }
+
     @PostMapping("/missing-documents")
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'RECEPTIONIST', 'FACT_FINDING_OFFICER')")
+    @PreAuthorize(OPERATIONAL_ROLES)
     public MissingItemsResponse addMissingDocuments(
             @PathVariable UUID id,
             @Valid @RequestBody MissingItemsRequest request,
@@ -48,7 +69,7 @@ public class MissingItemController {
     }
 
     @PostMapping("/missing-items/{itemId}/resolve")
-    @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'RECEPTIONIST', 'FACT_FINDING_OFFICER')")
+    @PreAuthorize(OPERATIONAL_ROLES)
     public MissingItemResponse resolve(
             @PathVariable UUID id,
             @PathVariable UUID itemId,
@@ -64,7 +85,7 @@ public class MissingItemController {
     }
 
     @PostMapping("/reminders")
-    @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'RECEPTIONIST', 'FACT_FINDING_OFFICER')")
+    @PreAuthorize(OPERATIONAL_ROLES)
     public MissingItemsResponse sendReminder(
             @PathVariable UUID id,
             @Valid @RequestBody(required = false) SendReminderRequest request,

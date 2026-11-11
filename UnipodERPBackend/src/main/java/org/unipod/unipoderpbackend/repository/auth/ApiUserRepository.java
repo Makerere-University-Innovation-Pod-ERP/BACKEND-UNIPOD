@@ -8,5 +8,7 @@ import org.unipod.unipoderpbackend.model.auth.ApiUser;
 public interface ApiUserRepository extends JpaRepository<ApiUser, UUID> {
     Optional<ApiUser> findByEmailIgnoreCase(String email);
 
+    Optional<ApiUser> findByPasswordSetupTokenHash(String passwordSetupTokenHash);
+
     boolean existsByEmailIgnoreCase(String email);
 }

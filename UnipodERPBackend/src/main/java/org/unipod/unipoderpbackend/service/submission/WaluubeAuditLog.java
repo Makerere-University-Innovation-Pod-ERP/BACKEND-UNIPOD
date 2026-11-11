@@ -16,6 +16,7 @@ public class WaluubeAuditLog {
             "/submissions",
             "/submissions/**",
             "/auth/change-password",
+            "/auth/set-password",
             "/cases",
             "/cases/**",
             "/queues/reception",
