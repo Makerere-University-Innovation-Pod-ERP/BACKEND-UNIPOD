@@ -77,8 +77,8 @@ include a valid example body. Replace example values as appropriate.
 | 20 | `POST /submissions/{id}/forward` | Administrator, Coordinator, Receptionist, or Fact-Finding Officer; active sector required | `200`; a DRAFT is registered and forwarded atomically, or a RECEIVED case is forwarded. Check stage history, assigned sector, and outbox event. |
 | 21 | `POST /submissions/{id}/transition` | Administrator or Coordinator | `200` for allowed legacy lifecycle transition; test the current stage rules and confirm invalid/skipped transitions are rejected. |
 | 22 | `POST /submissions/{id}/documents` | Intake roles; Submitter may add submitted documents to their own DRAFT | `201`; response includes `documentType`. Submitters cannot mark a document `VERIFIED`. `fileReference` must be an opaque reference, not a URL or path. |
-| 23 | `POST /submissions/{id}/documents/upload` | Intake roles; Submitter may upload to their own DRAFT; S3 storage must be enabled | `201`; set `name`, `status`, `documentType`, and a local file in Postman's form-data. Without configured S3, this route is unavailable. |
-| 24 | `GET /submissions/{id}/documents/{documentId}/file` | Administrator, Coordinator, Receptionist, or Fact-Finding Officer; file stored in S3 | `200` attachment with `nosniff`; otherwise check the documented not-found/storage response. |
+| 23 | `POST /submissions/{id}/documents/upload` | Intake roles; Submitter may upload to their own DRAFT | `201`; set `name`, `status`, `documentType`, and a local file in Postman's form-data. Files are stored in Postgres by default, or in S3 when `S3_STORAGE_ENABLED=true`. |
+| 24 | `GET /submissions/{id}/documents/{documentId}/file` | Administrator, Coordinator, Receptionist, or Fact-Finding Officer | `200` attachment with `nosniff`; otherwise check the documented not-found/storage response. |
 | 25 | `GET /sectors` | Administrator, Coordinator, Receptionist, or Fact-Finding Officer | `200`; lists active sectors. |
 | 26 | `POST /sectors` | Administrator | `201`; use the returned `id` (`{{sectorId}}`) for forwarding and membership tests. |
 | 27 | `GET /sectors/catalog` | Administrator | `200`; includes active and inactive sectors. |
@@ -123,7 +123,7 @@ Use the collection's requests and environment variables in this order:
    an Administrator or Coordinator using the latest `version`.
 8. Test outcomes separately: unless Mark's reviewer-quorum integration is
    configured and quorum is met, the expected result is `409`, not success.
-   Test upload/download only in an environment configured with S3.
+   Upload/download works with the default Postgres storage or with S3 enabled.
 
 ## Negative and authorization checks
 

@@ -19,7 +19,7 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 
 @Service
 @ConditionalOnProperty(name = "storage.s3.enabled", havingValue = "true")
-public class S3DocumentStorage {
+public class S3DocumentStorage implements DocumentStorage {
     private static final Pattern OPAQUE_REFERENCE = Pattern.compile("[A-Za-z0-9_-]{1,256}");
     private static final String DEFAULT_CONTENT_TYPE = "application/octet-stream";
 
@@ -34,6 +34,7 @@ public class S3DocumentStorage {
         this.bucket = bucket;
     }
 
+    @Override
     public String upload(MultipartFile file) throws IOException {
         String reference = UUID.randomUUID().toString();
         String contentType = safeContentType(file.getContentType());
@@ -49,6 +50,7 @@ public class S3DocumentStorage {
         return reference;
     }
 
+    @Override
     public InputStream download(String reference) {
         if (reference == null || !OPAQUE_REFERENCE.matcher(reference).matches()) {
             throw new StorageObjectNotFoundException();
@@ -65,6 +67,7 @@ public class S3DocumentStorage {
         }
     }
 
+    @Override
     public void delete(String reference) {
         s3.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(reference).build());
     }

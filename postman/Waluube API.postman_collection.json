@@ -701,7 +701,7 @@
                 }
               ]
             },
-            "description": "Upload a document to configured S3-compatible storage\n\nAvailable only when S3 storage is enabled. Files are limited by the configured server-side upload limit.\n\nExpected documented status codes: 201, 400, 413, 401, 403, 404"
+            "description": "Upload a document to configured storage\n\nStores the file in the configured S3-compatible bucket, or in Postgres when S3 is disabled. Files are limited by the configured server-side upload limit.\n\nExpected documented status codes: 201, 400, 413, 401, 403, 404"
           },
           "response": [],
           "event": [

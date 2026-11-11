@@ -658,8 +658,8 @@ paths:
     post:
       tags: [Submissions]
       operationId: uploadSubmissionDocument
-      summary: Upload a document to configured S3-compatible storage
-      description: Available only when S3 storage is enabled. Files are limited by the configured server-side upload limit.
+      summary: Upload a document to configured storage
+      description: Stores the file in the configured S3-compatible bucket, or in Postgres when S3 is disabled. Files are limited by the configured server-side upload limit.
       parameters:
         - $ref: '#/components/parameters/SubmissionId'
       requestBody:
