@@ -151,6 +151,9 @@ class AuthenticationServiceTest {
                 user.getRole() == ApiUserRole.SUBMITTER
                         && user.isMustChangePassword()
                         && user.getPasswordSetupTokenHash() != null
+                        && !user.getPasswordSetupTokenHash().equals(account.setPasswordToken())
+                        && user.getPasswordSetupExpiresAt() != null
+                        && user.getPasswordSetupExpiresAt().isAfter(NOW)
                         && passwordEncoder.matches(account.temporaryPassword(), user.getPasswordHash())
         ));
     }
@@ -177,6 +180,7 @@ class AuthenticationServiceTest {
                 NOW
         );
         when(users.findByEmailIgnoreCase("walkin@example.test")).thenReturn(Optional.of(user));
+        user.issuePasswordSetupToken("a".repeat(64), NOW.plus(Duration.ofHours(1)), NOW);
 
         authentication.changePassword(
                 "walkin@example.test",
@@ -184,6 +188,8 @@ class AuthenticationServiceTest {
         );
 
         assertFalse(user.isMustChangePassword());
+        assertNull(user.getPasswordSetupTokenHash());
+        assertNull(user.getPasswordSetupExpiresAt());
         assertTrue(passwordEncoder.matches("a brand new password", user.getPasswordHash()));
         verify(users).save(user);
     }

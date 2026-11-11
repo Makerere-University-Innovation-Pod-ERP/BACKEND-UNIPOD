@@ -239,7 +239,10 @@ public class AuthenticationService {
 
     private String passwordSetupUrl(String token) {
         if (publicBaseUrl.isBlank()) {
-            return null;
+            throw new IllegalStateException(
+                    "app.public-base-url must be configured (APP_PUBLIC_BASE_URL) "
+                            + "before issuing password-setup links."
+            );
         }
         String base = publicBaseUrl.endsWith("/")
                 ? publicBaseUrl.substring(0, publicBaseUrl.length() - 1)
