@@ -55,7 +55,9 @@ class AuthenticationServiceTest {
                 clock,
                 "https://api.example.test",
                 "unipod-erp-api",
-                Duration.ofMinutes(15)
+                Duration.ofMinutes(15),
+                null,
+                "https://portal.example.test"
         );
     }
 
@@ -75,7 +77,10 @@ class AuthenticationServiceTest {
         assertEquals("Bearer", response.tokenType());
         assertEquals("signed-token", response.accessToken());
         assertEquals(NOW.plus(Duration.ofMinutes(15)), response.expiresAt());
-        verify(jwtEncoder).encode(any(JwtEncoderParameters.class));
+        assertFalse(response.mustChangePassword());
+        var parameters = org.mockito.ArgumentCaptor.forClass(JwtEncoderParameters.class);
+        verify(jwtEncoder).encode(parameters.capture());
+        assertFalse(Boolean.TRUE.equals(parameters.getValue().getClaims().getClaim("mustChangePassword")));
     }
 
     @Test
@@ -139,9 +144,13 @@ class AuthenticationServiceTest {
         assertTrue(account.created());
         assertNotNull(account.temporaryPassword());
         assertTrue(account.temporaryPassword().length() >= 12);
+        assertNotNull(account.setPasswordToken());
+        assertNotNull(account.setPasswordUrl());
+        assertTrue(account.setPasswordUrl().contains(account.setPasswordToken()));
         verify(users).saveAndFlush(argThat(user ->
                 user.getRole() == ApiUserRole.SUBMITTER
                         && user.isMustChangePassword()
+                        && user.getPasswordSetupTokenHash() != null
                         && passwordEncoder.matches(account.temporaryPassword(), user.getPasswordHash())
         ));
     }
@@ -206,6 +215,81 @@ class AuthenticationServiceTest {
                         "walkin@example.test",
                         new ChangePasswordRequest(PASSWORD, PASSWORD)
                 )
+        );
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+    }
+
+    @Test
+    void setPasswordConsumesTheSingleUseSetupToken() {
+        ApiUser user = new ApiUser(
+                UUID.randomUUID(),
+                "walkin@example.test",
+                passwordEncoder.encode(PASSWORD),
+                ApiUserRole.SUBMITTER,
+                true,
+                NOW
+        );
+        user.issuePasswordSetupToken("hashed-token", NOW.plus(Duration.ofHours(1)), NOW);
+        when(users.findByPasswordSetupTokenHash(any())).thenReturn(Optional.of(user));
+        when(users.consumePasswordSetupToken(any(), any(), any())).thenReturn(1);
+
+        authentication.setPassword(new org.unipod.unipoderpbackend.dto.auth.SetPasswordRequest(
+                "raw-token",
+                "a brand new password"
+        ));
+
+        verify(users).consumePasswordSetupToken(
+                any(),
+                argThat(hash -> passwordEncoder.matches("a brand new password", hash)),
+                any()
+        );
+    }
+
+    @Test
+    void setPasswordRejectsExpiredSetupToken() {
+        ApiUser user = new ApiUser(
+                UUID.randomUUID(),
+                "walkin@example.test",
+                passwordEncoder.encode(PASSWORD),
+                ApiUserRole.SUBMITTER,
+                true,
+                NOW
+        );
+        user.issuePasswordSetupToken("hashed-token", NOW.minus(Duration.ofMinutes(1)), NOW);
+        when(users.findByPasswordSetupTokenHash(any())).thenReturn(Optional.of(user));
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> authentication.setPassword(new org.unipod.unipoderpbackend.dto.auth.SetPasswordRequest(
+                        "raw-token",
+                        "a brand new password"
+                ))
+        );
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+    }
+
+    @Test
+    void setPasswordRejectsTokenConsumedConcurrently() {
+        ApiUser user = new ApiUser(
+                UUID.randomUUID(),
+                "walkin@example.test",
+                passwordEncoder.encode(PASSWORD),
+                ApiUserRole.SUBMITTER,
+                true,
+                NOW
+        );
+        user.issuePasswordSetupToken("hashed-token", NOW.plus(Duration.ofHours(1)), NOW);
+        when(users.findByPasswordSetupTokenHash(any())).thenReturn(Optional.of(user));
+        when(users.consumePasswordSetupToken(any(), any(), any())).thenReturn(0);
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> authentication.setPassword(new org.unipod.unipoderpbackend.dto.auth.SetPasswordRequest(
+                        "raw-token",
+                        "a brand new password"
+                ))
         );
 
         assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());

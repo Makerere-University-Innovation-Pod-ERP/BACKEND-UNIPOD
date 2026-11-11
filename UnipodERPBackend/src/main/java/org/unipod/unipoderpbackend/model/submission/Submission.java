@@ -297,8 +297,8 @@ public class Submission {
      * the brief to the intake queue as a new brief version.
      */
     public void reply(Instant time) {
-        if (stage != SubmissionStage.AWAITING_INFORMATION) {
-            throw new SubmissionConflictException("Only a submission awaiting information can be replied to.");
+        if (stage != SubmissionStage.AWAITING_INFORMATION && stage != SubmissionStage.SUBMITTED) {
+            throw new SubmissionConflictException("Only a submitted or awaiting-information submission can be replied to.");
         }
         requireStudentDetails();
         requireServiceRequestDetails();
@@ -329,9 +329,18 @@ public class Submission {
             String expectedResult,
             Instant time
     ) {
-        if (stage != SubmissionStage.AWAITING_INFORMATION) {
-            throw new SubmissionConflictException("Only a submission awaiting information can be updated by its submitter.");
+        if (stage != SubmissionStage.AWAITING_INFORMATION && stage != SubmissionStage.SUBMITTED) {
+            throw new SubmissionConflictException("Only a submitted or awaiting-information submission can be updated by its submitter.");
         }
+        requireReplyDetailsMatchCategory(
+                studentNumber,
+                programme,
+                supervisor,
+                recommendationLetterStatus,
+                serviceRequested,
+                department,
+                expectedResult
+        );
         if (title != null) {
             this.title = title.trim();
         }
@@ -366,6 +375,41 @@ public class Submission {
             this.expectedResult = clean(expectedResult);
         }
         this.updatedAt = time;
+    }
+
+    private void requireReplyDetailsMatchCategory(
+            String studentNumber,
+            String programme,
+            String supervisor,
+            RecommendationLetterStatus recommendationLetterStatus,
+            String serviceRequested,
+            String department,
+            String expectedResult
+    ) {
+        boolean studentDetails = clean(studentNumber) != null
+                || clean(programme) != null
+                || clean(supervisor) != null
+                || recommendationLetterStatus != null;
+        boolean serviceDetails = clean(serviceRequested) != null
+                || clean(department) != null
+                || clean(expectedResult) != null;
+        if (category == SubmissionCategory.STUDENT && serviceDetails) {
+            throw new InvalidSubmissionException(
+                    "Student submissions cannot carry service-request fields."
+            );
+        }
+        if (category == SubmissionCategory.SERVICE_REQUEST && studentDetails) {
+            throw new InvalidSubmissionException(
+                    "Service-request submissions cannot carry student fields."
+            );
+        }
+        if (category != SubmissionCategory.STUDENT
+                && category != SubmissionCategory.SERVICE_REQUEST
+                && (studentDetails || serviceDetails)) {
+            throw new InvalidSubmissionException(
+                    "This submission category does not accept student or service-request fields."
+            );
+        }
     }
 
     public void clearInformationRequest() {
@@ -523,7 +567,6 @@ public class Submission {
 
     public void transitionTo(SubmissionStage nextStage, Instant time) {
         boolean validTransition = switch (stage) {
-            case SUBMITTED -> nextStage == SubmissionStage.REGISTERED;
             case RECEIVED -> nextStage == SubmissionStage.REGISTERED;
             case REGISTERED -> nextStage == SubmissionStage.FACT_FINDING;
             case FACT_FINDING, FORWARDED -> nextStage == SubmissionStage.UNDER_REVIEW
@@ -532,7 +575,7 @@ public class Submission {
             case UNDER_REVIEW, IN_PROGRESS -> nextStage == SubmissionStage.REFINEMENT_REQUESTED;
             case REFINEMENT_REQUESTED -> nextStage == SubmissionStage.FURTHER_HANDLING;
             case FURTHER_HANDLING -> nextStage == SubmissionStage.COMPLETED;
-            case DRAFT, AWAITING_INFORMATION, REJECTED, COMPLETED -> false;
+            case DRAFT, SUBMITTED, AWAITING_INFORMATION, REJECTED, COMPLETED -> false;
         };
         if (!validTransition) {
             throw new SubmissionConflictException("The requested lifecycle transition is not allowed.");

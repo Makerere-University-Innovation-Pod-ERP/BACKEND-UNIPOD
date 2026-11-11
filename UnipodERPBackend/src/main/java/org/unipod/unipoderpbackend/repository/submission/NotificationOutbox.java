@@ -170,7 +170,9 @@ public class NotificationOutbox {
 
     /**
      * Records the one-time password setup link created with an assisted
-     * submitter account. The raw token never reaches the database.
+     * submitter account. The link carries the raw token so the notifier can
+     * deliver it; only a hash of the same token is stored on the user record,
+     * and the token can be consumed once and expires after 72 hours.
      */
     public void recordPasswordSetup(
             UUID userId,

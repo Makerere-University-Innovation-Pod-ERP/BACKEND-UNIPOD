@@ -244,8 +244,10 @@ public class CaseFileService {
         String operatorReason = operator ? null : OPERATOR_REQUIRED;
         String quorumReason = review.quorumAvailable() && review.quorumMet() ? null : QUORUM_REQUIRED;
         boolean outcomeStageOpen = submission.getStage() != SubmissionStage.DRAFT
+                && submission.getStage() != SubmissionStage.REJECTED
                 && submission.getStage() != SubmissionStage.COMPLETED;
-        boolean documentsOpen = submission.getStage() != SubmissionStage.COMPLETED;
+        boolean documentsOpen = submission.getStage() != SubmissionStage.REJECTED
+                && submission.getStage() != SubmissionStage.COMPLETED;
         return new Capabilities(
                 capability(!allowed.isEmpty(), !allowed.isEmpty()
                         ? null
@@ -294,6 +296,7 @@ public class CaseFileService {
             case UNDER_REVIEW, IN_PROGRESS -> List.of(CaseStage.REFINEMENT_REQUESTED);
             case REFINEMENT_REQUESTED -> List.of(CaseStage.FURTHER_HANDLING);
             case FURTHER_HANDLING -> List.of(CaseStage.COMPLETED);
+            case CONFIRMED_AS_PROJECT -> List.of(CaseStage.FACT_FINDING);
             default -> List.of();
         };
     }

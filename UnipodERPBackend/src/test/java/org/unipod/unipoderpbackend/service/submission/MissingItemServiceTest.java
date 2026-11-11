@@ -9,6 +9,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.unipod.unipoderpbackend.dto.submission.MissingItemRequest;
 import org.unipod.unipoderpbackend.dto.submission.MissingItemsRequest;
 import org.unipod.unipoderpbackend.dto.submission.ResolveMissingItemRequest;
@@ -60,11 +61,11 @@ class MissingItemServiceTest {
                 UUID.randomUUID(), submission.getId(), "Supervisor name", null, ACTOR, NOW
         );
         resolved.resolve(ACTOR, "Received", NOW.plusSeconds(60));
-        when(submissions.existsById(submission.getId())).thenReturn(true);
+        when(submissions.findVisibleById(any(), any(), any())).thenReturn(Optional.of(submission));
         when(items.findAllBySubmissionIdOrderByRequestedAtAscIdAsc(submission.getId()))
                 .thenReturn(List.of(open, resolved));
 
-        var response = service.list(submission.getId());
+        var response = service.list(submission.getId(), authentication(ACTOR));
 
         assertEquals(1, response.openCount());
         assertEquals(2, response.items().size());
@@ -73,39 +74,84 @@ class MissingItemServiceTest {
     @Test
     void addMissingDocumentsCreatesOpenDocumentRequests() {
         Submission submission = submission("submitter@example.test");
-        when(submissions.findByIdForUpdate(submission.getId())).thenReturn(Optional.of(submission));
-        when(items.findAllBySubmissionIdOrderByRequestedAtAscIdAsc(submission.getId())).thenReturn(List.of());
+        when(submissions.findVisibleByIdForUpdate(any(), any(), any())).thenReturn(Optional.of(submission));
+        java.util.concurrent.atomic.AtomicReference<MissingItem> saved = new java.util.concurrent.atomic.AtomicReference<>();
+        when(items.save(any(MissingItem.class))).thenAnswer(invocation -> {
+            saved.set(invocation.getArgument(0));
+            return invocation.getArgument(0);
+        });
+        when(items.findAllBySubmissionIdOrderByRequestedAtAscIdAsc(submission.getId()))
+                .thenAnswer(invocation -> saved.get() == null ? List.of() : List.of(saved.get()));
 
-        service.addMissingDocuments(
+        var response = service.addMissingDocuments(
                 submission.getId(),
                 new MissingItemsRequest(List.of(new MissingItemRequest(
                         "Signed recommendation letter",
                         "Please upload the signed copy",
                         DocumentType.RECOMMENDATION_LETTER
                 ))),
-                ACTOR
+                authentication(ACTOR)
         );
 
-        ArgumentCaptor<MissingItem> saved = ArgumentCaptor.forClass(MissingItem.class);
-        verify(items).save(saved.capture());
-        assertEquals(MissingItemKind.DOCUMENT, saved.getValue().getKind());
-        assertEquals(MissingItemStatus.OPEN, saved.getValue().getStatus());
-        assertEquals(DocumentType.RECOMMENDATION_LETTER, saved.getValue().getDocumentType());
-        assertEquals("Signed recommendation letter", saved.getValue().getLabel());
+        MissingItem item = saved.get();
+        assertNotNull(item);
+        assertEquals(MissingItemKind.DOCUMENT, item.getKind());
+        assertEquals(MissingItemStatus.OPEN, item.getStatus());
+        assertEquals(DocumentType.RECOMMENDATION_LETTER, item.getDocumentType());
+        assertEquals("Signed recommendation letter", item.getLabel());
+        assertEquals(1, response.openCount());
+        assertEquals(item.getId(), response.items().getFirst().id());
         verify(items).flush();
+    }
+
+    @Test
+    void addMissingItemsRejectsNullElements() {
+        Submission submission = submission("submitter@example.test");
+        when(submissions.findVisibleByIdForUpdate(any(), any(), any())).thenReturn(Optional.of(submission));
+
+        assertThrows(
+                InvalidSubmissionException.class,
+                () -> service.addMissingItems(
+                        submission.getId(),
+                        new MissingItemsRequest(java.util.Collections.singletonList(null)),
+                        authentication(ACTOR)
+                )
+        );
+    }
+
+    @Test
+    void closedSubmissionRejectsNewMissingItems() {
+        Submission submission = submission("submitter@example.test");
+        submission.register("GEN-2026-000001", NOW, "receptionist-1");
+        submission.transitionTo(org.unipod.unipoderpbackend.model.submission.SubmissionStage.REGISTERED, NOW);
+        submission.transitionTo(org.unipod.unipoderpbackend.model.submission.SubmissionStage.FACT_FINDING, NOW);
+        submission.transitionTo(org.unipod.unipoderpbackend.model.submission.SubmissionStage.UNDER_REVIEW, NOW);
+        submission.transitionTo(org.unipod.unipoderpbackend.model.submission.SubmissionStage.REFINEMENT_REQUESTED, NOW);
+        submission.transitionTo(org.unipod.unipoderpbackend.model.submission.SubmissionStage.FURTHER_HANDLING, NOW);
+        submission.transitionTo(org.unipod.unipoderpbackend.model.submission.SubmissionStage.COMPLETED, NOW);
+        when(submissions.findVisibleByIdForUpdate(any(), any(), any())).thenReturn(Optional.of(submission));
+
+        assertThrows(
+                SubmissionConflictException.class,
+                () -> service.addMissingItems(
+                        submission.getId(),
+                        new MissingItemsRequest(List.of(new MissingItemRequest("Project brief", null, null))),
+                        authentication(ACTOR)
+                )
+        );
     }
 
     @Test
     void addMissingDocumentsRequiresDocumentType() {
         Submission submission = submission("submitter@example.test");
-        when(submissions.findByIdForUpdate(submission.getId())).thenReturn(Optional.of(submission));
+        when(submissions.findVisibleByIdForUpdate(any(), any(), any())).thenReturn(Optional.of(submission));
 
         assertThrows(
                 InvalidSubmissionException.class,
                 () -> service.addMissingDocuments(
                         submission.getId(),
                         new MissingItemsRequest(List.of(new MissingItemRequest("Project brief", null, null))),
-                        ACTOR
+                        authentication(ACTOR)
                 )
         );
     }
@@ -122,7 +168,7 @@ class MissingItemServiceTest {
                 ACTOR,
                 NOW
         );
-        when(submissions.findByIdForUpdate(submission.getId())).thenReturn(Optional.of(submission));
+        when(submissions.findVisibleByIdForUpdate(any(), any(), any())).thenReturn(Optional.of(submission));
         when(items.findAllBySubmissionIdAndStatusOrderByRequestedAtAscIdAsc(
                 submission.getId(),
                 MissingItemStatus.OPEN
@@ -133,7 +179,7 @@ class MissingItemServiceTest {
         var response = service.sendReminder(
                 submission.getId(),
                 new SendReminderRequest(null),
-                ACTOR
+                authentication(ACTOR)
         );
 
         assertEquals(NOW, open.getLastRemindedAt());
@@ -151,7 +197,7 @@ class MissingItemServiceTest {
     @Test
     void sendReminderRejectsWhenNoOpenItemsExist() {
         Submission submission = submission("submitter@example.test");
-        when(submissions.findByIdForUpdate(submission.getId())).thenReturn(Optional.of(submission));
+        when(submissions.findVisibleByIdForUpdate(any(), any(), any())).thenReturn(Optional.of(submission));
         when(items.findAllBySubmissionIdAndStatusOrderByRequestedAtAscIdAsc(
                 submission.getId(),
                 MissingItemStatus.OPEN
@@ -159,7 +205,7 @@ class MissingItemServiceTest {
 
         assertThrows(
                 SubmissionConflictException.class,
-                () -> service.sendReminder(submission.getId(), new SendReminderRequest(null), ACTOR)
+                () -> service.sendReminder(submission.getId(), new SendReminderRequest(null), authentication(ACTOR))
         );
     }
 
@@ -169,7 +215,7 @@ class MissingItemServiceTest {
         MissingItem open = MissingItem.information(
                 UUID.randomUUID(), submission.getId(), "Project brief", null, ACTOR, NOW
         );
-        when(submissions.findByIdForUpdate(submission.getId())).thenReturn(Optional.of(submission));
+        when(submissions.findVisibleByIdForUpdate(any(), any(), any())).thenReturn(Optional.of(submission));
         when(items.findAllBySubmissionIdAndStatusOrderByRequestedAtAscIdAsc(
                 submission.getId(),
                 MissingItemStatus.OPEN
@@ -177,7 +223,7 @@ class MissingItemServiceTest {
 
         assertThrows(
                 InvalidSubmissionException.class,
-                () -> service.sendReminder(submission.getId(), new SendReminderRequest(null), ACTOR)
+                () -> service.sendReminder(submission.getId(), new SendReminderRequest(null), authentication(ACTOR))
         );
     }
 
@@ -187,7 +233,7 @@ class MissingItemServiceTest {
         MissingItem item = MissingItem.information(
                 UUID.randomUUID(), submission.getId(), "Project brief", null, ACTOR, NOW
         );
-        when(submissions.findByIdForUpdate(submission.getId())).thenReturn(Optional.of(submission));
+        when(submissions.findVisibleByIdForUpdate(any(), any(), any())).thenReturn(Optional.of(submission));
         when(items.findByIdAndSubmissionId(item.getId(), submission.getId()))
                 .thenReturn(Optional.of(item));
 
@@ -195,7 +241,7 @@ class MissingItemServiceTest {
                 submission.getId(),
                 item.getId(),
                 new ResolveMissingItemRequest("Received by email"),
-                "officer-2"
+                authentication("officer-2")
         );
 
         assertEquals(MissingItemStatus.RESOLVED, response.status());
@@ -203,6 +249,10 @@ class MissingItemServiceTest {
         assertEquals("Received by email", response.resolutionNote());
         assertEquals(NOW, response.resolvedAt());
         assertNotNull(item.getResolvedAt());
+    }
+
+    private static TestingAuthenticationToken authentication(String name) {
+        return new TestingAuthenticationToken(name, "n/a", "ROLE_RECEPTIONIST");
     }
 
     private static Submission submission(String submitterEmail) {

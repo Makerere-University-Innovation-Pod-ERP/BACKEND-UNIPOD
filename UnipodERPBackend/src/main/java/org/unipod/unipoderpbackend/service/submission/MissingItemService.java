@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -48,8 +49,8 @@ public class MissingItemService {
     }
 
     @Transactional(readOnly = true)
-    public MissingItemsResponse list(UUID submissionId) {
-        requireSubmission(submissionId);
+    public MissingItemsResponse list(UUID submissionId, Authentication authentication) {
+        requireSubmission(submissionId, authentication);
         return response(submissionId, items.findAllBySubmissionIdOrderByRequestedAtAscIdAsc(submissionId));
     }
 
@@ -57,9 +58,9 @@ public class MissingItemService {
     public MissingItemsResponse addMissingDocuments(
             UUID submissionId,
             MissingItemsRequest request,
-            String actor
+            Authentication authentication
     ) {
-        return addMissingItems(submissionId, request, actor, true);
+        return addMissingItems(submissionId, request, authentication, true);
     }
 
     /**
@@ -71,22 +72,25 @@ public class MissingItemService {
     public MissingItemsResponse addMissingItems(
             UUID submissionId,
             MissingItemsRequest request,
-            String actor
+            Authentication authentication
     ) {
-        return addMissingItems(submissionId, request, actor, false);
+        return addMissingItems(submissionId, request, authentication, false);
     }
 
     private MissingItemsResponse addMissingItems(
             UUID submissionId,
             MissingItemsRequest request,
-            String actor,
+            Authentication authentication,
             boolean requireDocumentType
     ) {
-        Submission submission = submissions.findByIdForUpdate(submissionId)
-                .orElseThrow(() -> new SubmissionNotFoundException(submissionId));
+        Submission submission = visibleForUpdate(submissionId, authentication);
         requireOpen(submission);
+        String actor = authentication.getName();
         Instant now = clock.instant();
         for (MissingItemRequest itemRequest : request.items()) {
+            if (itemRequest == null) {
+                throw new InvalidSubmissionException("Every missing item must be provided.");
+            }
             if (requireDocumentType && itemRequest.documentType() == null) {
                 throw new InvalidSubmissionException("A document type is required for every missing document.");
             }
@@ -138,11 +142,11 @@ public class MissingItemService {
             UUID submissionId,
             UUID itemId,
             ResolveMissingItemRequest request,
-            String actor
+            Authentication authentication
     ) {
-        Submission submission = submissions.findByIdForUpdate(submissionId)
-                .orElseThrow(() -> new SubmissionNotFoundException(submissionId));
+        Submission submission = visibleForUpdate(submissionId, authentication);
         requireOpen(submission);
+        String actor = authentication.getName();
         MissingItem item = items.findByIdAndSubmissionId(itemId, submissionId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
@@ -159,11 +163,11 @@ public class MissingItemService {
     public MissingItemsResponse sendReminder(
             UUID submissionId,
             SendReminderRequest request,
-            String actor
+            Authentication authentication
     ) {
-        Submission submission = submissions.findByIdForUpdate(submissionId)
-                .orElseThrow(() -> new SubmissionNotFoundException(submissionId));
+        Submission submission = visibleForUpdate(submissionId, authentication);
         requireOpen(submission);
+        String actor = authentication.getName();
         List<MissingItem> openItems = items
                 .findAllBySubmissionIdAndStatusOrderByRequestedAtAscIdAsc(
                         submissionId,
@@ -196,15 +200,28 @@ public class MissingItemService {
         return response(submissionId, items.findAllBySubmissionIdOrderByRequestedAtAscIdAsc(submissionId));
     }
 
-    private void requireSubmission(UUID submissionId) {
-        if (!submissions.existsById(submissionId)) {
-            throw new SubmissionNotFoundException(submissionId);
-        }
+    private void requireSubmission(UUID submissionId, Authentication authentication) {
+        submissions.findVisibleById(
+                        submissionId,
+                        SubmissionVisibility.scope(authentication),
+                        authentication.getName()
+                )
+                .orElseThrow(() -> new SubmissionNotFoundException(submissionId));
+    }
+
+    private Submission visibleForUpdate(UUID submissionId, Authentication authentication) {
+        return submissions.findVisibleByIdForUpdate(
+                        submissionId,
+                        SubmissionVisibility.scope(authentication),
+                        authentication.getName()
+                )
+                .orElseThrow(() -> new SubmissionNotFoundException(submissionId));
     }
 
     private static void requireOpen(Submission submission) {
         if (submission.getStage() == SubmissionStage.COMPLETED
-                || submission.getStage() == SubmissionStage.REJECTED) {
+                || submission.getStage() == SubmissionStage.REJECTED
+                || submission.getStage() == SubmissionStage.CONFIRMED_AS_PROJECT) {
             throw new SubmissionConflictException("Closed submissions cannot be changed.");
         }
     }

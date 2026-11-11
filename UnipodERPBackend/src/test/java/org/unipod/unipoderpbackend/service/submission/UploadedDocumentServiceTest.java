@@ -157,8 +157,9 @@ class UploadedDocumentServiceTest {
         verify(missingItems).saveAll(List.of(openRequest));
     }
 
-    @Test
-    void acceptsDesignFormatsReportedAsOctetStream() throws Exception {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"layout.DWG", "plan.dxf", "model.stl", "drawing.svg"})
+    void acceptsDesignFormatsReportedAsOctetStream(String filename) throws Exception {
         UUID id = UUID.randomUUID();
         Submission submission = new Submission(
                 id, SubmissionCategory.GENERAL, "Title", "Purpose", "Problem",
@@ -174,13 +175,39 @@ class UploadedDocumentServiceTest {
                 "design",
                 DocumentType.SUPPORTING_EVIDENCE,
                 DocumentStatus.SUBMITTED,
-                file("application/octet-stream", "layout.DWG"),
+                file("application/octet-stream", filename),
+                "actor",
+                false
+        );
+
+        verify(documents, org.mockito.Mockito.atLeastOnce()).saveAndFlush(argThat(document ->
+                "application/octet-stream".equals(document.getContentType())));
+    }
+
+    @Test
+    void acceptsParametersOnAllowedContentTypes() throws Exception {
+        UUID id = UUID.randomUUID();
+        Submission submission = new Submission(
+                id, SubmissionCategory.GENERAL, "Title", "Purpose", "Problem",
+                "actor", null, null, null, null, Instant.parse("2026-03-01T00:00:00Z")
+        );
+        when(submissions.findByIdForUpdate(id)).thenReturn(Optional.of(submission));
+        when(storage.upload(any())).thenReturn("opaque-object");
+        when(documents.saveAndFlush(any(SubmissionDocument.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.upload(
+                id,
+                "brief",
+                DocumentType.SUPPORTING_EVIDENCE,
+                DocumentStatus.SUBMITTED,
+                file("text/plain; charset=UTF-8", "brief.txt"),
                 "actor",
                 false
         );
 
         verify(documents).saveAndFlush(argThat(document ->
-                "application/octet-stream".equals(document.getContentType())));
+                "text/plain".equals(document.getContentType())));
     }
 
     @Test

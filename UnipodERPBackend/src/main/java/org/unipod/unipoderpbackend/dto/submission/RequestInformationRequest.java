@@ -1,6 +1,7 @@
 package org.unipod.unipoderpbackend.dto.submission;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.util.List;
 
@@ -11,7 +12,7 @@ import java.util.List;
  */
 public record RequestInformationRequest(
         @Size(max = 2000) String note,
-        @Valid List<MissingItemRequest> items,
+        @Size(min = 1) @Valid List<@NotNull MissingItemRequest> items,
         @Size(max = 255) String reason
 ) {
     public RequestInformationRequest(String note, List<MissingItemRequest> items) {

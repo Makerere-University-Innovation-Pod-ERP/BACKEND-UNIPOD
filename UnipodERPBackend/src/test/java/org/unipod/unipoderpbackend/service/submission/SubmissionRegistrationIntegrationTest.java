@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.unipod.unipoderpbackend.dto.dashboard.DashboardOverviewResponse;
@@ -196,13 +197,13 @@ class SubmissionRegistrationIntegrationTest {
                         null,
                         "submitter@example.test"
                 ),
-                "submitter@example.test"
+                "receptionist-1"
         );
 
         SubmissionResponse requested = submissions.requestInformation(
                 created.id(),
                 new RequestInformationRequest("Please attach a project brief."),
-                "receptionist-1"
+                new TestingAuthenticationToken("receptionist-1", "n/a", "ROLE_RECEPTIONIST")
         );
 
         assertEquals(SubmissionStage.DRAFT, requested.stage());
@@ -242,12 +243,12 @@ class SubmissionRegistrationIntegrationTest {
                         null,
                         "submitter@example.test"
                 ),
-                "submitter@example.test"
+                "receptionist-1"
         );
         submissions.requestInformation(
                 created.id(),
                 new RequestInformationRequest("Please attach a project brief."),
-                "receptionist-1"
+                new TestingAuthenticationToken("receptionist-1", "n/a", "ROLE_RECEPTIONIST")
         );
 
         submissions.updateDraft(
@@ -294,7 +295,7 @@ class SubmissionRegistrationIntegrationTest {
                 () -> submissions.requestInformation(
                         created.id(),
                         new RequestInformationRequest("Please attach a project brief."),
-                        "receptionist-1"
+                        new TestingAuthenticationToken("receptionist-1", "n/a", "ROLE_RECEPTIONIST")
                 )
         );
         assertEquals(0, jdbcTemplate.queryForObject(

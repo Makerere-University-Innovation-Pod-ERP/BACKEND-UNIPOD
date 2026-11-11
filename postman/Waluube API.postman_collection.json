@@ -178,7 +178,7 @@
                 }
               }
             },
-            "description": "Change the authenticated account's password\n\nRequires a valid bearer token. The current password must match, and the new password must be 12-72 characters and different from the current password. A successful change clears the temporary-password flag returned by login.\n\nExpected documented status codes: 204, 400, 401"
+            "description": "Change the authenticated account's password\n\nRequires a valid bearer token. Set the environment variables testerPassword and newTesterPassword before running this request. The current password must match, and the new password must be 12-72 characters and different from the current password. A successful change clears the temporary-password flag returned by login.\n\nExpected documented status codes: 204, 400, 401"
           },
           "response": [],
           "event": [
@@ -833,7 +833,7 @@
             "method": "GET",
             "header": [],
             "url": "{{baseUrl}}/submissions/{{submissionId}}/reception-checklist",
-            "description": "Read the reception verification checklist\n\nReturns the canonical checklist lines that apply to the submission category, including student-only lines for student submissions. Lines that have not been saved yet are returned unchecked.\n\nExpected documented status codes: 200, 401, 403, 404"
+            "description": "Read the reception verification checklist\n\nReturns the same four canonical checklist lines for every submission category: DETAILS_COMPLETE, DOCUMENTS_COMPLETE, FILES_READABLE, and CORRECT_TYPE. Lines that have not been saved yet are returned unchecked.\n\nExpected documented status codes: 200, 401, 403, 404"
           },
           "response": [],
           "event": [
@@ -866,14 +866,14 @@
             "url": "{{baseUrl}}/submissions/{{submissionId}}/reception-checklist",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"items\": [\n    {\n      \"key\": \"IDENTITY_CONFIRMED\",\n      \"checked\": true,\n      \"note\": \"Student ID sighted\"\n    },\n    {\n      \"key\": \"DOCUMENTS_PRESENT\",\n      \"checked\": false,\n      \"note\": \"Project brief still missing\"\n    }\n  ]\n}",
+              "raw": "{\n  \"items\": [\n    {\n      \"key\": \"DETAILS_COMPLETE\",\n      \"checked\": true,\n      \"note\": \"Student ID sighted\"\n    },\n    {\n      \"key\": \"DOCUMENTS_COMPLETE\",\n      \"checked\": false,\n      \"note\": \"Project brief still missing\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             },
-            "description": "Tick reception checklist lines with a note per line\n\nUpdates one or more checklist lines. A note can be recorded per line. The checklist can only be changed while the submission is DRAFT or RECEIVED; it becomes read-only once the submission is forwarded.\n\nExpected documented status codes: 200, 400, 401, 403, 404, 409"
+            "description": "Tick reception checklist lines with a note per line\n\nUpdates one or more checklist lines. A note can be recorded per line. The checklist can only be changed while the submission is DRAFT, SUBMITTED, or RECEIVED; it becomes read-only once the submission is forwarded.\n\nExpected documented status codes: 200, 400, 401, 403, 404, 409"
           },
           "response": [],
           "event": [

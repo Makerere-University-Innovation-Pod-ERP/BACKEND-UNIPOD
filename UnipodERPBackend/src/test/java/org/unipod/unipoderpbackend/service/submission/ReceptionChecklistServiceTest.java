@@ -46,10 +46,10 @@ class ReceptionChecklistServiceTest {
     @Test
     void getReturnsTheFourCanonicalLinesForGeneralSubmission() {
         Submission submission = submission(SubmissionCategory.GENERAL);
-        when(submissions.findById(submission.getId())).thenReturn(Optional.of(submission));
+        when(submissions.findVisibleById(any(), any(), any())).thenReturn(Optional.of(submission));
         when(checks.findAllBySubmissionIdOrderByItemKeyAsc(submission.getId())).thenReturn(List.of());
 
-        var response = service.get(submission.getId());
+        var response = service.get(submission.getId(), authentication());
 
         assertEquals(4, response.totalCount());
         assertEquals(0, response.checkedCount());
@@ -73,19 +73,23 @@ class ReceptionChecklistServiceTest {
     @Test
     void getUsesTheSameCanonicalLinesForStudentSubmissions() {
         Submission submission = submission(SubmissionCategory.STUDENT);
-        when(submissions.findById(submission.getId())).thenReturn(Optional.of(submission));
+        when(submissions.findVisibleById(any(), any(), any())).thenReturn(Optional.of(submission));
         when(checks.findAllBySubmissionIdOrderByItemKeyAsc(submission.getId())).thenReturn(List.of());
 
-        var response = service.get(submission.getId());
+        var response = service.get(submission.getId(), authentication());
 
         assertEquals(4, response.totalCount());
         assertTrue(response.items().stream().noneMatch(item -> item.key().equals("RECOMMENDATION_LETTER")));
+        assertEquals(
+                List.of("DETAILS_COMPLETE", "DOCUMENTS_COMPLETE", "FILES_READABLE", "CORRECT_TYPE"),
+                response.items().stream().map(item -> item.key()).toList()
+        );
     }
 
     @Test
     void updateRecordsCheckedLineAndNote() {
         Submission submission = submission(SubmissionCategory.GENERAL);
-        when(submissions.findByIdForUpdate(submission.getId())).thenReturn(Optional.of(submission));
+        when(submissions.findVisibleByIdForUpdate(any(), any(), any())).thenReturn(Optional.of(submission));
         when(checks.findAllBySubmissionIdOrderByItemKeyAsc(submission.getId())).thenReturn(List.of());
         when(checks.save(any(ReceptionCheck.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -94,7 +98,7 @@ class ReceptionChecklistServiceTest {
                 new ReceptionCheckUpdateRequest(List.of(
                         new ReceptionCheckItemRequest("DETAILS_COMPLETE", true, " Student ID sighted ")
                 )),
-                "receptionist-1"
+                authentication()
         );
 
         var item = response.items().stream()
@@ -112,7 +116,7 @@ class ReceptionChecklistServiceTest {
     @Test
     void updateRejectsRetiredChecklistKey() {
         Submission submission = submission(SubmissionCategory.GENERAL);
-        when(submissions.findByIdForUpdate(submission.getId())).thenReturn(Optional.of(submission));
+        when(submissions.findVisibleByIdForUpdate(any(), any(), any())).thenReturn(Optional.of(submission));
         when(checks.findAllBySubmissionIdOrderByItemKeyAsc(submission.getId())).thenReturn(List.of());
 
         assertThrows(
@@ -122,7 +126,7 @@ class ReceptionChecklistServiceTest {
                         new ReceptionCheckUpdateRequest(List.of(
                                 new ReceptionCheckItemRequest("STUDENT_EVIDENCE", true, null)
                         )),
-                        "receptionist-1"
+                        authentication()
                 )
         );
     }
@@ -130,7 +134,7 @@ class ReceptionChecklistServiceTest {
     @Test
     void updateRejectsUnknownChecklistKey() {
         Submission submission = submission(SubmissionCategory.GENERAL);
-        when(submissions.findByIdForUpdate(submission.getId())).thenReturn(Optional.of(submission));
+        when(submissions.findVisibleByIdForUpdate(any(), any(), any())).thenReturn(Optional.of(submission));
         when(checks.findAllBySubmissionIdOrderByItemKeyAsc(submission.getId())).thenReturn(List.of());
 
         assertThrows(
@@ -140,7 +144,7 @@ class ReceptionChecklistServiceTest {
                         new ReceptionCheckUpdateRequest(List.of(
                                 new ReceptionCheckItemRequest("NOT_A_LINE", true, null)
                         )),
-                        "receptionist-1"
+                        authentication()
                 )
         );
     }
@@ -151,7 +155,7 @@ class ReceptionChecklistServiceTest {
         submission.register("GEN-2026-000001", NOW, "receptionist-1");
         submission.transitionTo(SubmissionStage.REGISTERED, NOW);
         submission.transitionTo(SubmissionStage.FACT_FINDING, NOW);
-        when(submissions.findByIdForUpdate(submission.getId())).thenReturn(Optional.of(submission));
+        when(submissions.findVisibleByIdForUpdate(any(), any(), any())).thenReturn(Optional.of(submission));
 
         assertThrows(
                 SubmissionConflictException.class,
@@ -160,8 +164,16 @@ class ReceptionChecklistServiceTest {
                         new ReceptionCheckUpdateRequest(List.of(
                                 new ReceptionCheckItemRequest("DETAILS_COMPLETE", true, null)
                         )),
-                        "receptionist-1"
+                        authentication()
                 )
+        );
+    }
+
+    private static org.springframework.security.authentication.TestingAuthenticationToken authentication() {
+        return new org.springframework.security.authentication.TestingAuthenticationToken(
+                "receptionist-1",
+                "n/a",
+                "ROLE_RECEPTIONIST"
         );
     }
 

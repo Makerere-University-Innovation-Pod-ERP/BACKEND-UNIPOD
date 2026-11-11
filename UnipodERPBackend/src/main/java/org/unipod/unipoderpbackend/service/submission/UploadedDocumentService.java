@@ -177,7 +177,9 @@ public class UploadedDocumentService {
                 );
                 pending.assignVersion(version);
                 SubmissionDocument saved = documents.saveAndFlush(pending);
-                resolveMissingDocuments(submissionId, documentType, documentName, actor, now);
+                if (status == DocumentStatus.SUBMITTED || status == DocumentStatus.VERIFIED) {
+                    resolveMissingDocuments(submissionId, documentType, documentName, actor, now);
+                }
                 return saved;
             });
             return DocumentResponse.from(document);
@@ -195,23 +197,22 @@ public class UploadedDocumentService {
     }
 
     private static void requireDocumentStage(Submission submission, String actor, boolean submitter) {
+        if (submitter && !submission.getSubmitterId().equals(actor)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Submitters may only attach documents to their own submissions."
+            );
+        }
         SubmissionStage stage = submission.getStage();
         if (stage == SubmissionStage.COMPLETED || stage == SubmissionStage.REJECTED) {
             throw new SubmissionConflictException("The submission cannot be changed in its current state.");
         }
-        if (submitter) {
-            if (!submission.getSubmitterId().equals(actor)) {
-                throw new org.springframework.security.access.AccessDeniedException(
-                        "Submitters may only attach documents to their own submissions."
-                );
-            }
-            if (stage != SubmissionStage.DRAFT
-                    && stage != SubmissionStage.SUBMITTED
-                    && stage != SubmissionStage.AWAITING_INFORMATION) {
-                throw new org.springframework.security.access.AccessDeniedException(
-                        "Submitters may only attach documents before the submission is forwarded."
-                );
-            }
+        if (submitter
+                && stage != SubmissionStage.DRAFT
+                && stage != SubmissionStage.SUBMITTED
+                && stage != SubmissionStage.AWAITING_INFORMATION) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Submitters may only attach documents before the submission is forwarded."
+            );
         }
     }
 
@@ -254,6 +255,10 @@ public class UploadedDocumentService {
                     : unsupportedFileType();
         }
         String normalized = contentType.trim().toLowerCase(Locale.ROOT);
+        int parameters = normalized.indexOf(';');
+        if (parameters >= 0) {
+            normalized = normalized.substring(0, parameters).trim();
+        }
         if (normalized.length() > 255
                 || !normalized.matches("[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+")) {
             throw new InvalidSubmissionException("The uploaded file type is not supported.");

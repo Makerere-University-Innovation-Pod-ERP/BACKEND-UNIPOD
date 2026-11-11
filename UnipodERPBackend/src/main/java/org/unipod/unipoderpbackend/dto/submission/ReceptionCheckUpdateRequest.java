@@ -2,9 +2,10 @@ package org.unipod.unipoderpbackend.dto.submission;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
 import java.util.List;
 
 public record ReceptionCheckUpdateRequest(
-        @NotEmpty @Valid List<ReceptionCheckItemRequest> items
+        @NotEmpty @Valid List<@NotNull ReceptionCheckItemRequest> items
 ) {
 }

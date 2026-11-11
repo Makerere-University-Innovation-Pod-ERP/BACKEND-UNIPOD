@@ -118,6 +118,7 @@ public class AuthenticationService {
                 .issuedAt(issuedAt)
                 .expiresAt(expiresAt)
                 .claim("roles", List.of(user.getRole().name()))
+                .claim("mustChangePassword", user.isMustChangePassword())
                 .build();
         String token = jwtEncoder.encode(JwtEncoderParameters.from(
                 JwsHeader.with(MacAlgorithm.HS256).build(),
@@ -187,21 +188,25 @@ public class AuthenticationService {
     @Transactional
     public void setPassword(SetPasswordRequest request) {
         String tokenHash = hashToken(request.token().trim());
+        Instant now = clock.instant();
         ApiUser user = users.findByPasswordSetupTokenHash(tokenHash)
                 .filter(ApiUser::isEnabled)
+                .filter(candidate -> candidate.hasValidPasswordSetupToken(now))
                 .orElseThrow(AuthenticationService::invalidSetupToken);
-        Instant now = clock.instant();
-        if (!user.hasValidPasswordSetupToken(now)) {
-            throw invalidSetupToken();
-        }
         if (passwordEncoder.matches(request.newPassword(), user.getPasswordHash())) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "The new password must be different from the temporary password."
             );
         }
-        user.changePassword(passwordEncoder.encode(request.newPassword()), now);
-        users.save(user);
+        int updated = users.consumePasswordSetupToken(
+                tokenHash,
+                passwordEncoder.encode(request.newPassword()),
+                now
+        );
+        if (updated != 1) {
+            throw invalidSetupToken();
+        }
     }
 
     @Transactional

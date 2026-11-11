@@ -242,7 +242,7 @@ class WaluubeApiIntegrationTest {
         var receptionistUser = user(receptionist).roles("RECEPTIONIST");
 
         String created = mockMvc.perform(post("/submissions")
-                        .with(submitterUser)
+                        .with(receptionistUser)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -250,14 +250,14 @@ class WaluubeApiIntegrationTest {
                                   "title": "Submitter intake test",
                                   "purpose": "Complete the requested student details",
                                   "problemAddressed": "Validate submitter ownership and intake",
-                                  "submitterId": "spoofed-owner"
+                                  "submitterId": "%s"
                                 }
-                                """))
+                                """.formatted(submitter)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.stage").value("DRAFT"))
                 .andExpect(jsonPath("$.code").value(org.hamcrest.Matchers.startsWith("STU-")))
                 .andExpect(jsonPath("$.submitterId").value(submitter))
-                .andExpect(jsonPath("$.registeredBy").value(submitter))
+                .andExpect(jsonPath("$.registeredBy").value(receptionist))
                 .andReturn()
                 .getResponse()
                 .getContentAsString();

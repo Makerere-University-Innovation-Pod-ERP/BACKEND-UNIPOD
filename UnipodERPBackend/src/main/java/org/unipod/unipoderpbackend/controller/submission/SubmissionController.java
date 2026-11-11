@@ -185,7 +185,7 @@ public class SubmissionController {
             @Valid @RequestBody RequestInformationRequest request,
             Authentication authentication
     ) {
-        return submissions.requestInformation(id, request, authentication.getName());
+        return submissions.requestInformation(id, request, authentication);
     }
 
     @PostMapping("/{id}/transition")

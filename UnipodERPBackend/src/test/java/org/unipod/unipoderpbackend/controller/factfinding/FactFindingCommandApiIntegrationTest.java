@@ -499,7 +499,9 @@ class FactFindingCommandApiIntegrationTest {
     private Submission createBrief(String code, String title, SubmissionStage targetStage) {
         Submission brief = briefEntity(code, title);
         brief.register(code, Instant.parse("2026-11-01T09:00:00Z"), "receptionist@example.test");
-        if (targetStage == SubmissionStage.FACT_FINDING) {
+        if (targetStage == SubmissionStage.REGISTERED) {
+            brief.transitionTo(SubmissionStage.REGISTERED, Instant.parse("2026-11-01T10:00:00Z"));
+        } else if (targetStage == SubmissionStage.FACT_FINDING) {
             brief.transitionTo(SubmissionStage.REGISTERED, Instant.parse("2026-11-01T10:00:00Z"));
             brief.transitionTo(SubmissionStage.FACT_FINDING, Instant.parse("2026-11-01T11:00:00Z"));
         } else if (targetStage == SubmissionStage.FORWARDED) {

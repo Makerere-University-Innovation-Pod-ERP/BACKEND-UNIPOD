@@ -6,6 +6,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.unipod.unipoderpbackend.dto.submission.ReceptionCheckItemRequest;
@@ -39,9 +40,8 @@ public class ReceptionChecklistService {
     }
 
     @Transactional(readOnly = true)
-    public ReceptionCheckResponse get(UUID submissionId) {
-        Submission submission = submissions.findById(submissionId)
-                .orElseThrow(() -> new SubmissionNotFoundException(submissionId));
+    public ReceptionCheckResponse get(UUID submissionId, Authentication authentication) {
+        Submission submission = visible(submissionId, authentication);
         return response(submission, existingByKey(submissionId));
     }
 
@@ -49,11 +49,11 @@ public class ReceptionChecklistService {
     public ReceptionCheckResponse update(
             UUID submissionId,
             ReceptionCheckUpdateRequest request,
-            String actor
+            Authentication authentication
     ) {
-        Submission submission = submissions.findByIdForUpdate(submissionId)
-                .orElseThrow(() -> new SubmissionNotFoundException(submissionId));
+        Submission submission = visibleForUpdate(submissionId, authentication);
         requireCheckable(submission);
+        String actor = authentication.getName();
 
         Instant now = clock.instant();
         Map<ReceptionCheckItem, ReceptionCheck> existing = existingByKey(submissionId);
@@ -88,7 +88,27 @@ public class ReceptionChecklistService {
      */
     @Transactional(readOnly = true)
     public boolean isComplete(UUID submissionId) {
-        return get(submissionId).complete();
+        Submission submission = submissions.findById(submissionId)
+                .orElseThrow(() -> new SubmissionNotFoundException(submissionId));
+        return response(submission, existingByKey(submissionId)).complete();
+    }
+
+    private Submission visible(UUID submissionId, Authentication authentication) {
+        return submissions.findVisibleById(
+                        submissionId,
+                        SubmissionVisibility.scope(authentication),
+                        authentication.getName()
+                )
+                .orElseThrow(() -> new SubmissionNotFoundException(submissionId));
+    }
+
+    private Submission visibleForUpdate(UUID submissionId, Authentication authentication) {
+        return submissions.findVisibleByIdForUpdate(
+                        submissionId,
+                        SubmissionVisibility.scope(authentication),
+                        authentication.getName()
+                )
+                .orElseThrow(() -> new SubmissionNotFoundException(submissionId));
     }
 
     @Transactional(readOnly = true)

@@ -159,7 +159,7 @@ public class PipelineMetricsRepository {
         return jdbcTemplate.queryForObject("""
                 SELECT count(*) FILTER (WHERE s.stage = 'SUBMITTED') AS in_queue,
                     count(*) FILTER (
-                        WHERE s.stage <> 'DRAFT'
+                        WHERE s.stage NOT IN ('DRAFT', 'REJECTED', 'COMPLETED')
                           AND (
                               s.stage = 'AWAITING_INFORMATION'
                               OR EXISTS (

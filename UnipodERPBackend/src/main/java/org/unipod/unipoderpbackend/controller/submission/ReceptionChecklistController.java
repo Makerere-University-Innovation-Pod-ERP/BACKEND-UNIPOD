@@ -27,8 +27,8 @@ public class ReceptionChecklistController {
 
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'RECEPTIONIST', 'FACT_FINDING_OFFICER')")
-    public ReceptionCheckResponse get(@PathVariable UUID id) {
-        return checklists.get(id);
+    public ReceptionCheckResponse get(@PathVariable UUID id, Authentication authentication) {
+        return checklists.get(id, authentication);
     }
 
     @PutMapping
@@ -38,6 +38,6 @@ public class ReceptionChecklistController {
             @Valid @RequestBody ReceptionCheckUpdateRequest request,
             Authentication authentication
     ) {
-        return checklists.update(id, request, authentication.getName());
+        return checklists.update(id, request, authentication);
     }
 }

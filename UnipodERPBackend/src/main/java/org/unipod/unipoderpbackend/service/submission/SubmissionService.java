@@ -269,6 +269,7 @@ public class SubmissionService {
         Submission submission = submissions.findByIdForUpdate(id)
                 .orElseThrow(() -> new SubmissionNotFoundException(id));
         requireSubmitterReplyOwnership(submission, actor);
+        requireSubmitterRecommendationStatus(request.recommendationLetterStatus());
         Instant now = clock.instant();
         submission.applyReplyDetails(
                 clean(request.title()),
@@ -443,9 +444,18 @@ public class SubmissionService {
     }
 
     @Transactional
-    public SubmissionResponse requestInformation(UUID id, RequestInformationRequest request, String actor) {
-        Submission submission = submissions.findByIdForUpdate(id)
+    public SubmissionResponse requestInformation(
+            UUID id,
+            RequestInformationRequest request,
+            org.springframework.security.core.Authentication authentication
+    ) {
+        Submission submission = submissions.findVisibleByIdForUpdate(
+                        id,
+                        SubmissionVisibility.scope(authentication),
+                        authentication.getName()
+                )
                 .orElseThrow(() -> new SubmissionNotFoundException(id));
+        String actor = authentication.getName();
         Instant now = clock.instant();
         List<MissingItemRequest> requestedItems = request.items() == null
                 ? List.of()
@@ -544,9 +554,13 @@ public class SubmissionService {
         DocumentType documentType = request.documentType() == null
                 ? DocumentType.OTHER
                 : request.documentType();
-        long version = request.version() == null
-                ? documents.maxVersion(id, documentType) + 1
-                : request.version();
+        long nextVersion = documents.maxVersion(id, documentType) + 1;
+        long version = request.version() == null ? nextVersion : request.version();
+        if (version != nextVersion) {
+            throw new InvalidSubmissionException(
+                    "Document versions must increase by exactly one for each document type."
+            );
+        }
         SubmissionDocument document = new SubmissionDocument(
                 UUID.randomUUID(),
                 id,
@@ -677,11 +691,8 @@ public class SubmissionService {
 
     @Transactional(readOnly = true)
     public SubmitterSubmissionResponse forSubmitter(UUID id, String submitterId) {
-        Submission submission = submissions.findById(id)
+        Submission submission = submissions.findByIdAndSubmitterId(id, submitterId)
                 .orElseThrow(() -> new SubmissionNotFoundException(id));
-        if (!submission.getSubmitterId().equals(submitterId)) {
-            throw new AccessDeniedException("Submitters may only read their own submissions.");
-        }
         return SubmitterSubmissionResponse.from(submission);
     }
 
@@ -940,8 +951,11 @@ public class SubmissionService {
         if (!submission.getSubmitterId().equals(actor)) {
             throw new AccessDeniedException("Submitters may only reply to their own submissions.");
         }
-        if (submission.getStage() != SubmissionStage.AWAITING_INFORMATION) {
-            throw new SubmissionConflictException("Only a submission awaiting information can be replied to.");
+        if (submission.getStage() != SubmissionStage.AWAITING_INFORMATION
+                && submission.getStage() != SubmissionStage.SUBMITTED) {
+            throw new SubmissionConflictException(
+                    "Only a submitted or awaiting-information submission can be replied to."
+            );
         }
     }
 
@@ -987,6 +1001,12 @@ public class SubmissionService {
             boolean submitter
     ) {
         if (submitter && request.recommendationLetterStatus() == RecommendationLetterStatus.VERIFIED) {
+            throw new AccessDeniedException("Submitters cannot mark a recommendation letter as verified.");
+        }
+    }
+
+    private static void requireSubmitterRecommendationStatus(RecommendationLetterStatus status) {
+        if (status == RecommendationLetterStatus.VERIFIED) {
             throw new AccessDeniedException("Submitters cannot mark a recommendation letter as verified.");
         }
     }

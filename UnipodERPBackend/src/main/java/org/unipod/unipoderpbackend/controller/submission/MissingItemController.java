@@ -37,8 +37,8 @@ public class MissingItemController {
     @GetMapping("/missing-items")
     @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'RECEPTIONIST', "
             + "'FACT_FINDING_OFFICER', 'REVIEWER', 'SECTOR_OFFICER', 'OBSERVER')")
-    public MissingItemsResponse list(@PathVariable UUID id) {
-        return missingItems.list(id);
+    public MissingItemsResponse list(@PathVariable UUID id, Authentication authentication) {
+        return missingItems.list(id, authentication);
     }
 
     /**
@@ -54,7 +54,7 @@ public class MissingItemController {
             @Valid @RequestBody MissingItemsRequest request,
             Authentication authentication
     ) {
-        return missingItems.addMissingItems(id, request, authentication.getName());
+        return missingItems.addMissingItems(id, request, authentication);
     }
 
     @PostMapping("/missing-documents")
@@ -65,7 +65,7 @@ public class MissingItemController {
             @Valid @RequestBody MissingItemsRequest request,
             Authentication authentication
     ) {
-        return missingItems.addMissingDocuments(id, request, authentication.getName());
+        return missingItems.addMissingDocuments(id, request, authentication);
     }
 
     @PostMapping("/missing-items/{itemId}/resolve")
@@ -80,7 +80,7 @@ public class MissingItemController {
                 id,
                 itemId,
                 request == null ? new ResolveMissingItemRequest(null) : request,
-                authentication.getName()
+                authentication
         );
     }
 
@@ -94,7 +94,7 @@ public class MissingItemController {
         return missingItems.sendReminder(
                 id,
                 request == null ? new SendReminderRequest(null) : request,
-                authentication.getName()
+                authentication
         );
     }
 }

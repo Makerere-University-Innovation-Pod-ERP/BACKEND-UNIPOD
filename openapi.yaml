@@ -729,9 +729,9 @@ paths:
       x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
       summary: Read the reception verification checklist
       description: |
-        Returns the four canonical checklist lines: submitter identity, contact
-        details, brief summary, and required documents. The same lines apply to
-        every category. Lines that have not been saved yet are returned
+        Returns the same four canonical checklist lines for every category:
+        `DETAILS_COMPLETE`, `DOCUMENTS_COMPLETE`, `FILES_READABLE`, and
+        `CORRECT_TYPE`. Lines that have not been saved yet are returned
         unchecked.
       security:
         - bearerAuth: []
