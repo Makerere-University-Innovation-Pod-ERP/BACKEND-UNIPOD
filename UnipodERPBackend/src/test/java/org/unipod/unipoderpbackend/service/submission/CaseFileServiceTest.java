@@ -26,6 +26,7 @@ import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
 import org.unipod.unipoderpbackend.repository.submission.CaseStageHistoryRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionDocumentRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
+import org.unipod.unipoderpbackend.service.factfinding.FactFindingGuard;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -45,9 +46,10 @@ class CaseFileServiceTest {
     private final SubmissionDocumentRepository documents = mock(SubmissionDocumentRepository.class);
     private final CaseStageHistoryRepository history = mock(CaseStageHistoryRepository.class);
     private final CaseFileEnrichmentProvider enrichment = mock(CaseFileEnrichmentProvider.class);
+    private final FactFindingGuard factFindingGuard = mock(FactFindingGuard.class);
     private final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
     private final CaseFileService service = new CaseFileService(
-            submissions, documents, history, enrichment, clock
+            submissions, documents, history, enrichment, factFindingGuard, clock
     );
     private Submission submission;
 
@@ -76,6 +78,7 @@ class CaseFileServiceTest {
     void coordinatorCanMoveCaseOutOfFactFindingAndHistoryKeepsNote() {
         Authentication coordinator = authentication("coordinator", "ROLE_INNOVATION_COORDINATOR");
         when(submissions.findByIdForUpdate(CASE_ID)).thenReturn(Optional.of(submission));
+        when(factFindingGuard.isComplete(CASE_ID)).thenReturn(true);
 
         var result = service.transition(
                 CASE_ID,
@@ -90,6 +93,41 @@ class CaseFileServiceTest {
         verify(history).save(savedHistory.capture());
         assertEquals("Checklist complete", savedHistory.getValue().getNote());
         verify(submissions).flush();
+    }
+
+    @Test
+    void reviewTransitionIsBlockedUntilFactFindingIsComplete() {
+        Authentication coordinator = authentication("coordinator", "ROLE_INNOVATION_COORDINATOR");
+        when(submissions.findByIdForUpdate(CASE_ID)).thenReturn(Optional.of(submission));
+        when(factFindingGuard.isComplete(CASE_ID)).thenReturn(false);
+
+        SubmissionConflictException exception = assertThrows(SubmissionConflictException.class,
+                () -> service.transition(
+                        CASE_ID,
+                        new CaseTransitionRequest(CaseStage.UNDER_REVIEW, null, 4L),
+                        coordinator
+                ));
+
+        assertEquals("A completed fact-finding check is required before moving this case to review.",
+                exception.getMessage());
+        assertEquals(SubmissionStage.FACT_FINDING, submission.getStage());
+        verify(submissions, org.mockito.Mockito.never()).flush();
+    }
+
+    @Test
+    void coordinatorCanRequestRefinementDuringFactFindingWithoutACompletedCheck() {
+        Authentication coordinator = authentication("coordinator", "ROLE_INNOVATION_COORDINATOR");
+        when(submissions.findByIdForUpdate(CASE_ID)).thenReturn(Optional.of(submission));
+
+        var result = service.transition(
+                CASE_ID,
+                new CaseTransitionRequest(CaseStage.REFINEMENT_REQUESTED, "Need more detail", 4L),
+                coordinator
+        );
+
+        assertEquals(SubmissionStage.REFINEMENT_REQUESTED, result.submission().stage());
+        assertEquals(CaseStage.REFINEMENT_REQUESTED, result.currentStage());
+        verify(factFindingGuard, org.mockito.Mockito.never()).isComplete(any());
     }
 
     @Test

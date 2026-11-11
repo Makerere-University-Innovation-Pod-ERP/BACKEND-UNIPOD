@@ -9,4 +9,6 @@ public interface FactFindingRepository extends JpaRepository<FactFindingCheck, L
     Optional<FactFindingCheck> findTopByBriefIdOrderByRoundDesc(UUID briefId);
 
     boolean existsByBriefIdAndRoundAndCompletedAtIsNotNull(UUID briefId, int round);
+
+    boolean existsByBriefIdAndCompletedAtIsNotNull(UUID briefId);
 }

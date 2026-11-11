@@ -477,7 +477,7 @@ paths:
       tags: [Case Files]
       operationId: transitionCase
       summary: Move a case to its next allowed stage
-      description: Only Administrator and Innovation Coordinator may transition cases. Leaving Fact-Finding is coordinator-controlled. The current version is required to reject stale writes.
+      description: Only Administrator and Innovation Coordinator may transition cases. Leaving Fact-Finding is coordinator-controlled; a FACT_FINDING or FORWARDED case may move to REFINEMENT_REQUESTED to return a brief to the submitter for more information. Moving to UNDER_REVIEW from FACT_FINDING or FORWARDED requires a completed fact-finding check (FR-008). The current version is required to reject stale writes.
       parameters:
         - $ref: '#/components/parameters/SubmissionId'
       requestBody:

@@ -38,6 +38,7 @@ import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
 import org.unipod.unipoderpbackend.repository.submission.CaseStageHistoryRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionDocumentRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
+import org.unipod.unipoderpbackend.service.factfinding.FactFindingGuard;
 
 @Service
 public class CaseFileService {
@@ -54,11 +55,14 @@ public class CaseFileService {
             "Save stays disabled until the configured reviewer quorum is met";
     private static final String OPERATOR_REQUIRED =
             "Only an Administrator or Innovation Coordinator can change this case.";
+    private static final String FACT_FINDING_REQUIRED =
+            "A completed fact-finding check is required before moving this case to review.";
 
     private final SubmissionRepository submissions;
     private final SubmissionDocumentRepository documents;
     private final CaseStageHistoryRepository history;
     private final CaseFileEnrichmentProvider enrichment;
+    private final FactFindingGuard factFindingGuard;
     private final Clock clock;
 
     public CaseFileService(
@@ -66,12 +70,14 @@ public class CaseFileService {
             SubmissionDocumentRepository documents,
             CaseStageHistoryRepository history,
             CaseFileEnrichmentProvider enrichment,
+            FactFindingGuard factFindingGuard,
             Clock clock
     ) {
         this.submissions = submissions;
         this.documents = documents;
         this.history = history;
         this.enrichment = enrichment;
+        this.factFindingGuard = factFindingGuard;
         this.clock = clock;
     }
 
@@ -106,6 +112,12 @@ public class CaseFileService {
         Instant now = clock.instant();
         SubmissionStage previousStage = submission.getStage();
         SubmissionStage nextStage = SubmissionStage.valueOf(request.toStage().name());
+        if (nextStage == SubmissionStage.UNDER_REVIEW
+                && (previousStage == SubmissionStage.FACT_FINDING
+                        || previousStage == SubmissionStage.FORWARDED)
+                && !factFindingGuard.isComplete(id)) {
+            throw new SubmissionConflictException(FACT_FINDING_REQUIRED);
+        }
         submission.transitionTo(nextStage, now);
         history.save(new CaseStageHistory(
                 UUID.randomUUID(),
@@ -278,7 +290,7 @@ public class CaseFileService {
         return switch (stage) {
             case RECEIVED -> List.of(CaseStage.REGISTERED);
             case REGISTERED -> List.of(CaseStage.FACT_FINDING);
-            case FACT_FINDING, FORWARDED -> List.of(CaseStage.UNDER_REVIEW);
+            case FACT_FINDING, FORWARDED -> List.of(CaseStage.UNDER_REVIEW, CaseStage.REFINEMENT_REQUESTED);
             case UNDER_REVIEW, IN_PROGRESS -> List.of(CaseStage.REFINEMENT_REQUESTED);
             case REFINEMENT_REQUESTED -> List.of(CaseStage.FURTHER_HANDLING);
             case FURTHER_HANDLING -> List.of(CaseStage.COMPLETED);
