@@ -1657,6 +1657,9 @@ components:
           type: [string, 'null']
           format: email
           maxLength: 254
+        submitterName:
+          type: [string, 'null']
+          maxLength: 255
         studentNumber:
           type: string
           maxLength: 80
