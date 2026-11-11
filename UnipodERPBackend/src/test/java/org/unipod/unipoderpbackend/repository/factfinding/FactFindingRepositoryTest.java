@@ -191,6 +191,63 @@ class FactFindingRepositoryTest {
         assertEquals("READY_FOR_REVIEW", stored);
     }
 
+    @Test
+    void notesRoundTripWithOneThousandCharacters() {
+        String titleNote = repeated('t', 1000);
+        String purposeNote = repeated('p', 1000);
+        String evidenceNote = repeated('e', 1000);
+        String relevantNote = repeated('r', 1000);
+
+        FactFindingCheck check = new FactFindingCheck(511L, 1, 77L);
+        check.setTitleNote(titleNote);
+        check.setPurposeNote(purposeNote);
+        check.setEvidenceNote(evidenceNote);
+        check.setRelevantNote(relevantNote);
+
+        FactFindingCheck saved = repository.saveAndFlush(check);
+        entityManager.clear();
+        FactFindingCheck reloaded = repository.findById(saved.getId()).orElseThrow();
+
+        assertEquals(1000, reloaded.getTitleNote().length());
+        assertEquals(titleNote, reloaded.getTitleNote());
+        assertEquals(1000, reloaded.getPurposeNote().length());
+        assertEquals(purposeNote, reloaded.getPurposeNote());
+        assertEquals(1000, reloaded.getEvidenceNote().length());
+        assertEquals(evidenceNote, reloaded.getEvidenceNote());
+        assertEquals(1000, reloaded.getRelevantNote().length());
+        assertEquals(relevantNote, reloaded.getRelevantNote());
+    }
+
+    @Test
+    void rejectsNoteLongerThanOneThousandCharacters() {
+        FactFindingCheck check = new FactFindingCheck(512L, 1, 77L);
+        check.setTitleNote(repeated('x', 1001));
+
+        assertThrows(
+                DataIntegrityViolationException.class,
+                () -> repository.saveAndFlush(check)
+        );
+    }
+
+    @Test
+    void missingItemsRoundTripsWithTwoThousandCharacters() {
+        String missingItems = repeated('m', 2000);
+
+        FactFindingCheck check = new FactFindingCheck(513L, 1, 77L);
+        check.setMissingItems(missingItems);
+
+        FactFindingCheck saved = repository.saveAndFlush(check);
+        entityManager.clear();
+        FactFindingCheck reloaded = repository.findById(saved.getId()).orElseThrow();
+
+        assertEquals(2000, reloaded.getMissingItems().length());
+        assertEquals(missingItems, reloaded.getMissingItems());
+    }
+
+    private static String repeated(char value, int length) {
+        return String.valueOf(value).repeat(length);
+    }
+
     private static FactFindingCheck populatedCheck(long briefId, int round) {
         FactFindingCheck check = new FactFindingCheck(briefId, round, 77L);
         check.setTitleClear(true);

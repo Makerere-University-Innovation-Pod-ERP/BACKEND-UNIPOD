@@ -32,25 +32,25 @@ public class FactFindingCheck {
     @Column(name = "title_clear")
     private Boolean titleClear;
 
-    @Column(name = "title_note")
+    @Column(name = "title_note", length = 1000)
     private String titleNote;
 
     @Column(name = "purpose_clear")
     private Boolean purposeClear;
 
-    @Column(name = "purpose_note")
+    @Column(name = "purpose_note", length = 1000)
     private String purposeNote;
 
     @Column(name = "evidence_enough")
     private Boolean evidenceEnough;
 
-    @Column(name = "evidence_note")
+    @Column(name = "evidence_note", length = 1000)
     private String evidenceNote;
 
     @Column(name = "relevant_to_hub")
     private Boolean relevantToHub;
 
-    @Column(name = "relevant_note")
+    @Column(name = "relevant_note", length = 1000)
     private String relevantNote;
 
     @Column(name = "missing_items", length = 2000)
