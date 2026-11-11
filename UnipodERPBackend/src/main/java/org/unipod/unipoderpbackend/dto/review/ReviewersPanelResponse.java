@@ -11,6 +11,7 @@ import org.unipod.unipoderpbackend.model.review.ReviewMode;
 /**
  * The coordinator's reviewers panel for the latest review round of a brief.
  * Review comments are deliberately not part of this response.
+ * {@code version} is the latest review_settings row's version, to send back when updating settings.
  */
 public record ReviewersPanelResponse(
         UUID briefId,
@@ -19,6 +20,7 @@ public record ReviewersPanelResponse(
         ReviewMode mode,
         Integer reviewsNeeded,
         LocalDate dueDate,
+        Long version,
         Quorum quorum,
         List<Reviewer> reviewers
 ) {

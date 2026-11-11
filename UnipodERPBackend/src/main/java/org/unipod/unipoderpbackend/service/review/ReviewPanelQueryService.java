@@ -48,10 +48,15 @@ public class ReviewPanelQueryService {
     @Transactional(readOnly = true)
     public ReviewersPanelResponse panel(UUID briefId, Authentication authentication) {
         requireVisibleBrief(briefId, authentication);
+        return panelFor(briefId);
+    }
+
+    /** Builds the panel without a visibility check; callers must already have loaded the brief. */
+    ReviewersPanelResponse panelFor(UUID briefId) {
         return settings.findTopByBriefIdOrderByRoundDesc(briefId)
                 .map(latest -> configuredPanel(briefId, latest))
                 .orElseGet(() -> new ReviewersPanelResponse(
-                        briefId, false, null, null, null, null,
+                        briefId, false, null, null, null, null, null,
                         quorumOf(ReviewQuorum.notConfigured()), List.of()));
     }
 
@@ -68,6 +73,7 @@ public class ReviewPanelQueryService {
                 latest.getMode(),
                 latest.getReviewsNeeded(),
                 latest.getDueDate(),
+                latest.getVersion(),
                 quorumOf(quorumService.quorumFor(latest)),
                 reviewers
         );
