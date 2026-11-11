@@ -8,6 +8,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
@@ -25,6 +27,9 @@ import org.unipod.unipoderpbackend.model.factfinding.FactFindingResult;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ImportAutoConfiguration(FlywayAutoConfiguration.class)
 class FactFindingRepositoryTest {
+    private static final String OFFICER = "officer-77@example.test";
+    private static final String OTHER_OFFICER = "officer-88@example.test";
+
     @Autowired
     private FactFindingRepository repository;
 
@@ -36,7 +41,7 @@ class FactFindingRepositoryTest {
 
     @Test
     void savesAndReadsBackEveryField() {
-        FactFindingCheck check = populatedCheck(501L, 1);
+        FactFindingCheck check = populatedCheck(brief(501), 1);
         check.setResult(FactFindingResult.READY_FOR_REVIEW);
         check.setCompletedAt(Instant.parse("2026-11-11T09:30:00Z"));
 
@@ -67,9 +72,9 @@ class FactFindingRepositoryTest {
         assertEquals(saved.getUpdatedAt(), reloaded.getUpdatedAt());
         assertEquals(saved.getVersion(), reloaded.getVersion());
 
-        assertEquals(501L, reloaded.getBriefId());
+        assertEquals(brief(501), reloaded.getBriefId());
         assertEquals(1, reloaded.getRound());
-        assertEquals(77L, reloaded.getOfficerId());
+        assertEquals(OFFICER, reloaded.getOfficerId());
         assertEquals(Boolean.TRUE, reloaded.getTitleClear());
         assertEquals(Boolean.FALSE, reloaded.getRelevantToHub());
         assertEquals(FactFindingResult.READY_FOR_REVIEW, reloaded.getResult());
@@ -77,7 +82,7 @@ class FactFindingRepositoryTest {
 
     @Test
     void newCheckHasNoResultAndNoCompletionTime() {
-        FactFindingCheck saved = repository.saveAndFlush(new FactFindingCheck(502L, 1, 77L));
+        FactFindingCheck saved = repository.saveAndFlush(new FactFindingCheck(brief(502), 1, OFFICER));
         entityManager.clear();
 
         FactFindingCheck reloaded = repository.findById(saved.getId()).orElseThrow();
@@ -88,7 +93,7 @@ class FactFindingRepositoryTest {
 
     @Test
     void timestampsAreSetAutomatically() {
-        FactFindingCheck saved = repository.saveAndFlush(new FactFindingCheck(503L, 1, 77L));
+        FactFindingCheck saved = repository.saveAndFlush(new FactFindingCheck(brief(503), 1, OFFICER));
 
         assertNotNull(saved.getCreatedAt());
         assertNotNull(saved.getUpdatedAt());
@@ -106,9 +111,9 @@ class FactFindingRepositoryTest {
 
     @Test
     void rejectsDuplicateBriefAndRound() {
-        repository.saveAndFlush(new FactFindingCheck(504L, 1, 77L));
+        repository.saveAndFlush(new FactFindingCheck(brief(504), 1, OFFICER));
 
-        FactFindingCheck duplicate = new FactFindingCheck(504L, 1, 88L);
+        FactFindingCheck duplicate = new FactFindingCheck(brief(504), 1, OTHER_OFFICER);
 
         assertThrows(
                 DataIntegrityViolationException.class,
@@ -118,8 +123,8 @@ class FactFindingRepositoryTest {
 
     @Test
     void allowsDifferentRoundsForTheSameBrief() {
-        FactFindingCheck roundOne = repository.saveAndFlush(new FactFindingCheck(505L, 1, 77L));
-        FactFindingCheck roundTwo = repository.saveAndFlush(new FactFindingCheck(505L, 2, 78L));
+        FactFindingCheck roundOne = repository.saveAndFlush(new FactFindingCheck(brief(505), 1, OFFICER));
+        FactFindingCheck roundTwo = repository.saveAndFlush(new FactFindingCheck(brief(505), 2, OTHER_OFFICER));
 
         assertNotNull(roundOne.getId());
         assertNotNull(roundTwo.getId());
@@ -128,10 +133,10 @@ class FactFindingRepositoryTest {
 
     @Test
     void latestRoundQueryReturnsHighestRound() {
-        repository.saveAndFlush(new FactFindingCheck(506L, 1, 77L));
-        FactFindingCheck roundTwo = repository.saveAndFlush(new FactFindingCheck(506L, 2, 78L));
+        repository.saveAndFlush(new FactFindingCheck(brief(506), 1, OFFICER));
+        FactFindingCheck roundTwo = repository.saveAndFlush(new FactFindingCheck(brief(506), 2, OTHER_OFFICER));
 
-        FactFindingCheck latest = repository.findTopByBriefIdOrderByRoundDesc(506L).orElseThrow();
+        FactFindingCheck latest = repository.findTopByBriefIdOrderByRoundDesc(brief(506)).orElseThrow();
 
         assertEquals(2, latest.getRound());
         assertEquals(roundTwo.getId(), latest.getId());
@@ -139,24 +144,24 @@ class FactFindingRepositoryTest {
 
     @Test
     void latestRoundQueryReturnsEmptyForUnknownBrief() {
-        assertTrue(repository.findTopByBriefIdOrderByRoundDesc(999_999L).isEmpty());
+        assertTrue(repository.findTopByBriefIdOrderByRoundDesc(brief(999_999)).isEmpty());
     }
 
     @Test
     void completedCheckIsDetectedByCompletionQuery() {
-        FactFindingCheck check = repository.saveAndFlush(new FactFindingCheck(508L, 1, 77L));
+        FactFindingCheck check = repository.saveAndFlush(new FactFindingCheck(brief(508), 1, OFFICER));
 
-        assertFalse(repository.existsByBriefIdAndRoundAndCompletedAtIsNotNull(508L, 1));
+        assertFalse(repository.existsByBriefIdAndRoundAndCompletedAtIsNotNull(brief(508), 1));
 
         check.setCompletedAt(Instant.now());
         repository.saveAndFlush(check);
 
-        assertTrue(repository.existsByBriefIdAndRoundAndCompletedAtIsNotNull(508L, 1));
+        assertTrue(repository.existsByBriefIdAndRoundAndCompletedAtIsNotNull(brief(508), 1));
     }
 
     @Test
     void updateIncrementsVersionAndStaleCopyFails() {
-        FactFindingCheck saved = repository.saveAndFlush(new FactFindingCheck(509L, 1, 77L));
+        FactFindingCheck saved = repository.saveAndFlush(new FactFindingCheck(brief(509), 1, OFFICER));
         assertEquals(0L, saved.getVersion());
         entityManager.clear();
 
@@ -178,7 +183,7 @@ class FactFindingRepositoryTest {
 
     @Test
     void enumIsStoredAsText() {
-        FactFindingCheck check = new FactFindingCheck(510L, 1, 77L);
+        FactFindingCheck check = new FactFindingCheck(brief(510), 1, OFFICER);
         check.setResult(FactFindingResult.READY_FOR_REVIEW);
         FactFindingCheck saved = repository.saveAndFlush(check);
 
@@ -192,13 +197,66 @@ class FactFindingRepositoryTest {
     }
 
     @Test
+    void migrationRekeysBriefIdToUuidAndRecreatesConstraintAndIndex() {
+        String briefType = jdbcTemplate.queryForObject("""
+                SELECT data_type
+                FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = 'fact_finding_checks'
+                  AND column_name = 'brief_id'
+                """, String.class);
+        assertEquals("uuid", briefType);
+
+        String officerType = jdbcTemplate.queryForObject("""
+                SELECT data_type
+                FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = 'fact_finding_checks'
+                  AND column_name = 'officer_id'
+                """, String.class);
+        Integer officerLength = jdbcTemplate.queryForObject("""
+                SELECT character_maximum_length
+                FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = 'fact_finding_checks'
+                  AND column_name = 'officer_id'
+                """, Integer.class);
+        assertEquals("character varying", officerType);
+        assertEquals(100, officerLength);
+
+        List<String> uniqueColumns = jdbcTemplate.queryForList("""
+                SELECT kcu.column_name
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu
+                  ON kcu.constraint_schema = tc.constraint_schema
+                 AND kcu.constraint_name = tc.constraint_name
+                 AND kcu.table_name = tc.table_name
+                WHERE tc.table_schema = current_schema()
+                  AND tc.table_name = 'fact_finding_checks'
+                  AND tc.constraint_name = 'uq_fact_finding_checks_brief_round'
+                  AND tc.constraint_type = 'UNIQUE'
+                ORDER BY kcu.ordinal_position
+                """, String.class);
+        assertEquals(List.of("brief_id", "round"), uniqueColumns);
+
+        Integer indexCount = jdbcTemplate.queryForObject("""
+                SELECT count(*)
+                FROM pg_indexes
+                WHERE schemaname = current_schema()
+                  AND tablename = 'fact_finding_checks'
+                  AND indexname = 'ix_fact_finding_checks_brief_id'
+                """, Integer.class);
+        assertEquals(1, indexCount);
+    }
+
+    @Test
     void notesRoundTripWithOneThousandCharacters() {
         String titleNote = repeated('t', 1000);
         String purposeNote = repeated('p', 1000);
         String evidenceNote = repeated('e', 1000);
         String relevantNote = repeated('r', 1000);
 
-        FactFindingCheck check = new FactFindingCheck(511L, 1, 77L);
+        FactFindingCheck check = new FactFindingCheck(brief(511), 1, OFFICER);
         check.setTitleNote(titleNote);
         check.setPurposeNote(purposeNote);
         check.setEvidenceNote(evidenceNote);
@@ -220,7 +278,7 @@ class FactFindingRepositoryTest {
 
     @Test
     void rejectsNoteLongerThanOneThousandCharacters() {
-        FactFindingCheck check = new FactFindingCheck(512L, 1, 77L);
+        FactFindingCheck check = new FactFindingCheck(brief(512), 1, OFFICER);
         check.setTitleNote(repeated('x', 1001));
 
         assertThrows(
@@ -233,7 +291,7 @@ class FactFindingRepositoryTest {
     void missingItemsRoundTripsWithTwoThousandCharacters() {
         String missingItems = repeated('m', 2000);
 
-        FactFindingCheck check = new FactFindingCheck(513L, 1, 77L);
+        FactFindingCheck check = new FactFindingCheck(brief(513), 1, OFFICER);
         check.setMissingItems(missingItems);
 
         FactFindingCheck saved = repository.saveAndFlush(check);
@@ -248,8 +306,12 @@ class FactFindingRepositoryTest {
         return String.valueOf(value).repeat(length);
     }
 
-    private static FactFindingCheck populatedCheck(long briefId, int round) {
-        FactFindingCheck check = new FactFindingCheck(briefId, round, 77L);
+    private static UUID brief(long value) {
+        return new UUID(0L, value);
+    }
+
+    private static FactFindingCheck populatedCheck(UUID briefId, int round) {
+        FactFindingCheck check = new FactFindingCheck(briefId, round, OFFICER);
         check.setTitleClear(true);
         check.setTitleNote("Title is specific enough");
         check.setPurposeClear(true);

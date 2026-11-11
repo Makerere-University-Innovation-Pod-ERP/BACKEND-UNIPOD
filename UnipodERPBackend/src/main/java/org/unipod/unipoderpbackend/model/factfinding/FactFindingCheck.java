@@ -12,6 +12,7 @@ import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
+import java.util.UUID;
 
 @Entity
 @Table(name = "fact_finding_checks")
@@ -21,13 +22,13 @@ public class FactFindingCheck {
     private Long id;
 
     @Column(name = "brief_id", nullable = false)
-    private Long briefId;
+    private UUID briefId;
 
     @Column(nullable = false)
     private int round = 1;
 
-    @Column(name = "officer_id", nullable = false)
-    private Long officerId;
+    @Column(name = "officer_id", nullable = false, length = 100)
+    private String officerId;
 
     @Column(name = "title_clear")
     private Boolean titleClear;
@@ -76,7 +77,7 @@ public class FactFindingCheck {
     protected FactFindingCheck() {
     }
 
-    public FactFindingCheck(Long briefId, int round, Long officerId) {
+    public FactFindingCheck(UUID briefId, int round, String officerId) {
         this.briefId = briefId;
         this.round = round;
         this.officerId = officerId;
@@ -98,7 +99,7 @@ public class FactFindingCheck {
         return id;
     }
 
-    public Long getBriefId() {
+    public UUID getBriefId() {
         return briefId;
     }
 
@@ -106,7 +107,7 @@ public class FactFindingCheck {
         return round;
     }
 
-    public Long getOfficerId() {
+    public String getOfficerId() {
         return officerId;
     }
 

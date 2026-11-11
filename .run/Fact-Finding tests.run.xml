@@ -1,0 +1,17 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Fact-Finding tests" type="JUnit" factoryName="JUnit">
+    <module name="UnipodERPBackend" />
+    <option name="TEST_OBJECT" value="pattern" />
+    <patterns>
+      <pattern testClass="org\.unipod\.unipoderpbackend\..*FactFinding.*Test" />
+    </patterns>
+    <envs>
+      <env name="JDBC_DATABASE_URL" value="jdbc:postgresql://localhost:55432/unipod_factfinding_test" />
+      <env name="DB_USER" value="postgres" />
+      <env name="DATABASE_PASSWORD" value="postgres" />
+    </envs>
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>
