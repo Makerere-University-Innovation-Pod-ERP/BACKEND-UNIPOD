@@ -4,6 +4,9 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -30,6 +33,7 @@ import java.util.List;
 @Configuration
 @EnableMethodSecurity
 public class SecurityConfiguration {
+    private static final Logger log = LoggerFactory.getLogger(SecurityConfiguration.class);
     @Bean
     SecurityFilterChain apiSecurityFilterChain(
             HttpSecurity http,
@@ -104,11 +108,8 @@ public class SecurityConfiguration {
     @Bean
     AuthenticationEntryPoint authenticationEntryPoint(WaluubeAuditLog auditLog) {
         return (request, response, exception) -> {
-            auditLog.recordRequest(
+            recordSecurityAudit(auditLog, request,
                     currentActor(),
-                    request.getMethod(),
-                    request.getRequestURI(),
-                    request.getContextPath(),
                     HttpStatus.UNAUTHORIZED.value()
             );
             response.setStatus(HttpStatus.UNAUTHORIZED.value());
@@ -123,11 +124,8 @@ public class SecurityConfiguration {
     @Bean
     AccessDeniedHandler accessDeniedHandler(WaluubeAuditLog auditLog) {
         return (request, response, exception) -> {
-            auditLog.recordRequest(
+            recordSecurityAudit(auditLog, request,
                     currentActor(),
-                    request.getMethod(),
-                    request.getRequestURI(),
-                    request.getContextPath(),
                     HttpStatus.FORBIDDEN.value()
             );
             response.setStatus(HttpStatus.FORBIDDEN.value());
@@ -146,5 +144,25 @@ public class SecurityConfiguration {
                 || authentication instanceof AnonymousAuthenticationToken
                 ? "anonymous"
                 : authentication.getName();
+    }
+
+    private static void recordSecurityAudit(
+            WaluubeAuditLog auditLog,
+            jakarta.servlet.http.HttpServletRequest request,
+            String actor,
+            int status
+    ) {
+        try {
+            auditLog.recordRequest(
+                    actor,
+                    request.getMethod(),
+                    request.getRequestURI(),
+                    request.getContextPath(),
+                    status
+            );
+        } catch (DataAccessException exception) {
+            log.warn("Unable to persist Waluube security audit event for {} {} (status {})",
+                    request.getMethod(), request.getRequestURI(), status, exception);
+        }
     }
 }

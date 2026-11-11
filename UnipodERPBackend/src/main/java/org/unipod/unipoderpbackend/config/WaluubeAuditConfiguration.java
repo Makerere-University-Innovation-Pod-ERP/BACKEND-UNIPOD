@@ -16,15 +16,6 @@ public class WaluubeAuditConfiguration implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(new WaluubeAuditInterceptor(auditLog))
-                .addPathPatterns(
-                        "/submissions",
-                        "/submissions/**",
-                        "/cases",
-                        "/cases/**",
-                        "/queues/reception",
-                        "/me/submissions",
-                        "/me/capabilities",
-                        "/dashboard/overview"
-                );
+                .addPathPatterns(WaluubeAuditLog.PATH_PATTERNS.toArray(String[]::new));
     }
 }

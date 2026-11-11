@@ -44,6 +44,9 @@ public class Submission {
     @Column(name = "submitter_id", nullable = false)
     private String submitterId;
 
+    @Column(name = "submitter_email", length = 254)
+    private String submitterEmail;
+
     @Column(name = "receiving_officer")
     private String receivingOfficer;
 
@@ -132,6 +135,25 @@ public class Submission {
             RecommendationLetterStatus recommendationLetterStatus,
             Instant createdAt
     ) {
+        this(id, category, title, purpose, problemAddressed, registeredBy, submitterId, studentNumber,
+                programme, supervisor, recommendationLetterStatus, null, createdAt);
+    }
+
+    public Submission(
+            UUID id,
+            SubmissionCategory category,
+            String title,
+            String purpose,
+            String problemAddressed,
+            String registeredBy,
+            String submitterId,
+            String studentNumber,
+            String programme,
+            String supervisor,
+            RecommendationLetterStatus recommendationLetterStatus,
+            String submitterEmail,
+            Instant createdAt
+    ) {
         this.id = id;
         this.category = category;
         this.title = title;
@@ -143,6 +165,7 @@ public class Submission {
         this.programme = programme;
         this.supervisor = supervisor;
         this.recommendationLetterStatus = recommendationLetterStatus;
+        this.submitterEmail = submitterEmail;
         this.stage = SubmissionStage.DRAFT;
         this.createdAt = createdAt;
         this.updatedAt = createdAt;
@@ -185,9 +208,17 @@ public class Submission {
         this.receivingOfficer = officer;
         this.stage = SubmissionStage.RECEIVED;
         this.updatedAt = time;
+        clearInformationRequest();
+    }
+
+    public void clearInformationRequest() {
         this.informationRequestedNote = null;
         this.informationRequestedBy = null;
         this.informationRequestedAt = null;
+    }
+
+    public void updateSubmitterEmail(String submitterEmail) {
+        this.submitterEmail = submitterEmail;
     }
 
     public void assignTrackingReference(String caseCode) {
@@ -218,9 +249,6 @@ public class Submission {
         this.supervisor = supervisor;
         this.recommendationLetterStatus = recommendationLetterStatus;
         this.updatedAt = time;
-        this.informationRequestedNote = null;
-        this.informationRequestedBy = null;
-        this.informationRequestedAt = null;
     }
 
     public void requestInformation(String note, String actor, Instant time) {
@@ -330,6 +358,10 @@ public class Submission {
 
     public String getSubmitterId() {
         return submitterId;
+    }
+
+    public String getSubmitterEmail() {
+        return submitterEmail;
     }
 
     public String getReceivingOfficer() {

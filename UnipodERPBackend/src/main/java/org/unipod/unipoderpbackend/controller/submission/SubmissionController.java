@@ -32,6 +32,7 @@ import org.unipod.unipoderpbackend.dto.submission.SubmissionResponse;
 import org.unipod.unipoderpbackend.exception.submission.InvalidSubmissionException;
 import org.unipod.unipoderpbackend.model.submission.SubmissionCategory;
 import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
+import org.unipod.unipoderpbackend.security.SubmitterAuthorization;
 import org.unipod.unipoderpbackend.service.submission.SubmissionService;
 
 @RestController
@@ -51,7 +52,8 @@ public class SubmissionController {
             @Valid @RequestBody CreateSubmissionRequest request,
             Authentication authentication
     ) {
-        return submissions.create(request, authentication.getName(), hasSubmitterRole(authentication));
+        return submissions.create(request, authentication.getName(),
+                SubmitterAuthorization.hasSubmitterRole(authentication));
     }
 
     @PutMapping("/{id}")
@@ -61,7 +63,8 @@ public class SubmissionController {
             @Valid @RequestBody CreateSubmissionRequest request,
             Authentication authentication
     ) {
-        return submissions.updateDraft(id, request, authentication.getName(), hasSubmitterRole(authentication));
+        return submissions.updateDraft(id, request, authentication.getName(),
+                SubmitterAuthorization.hasSubmitterRole(authentication));
     }
 
     @GetMapping
@@ -155,7 +158,8 @@ public class SubmissionController {
             @Valid @RequestBody CreateDocumentRequest request,
             Authentication authentication
     ) {
-        return submissions.addDocument(id, request, authentication.getName(), hasSubmitterRole(authentication));
+        return submissions.addDocument(id, request, authentication.getName(),
+                SubmitterAuthorization.hasSubmitterRole(authentication));
     }
 
     @PutMapping("/{id}/reviewer")
@@ -182,8 +186,4 @@ public class SubmissionController {
         }
     }
 
-    private static boolean hasSubmitterRole(Authentication authentication) {
-        return authentication.getAuthorities().stream()
-                .anyMatch(authority -> authority.getAuthority().equals("ROLE_SUBMITTER"));
-    }
 }

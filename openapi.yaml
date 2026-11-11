@@ -122,6 +122,8 @@ paths:
                   title: Community solar charging point
                   purpose: Explore a shared charging point
                   problemAddressed: Limited access to reliable charging
+                  submitterId: submitter@example.test
+                  submitterEmail: submitter@example.test
       responses:
         '201':
           description: Draft created
@@ -135,6 +137,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '500':
           $ref: '#/components/responses/InternalServerError'
     get:
@@ -265,8 +269,7 @@ paths:
       summary: Register a submission as received
       description: |
         Available to Administrator, Innovation Coordinator, Receptionist, and
-        Fact-Finding Officer. Preserves the code assigned at creation (and
-        assigns a code only for legacy drafts created before tracking-at-create).
+        Fact-Finding Officer. Preserves the code assigned at creation.
         Student number, programme, supervisor, and recommendation-letter status must be present for
         student submissions. A submission can be registered only once.
       security:
@@ -286,12 +289,14 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /submissions/{id}/request-information:
     post:
       tags: [Submissions]
       operationId: requestSubmissionInformation
       summary: Ask a submitter to complete or correct a draft
-      description: Intake roles can attach a required-information note to a draft. The change and notification outbox event are committed together.
+      description: Intake roles can attach a required-information note to a draft with a known submitter email. A missing email returns 400. The change and notification outbox event are committed together.
       security:
         - bearerAuth: []
       parameters:
@@ -1088,6 +1093,10 @@ components:
         submitterId:
           type: [string, 'null']
           maxLength: 255
+        submitterEmail:
+          type: [string, 'null']
+          format: email
+          maxLength: 254
         studentNumber:
           type: string
           maxLength: 80
@@ -1752,8 +1761,6 @@ components:
           type: [string, 'null']
           format: date-time
         informationRequestedNote:
-          type: [string, 'null']
-        informationRequestedBy:
           type: [string, 'null']
         informationRequestedAt:
           type: [string, 'null']

@@ -26,6 +26,7 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
 import org.unipod.unipoderpbackend.dto.submission.DocumentResponse;
 import org.unipod.unipoderpbackend.model.submission.DocumentStatus;
 import org.unipod.unipoderpbackend.model.submission.DocumentType;
+import org.unipod.unipoderpbackend.security.SubmitterAuthorization;
 import org.unipod.unipoderpbackend.service.submission.UploadedDocumentService;
 
 @RestController
@@ -57,7 +58,7 @@ public class DocumentUploadController {
                 status,
                 file,
                 authentication.getName(),
-                hasSubmitterRole(authentication)
+                SubmitterAuthorization.hasSubmitterRole(authentication)
         );
     }
 
@@ -90,8 +91,4 @@ public class DocumentUploadController {
                 });
     }
 
-    private static boolean hasSubmitterRole(Authentication authentication) {
-        return authentication.getAuthorities().stream()
-                .anyMatch(authority -> authority.getAuthority().equals("ROLE_SUBMITTER"));
-    }
 }

@@ -57,14 +57,14 @@ include a valid example body. Replace example values as appropriate.
 |---:|---|---|---|
 | 1 | `POST /auth/login` | Any provisioned, enabled account | `200`; response contains `accessToken`, `tokenType`, `expiresAt`; token is saved in the selected environment. |
 | 2 | `POST /admin/users` | Administrator | `201`; creates the requested role. Password is never returned. Use the created email and password to log in as that role. |
-| 3 | `POST /submissions` | Administrator, Coordinator, Receptionist, Fact-Finding Officer, or Submitter | `201`; stage is `DRAFT`, code is assigned immediately (`STU-...` or `GEN-...`). For Submitter, `submitterId` is taken from the authenticated identity. |
+| 3 | `POST /submissions` | Administrator, Coordinator, Receptionist, Fact-Finding Officer, or Submitter | `201`; stage is `DRAFT`, code is assigned immediately (`STU-...` or `GEN-...`). A Submitter's `submitterId` is taken from the authenticated identity. Intake staff creating a walk-in case may set `submitterId` and `submitterEmail` separately. |
 | 4 | `GET /submissions` | Administrator, Coordinator, Receptionist, Fact-Finding Officer, IP Liaison, Observer, Submitter, Reviewer, or Sector Officer | `200`; check pagination and optional `category`, `stage`, `sector`, and `q` filters. Results are scoped to role. |
 | 5 | `GET /submissions/search?code=...` | Same roles as the submission list | `200`; exact visible case code wins; otherwise the value is searched in visible titles. Blank `code` should return `400`. |
 | 6 | `GET /submissions/mine` | Administrator, Coordinator, Receptionist, or Fact-Finding Officer | `200`; contains cases registered by the signed-in staff identity. |
 | 7 | `GET /me/submissions` | Submitter | `200`; contains only cases linked to the signed-in submitter, without staff-only fields. |
 | 8 | `GET /me/capabilities` | Submitter | `200`; shows submitter guidance and locked modules; submitters cannot register cases. |
 | 9 | `POST /submissions/{id}/register` | Administrator, Coordinator, Receptionist, or Fact-Finding Officer | `200`; DRAFT becomes `RECEIVED`, with the same code assigned at creation. Student cases require student number, programme, supervisor, and recommendation-letter status. Repeating registration returns `409`. |
-| 10 | `POST /submissions/{id}/request-information` | Administrator, Coordinator, Receptionist, or Fact-Finding Officer; case must be DRAFT | `200`; note appears on the draft and an information-request outbox event is stored. |
+| 10 | `POST /submissions/{id}/request-information` | Administrator, Coordinator, Receptionist, or Fact-Finding Officer; case must be DRAFT and have a valid submitter email | `200`; note appears on the draft and an information-request outbox event with the recipient email is stored. A missing email returns `400`. |
 | 11 | `PUT /submissions/{id}/reviewer` | Administrator | `200`; reviewer assignment is updated. |
 | 12 | `GET /submissions/{id}` | Administrator, Coordinator, Receptionist, or Fact-Finding Officer | `200`; check submission, documents, and stage history. |
 | 13 | `PUT /submissions/{id}` | Intake roles, or Submitter for their own DRAFT | `200`; code and ownership remain unchanged. A submitter changing another user's case or a non-draft receives `403`. Updating the draft clears an outstanding information request. |
@@ -94,17 +94,22 @@ include a valid example body. Replace example values as appropriate.
 
 Use the collection's requests and environment variables in this order:
 
-1. Log in as an Administrator. Create a test Receptionist and Submitter with
-   `POST /admin/users`; use unique emails and a strong test password.
-2. Log in as the Receptionist. Create a sector with `POST /sectors`, then
-   create a student draft with `POST /submissions`. The collection saves
-   `sectorId`, `submissionId`, and `submissionCode`.
+1. Log in as an Administrator. Create a test Receptionist with
+   `POST /admin/users`, then create the Submitter with
+   `POST /admin/users (Submitter)`. Use unique emails and a strong test
+   password; the latter request saves its email as `submitterSubject`.
+2. Log in as the Receptionist. Create a sector with `POST /sectors`, then use
+   `POST /submissions (walk-in for Submitter)` to create a student draft.
+   The request sends `submitterSubject` as both `submitterId` (the account's
+   authenticated subject) and `submitterEmail` (the notification recipient).
+   The collection saves `sectorId`, `submissionId`, and `submissionCode`.
 3. Add a recommendation-letter metadata record with
    `POST /submissions/{{submissionId}}/documents`. The response saves
    `documentId`.
 4. Request missing information with
    `POST /submissions/{{submissionId}}/request-information`.
-5. Log in as the Submitter that owns the case. Verify
+5. Log in as the Submitter that owns the case. For a self-created draft,
+   `submitterId` is taken from the authenticated identity. Verify
    `GET /me/submissions`, then update the owned draft with `PUT
    /submissions/{{submissionId}}`. Attempt an update as a different Submitter
    and confirm it is rejected.

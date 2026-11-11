@@ -81,8 +81,7 @@ class SubmissionRegistrationIntegrationTest {
         SubmissionResponse registered = submissions.register(draft.id(), "receptionist-2");
 
         assertEquals(SubmissionStage.RECEIVED, registered.stage());
-        int receivedYear = registered.receivedAt().atZone(ZoneId.of("Africa/Kampala")).getYear();
-        assertTrue(registered.code().matches("STU-" + receivedYear + "-\\d{6,}"));
+        assertTrue(registered.code().matches("STU-" + createdYear + "-\\d{6,}"));
         assertEquals(draft.code(), registered.code());
         assertEquals("receptionist-1", registered.registeredBy());
         assertEquals("receptionist-2", registered.receivingOfficer());
@@ -190,10 +189,12 @@ class SubmissionRegistrationIntegrationTest {
                         "A public innovation",
                         "Improve access",
                         "Current access is limited",
+                        "submitter@example.test",
                         null,
                         null,
                         null,
-                        null
+                        null,
+                        "submitter@example.test"
                 ),
                 "submitter@example.test"
         );
@@ -206,14 +207,102 @@ class SubmissionRegistrationIntegrationTest {
 
         assertEquals(SubmissionStage.DRAFT, requested.stage());
         assertEquals("Please attach a project brief.", requested.informationRequestedNote());
-        assertEquals("receptionist-1", requested.informationRequestedBy());
+        assertEquals("receptionist-1", jdbcTemplate.queryForObject(
+                "SELECT information_requested_by FROM submissions WHERE id = ?",
+                String.class,
+                created.id()
+        ));
         assertEquals(1, jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM notification_outbox WHERE aggregate_id = ? AND event_type = ?",
                 Integer.class,
                 created.id(),
                 "submission.information_requested"
         ));
+        assertEquals("submitter@example.test", jdbcTemplate.queryForObject(
+                "SELECT payload ->> 'notificationEmail' FROM notification_outbox "
+                        + "WHERE aggregate_id = ? AND event_type = 'submission.information_requested'",
+                String.class,
+                created.id()
+        ));
         assertEquals(2, stageHistory.countBySubmissionId(created.id()));
+    }
+
+    @Test
+    void staffDraftEditsPreserveOutstandingInformationRequests() {
+        SubmissionResponse created = submissions.create(
+                new CreateSubmissionRequest(
+                        SubmissionCategory.GENERAL,
+                        "A public innovation",
+                        "Improve access",
+                        "Current access is limited",
+                        "submitter@example.test",
+                        null,
+                        null,
+                        null,
+                        null,
+                        "submitter@example.test"
+                ),
+                "submitter@example.test"
+        );
+        submissions.requestInformation(
+                created.id(),
+                new RequestInformationRequest("Please attach a project brief."),
+                "receptionist-1"
+        );
+
+        submissions.updateDraft(
+                created.id(),
+                new CreateSubmissionRequest(
+                        SubmissionCategory.GENERAL,
+                        "Updated public innovation",
+                        "Improve access",
+                        "Current access is limited",
+                        null,
+                        null,
+                        null,
+                        null
+                ),
+                "receptionist-2",
+                false
+        );
+
+        assertEquals("Please attach a project brief.", jdbcTemplate.queryForObject(
+                "SELECT information_requested_note FROM submissions WHERE id = ?",
+                String.class,
+                created.id()
+        ));
+    }
+
+    @Test
+    void informationRequestRequiresAValidSubmitterEmail() {
+        SubmissionResponse created = submissions.create(
+                new CreateSubmissionRequest(
+                        SubmissionCategory.GENERAL,
+                        "A public innovation",
+                        "Improve access",
+                        "Current access is limited",
+                        null,
+                        null,
+                        null,
+                        null
+                ),
+                "receptionist-1"
+        );
+
+        assertThrows(
+                InvalidSubmissionException.class,
+                () -> submissions.requestInformation(
+                        created.id(),
+                        new RequestInformationRequest("Please attach a project brief."),
+                        "receptionist-1"
+                )
+        );
+        assertEquals(0, jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM notification_outbox WHERE aggregate_id = ? "
+                        + "AND event_type = 'submission.information_requested'",
+                Integer.class,
+                created.id()
+        ));
     }
 
     @Test

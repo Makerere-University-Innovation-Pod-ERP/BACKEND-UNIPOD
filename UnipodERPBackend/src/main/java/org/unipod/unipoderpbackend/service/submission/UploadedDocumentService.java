@@ -8,7 +8,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -91,7 +90,7 @@ public class UploadedDocumentService {
         transaction.execute(statusTransaction -> {
             Submission submission = submissions.findByIdForUpdate(submissionId)
                     .orElseThrow(() -> new SubmissionNotFoundException(submissionId));
-            requireSubmitterOwnership(submission, actor, submitter);
+            SubmissionService.requireSubmitterOwnership(submission, actor, submitter);
             if (submission.getStage() == SubmissionStage.COMPLETED) {
                 throw new SubmissionConflictException("The submission cannot be changed in its current state.");
             }
@@ -110,7 +109,7 @@ public class UploadedDocumentService {
             SubmissionDocument document = transaction.execute(statusTransaction -> {
                 Submission submission = submissions.findByIdForUpdate(submissionId)
                         .orElseThrow(() -> new SubmissionNotFoundException(submissionId));
-                requireSubmitterOwnership(submission, actor, submitter);
+                SubmissionService.requireSubmitterOwnership(submission, actor, submitter);
                 Instant now = clock.instant();
                 submission.touch(now);
                 return documents.saveAndFlush(new SubmissionDocument(
@@ -169,17 +168,6 @@ public class UploadedDocumentService {
             return fallback;
         }
         return filename.length() <= 255 ? filename : filename.substring(0, 255);
-    }
-
-    private static void requireSubmitterOwnership(Submission submission, String actor, boolean submitter) {
-        if (submitter) {
-            if (!submission.getSubmitterId().equals(actor)) {
-                throw new AccessDeniedException("Submitters may only upload documents to their own submissions.");
-            }
-            if (submission.getStage() != SubmissionStage.DRAFT) {
-                throw new AccessDeniedException("Submitters may only upload documents while their submission is a draft.");
-            }
-        }
     }
 
     public record DownloadedDocument(SubmissionDocument document, java.io.InputStream content) {

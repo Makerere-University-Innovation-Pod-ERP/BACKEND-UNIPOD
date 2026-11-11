@@ -333,14 +333,15 @@ async request timeout by default, configurable with `ASYNC_REQUEST_TIMEOUT`.
 
 ### API Access Control
 
-Intake creation and lifecycle operations are restricted to:
+Intake operations are restricted to:
 
 * `ADMINISTRATOR`
 * `INNOVATION_COORDINATOR`
 * `RECEPTIONIST`
 * `FACT_FINDING_OFFICER`
-* `SUBMITTER` (can submit and update its own draft but cannot perform reception
-  registration or forwarding)
+
+Submitters may create submissions and update their own drafts. They cannot
+register, forward, or transition cases.
 
 Submission list and global search additionally support:
 
@@ -359,10 +360,11 @@ cases where their endpoint permission allows it.
 
 `GET /api/me/submissions` returns only submissions whose `submitterId` matches
 the authenticated subject. `GET /api/me/capabilities` returns the locked
-navigation modules and explains that only the four intake roles can register a
-submission. Submitters have no write authorities; attempts to create,
-register, forward, transition, or modify documents return `403` with the safe
-permission envelope.
+navigation modules and explains that only authorized intake roles can register
+a submission. Submitters may create submissions, update their own drafts, and
+add submitted documents to their own drafts. Attempts to register, forward,
+transition, modify another submitter's draft, or mark a document as verified
+return `403` with the safe permission envelope.
 
 Administrators, Innovation Coordinators, Receptionists, and Fact-Finding
 Officers may set `submitterId` when creating a case for another person.
@@ -485,9 +487,10 @@ Render-to-Render traffic. Never commit database credentials or other secrets
 to the repository. The free Render PostgreSQL plan expires; upgrade it before
 using it for persistent production data.
 
-Intake creation and lifecycle operations are restricted to Administrators,
-Innovation Coordinators, Receptionists, and Fact-Finding Officers. Read-only
-submission list and search access additionally supports IP Liaisons, Observers,
+Registration, forwarding, and lifecycle operations are restricted to
+Administrators, Innovation Coordinators, Receptionists, and Fact-Finding
+Officers. Submitters may create submissions and update their own drafts.
+Submission list and search access additionally supports IP Liaisons, Observers,
 Submitters, Reviewers, and Sector Officers, with row-level visibility described
 above.
 

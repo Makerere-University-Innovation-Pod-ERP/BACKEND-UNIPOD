@@ -233,7 +233,7 @@ class WaluubeApiIntegrationTest {
 
     @Test
     void submitterCanCompleteRequestedDraftAndReceptionCanForwardItAtomically() throws Exception {
-        String submitter = "owner-" + UUID.randomUUID();
+        String submitter = "owner-" + UUID.randomUUID() + "@example.test";
         String receptionist = "reception-" + UUID.randomUUID();
         var submitterUser = user(submitter).roles("SUBMITTER");
         var receptionistUser = user(receptionist).roles("RECEPTIONIST");
@@ -273,7 +273,17 @@ class WaluubeApiIntegrationTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.informationRequestedNote")
-                        .value("Please provide your student number and supervisor."));
+                        .value("Please provide your student number and supervisor."))
+                .andExpect(jsonPath("$.informationRequestedBy").doesNotExist());
+
+        mockMvc.perform(get("/submissions/search")
+                        .with(submitterUser)
+                        .param("code", code))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].id").value(id))
+                .andExpect(jsonPath("$.items[0].informationRequestedNote")
+                        .value("Please provide your student number and supervisor."))
+                .andExpect(jsonPath("$.items[0].informationRequestedBy").doesNotExist());
 
         mockMvc.perform(post("/submissions/{id}/documents", id)
                         .with(submitterUser)
@@ -309,7 +319,8 @@ class WaluubeApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(code))
                 .andExpect(jsonPath("$.submitterId").value(submitter))
-                .andExpect(jsonPath("$.informationRequestedNote").doesNotExist());
+                .andExpect(jsonPath("$.informationRequestedNote").doesNotExist())
+                .andExpect(jsonPath("$.informationRequestedBy").doesNotExist());
 
         mockMvc.perform(put("/submissions/{id}", id)
                         .with(user("another-owner").roles("SUBMITTER"))

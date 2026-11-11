@@ -2,6 +2,7 @@ package org.unipod.unipoderpbackend.dto.submission;
 
 import java.util.List;
 import org.springframework.security.core.Authentication;
+import org.unipod.unipoderpbackend.security.SubmitterAuthorization;
 
 public record SubmitterCapabilitiesResponse(
         boolean canRegisterSubmission,
@@ -17,7 +18,7 @@ public record SubmitterCapabilitiesResponse(
                          "ROLE_FACT_FINDING_OFFICER" -> true;
                     default -> false;
                 });
-        boolean isSubmitter = hasSubmitterRole(authentication);
+        boolean isSubmitter = SubmitterAuthorization.hasSubmitterRole(authentication);
         return new SubmitterCapabilitiesResponse(
                 canRegister,
                 isSubmitter && !canRegister
@@ -29,8 +30,4 @@ public record SubmitterCapabilitiesResponse(
         );
     }
 
-    private static boolean hasSubmitterRole(Authentication authentication) {
-        return authentication.getAuthorities().stream()
-                .anyMatch(authority -> authority.getAuthority().equals("ROLE_SUBMITTER"));
-    }
 }

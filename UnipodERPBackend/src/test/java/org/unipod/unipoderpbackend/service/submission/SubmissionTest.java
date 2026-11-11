@@ -96,7 +96,7 @@ class SubmissionTest {
     }
 
     @Test
-    void draftUpdateClearsAnOutstandingInformationRequest() {
+    void draftUpdatePreservesAnOutstandingInformationRequestUntilSubmitterResponds() {
         Instant createdAt = Instant.parse("2026-11-04T00:00:00Z");
         Instant updatedAt = Instant.parse("2026-11-04T02:00:00Z");
         Submission submission = new Submission(
@@ -127,8 +127,9 @@ class SubmissionTest {
         );
 
         assertEquals("Updated idea", submission.getTitle());
-        assertNull(submission.getInformationRequestedNote());
-        assertNull(submission.getInformationRequestedAt());
+        assertEquals("Please attach a brief.", submission.getInformationRequestedNote());
+        assertEquals("receptionist-1", submission.getInformationRequestedBy());
+        assertEquals(createdAt.plusSeconds(60), submission.getInformationRequestedAt());
     }
 
     @Test

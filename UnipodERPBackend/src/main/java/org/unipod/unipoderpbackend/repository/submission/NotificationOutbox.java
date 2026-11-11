@@ -52,6 +52,7 @@ public class NotificationOutbox {
             UUID submissionId,
             String caseCode,
             String submitterId,
+            String submitterEmail,
             String note,
             String actor,
             Instant occurredAt
@@ -78,7 +79,7 @@ public class NotificationOutbox {
                 submissionId.toString(),
                 caseCode,
                 submitterId,
-                submitterId,
+                submitterEmail,
                 note,
                 actor,
                 Timestamp.from(occurredAt),

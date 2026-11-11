@@ -6,6 +6,8 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
+import jakarta.mail.internet.AddressException;
+import jakarta.mail.internet.InternetAddress;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -89,6 +91,9 @@ public class SubmissionService {
         }
 
         Instant now = clock.instant();
+        String submitterId = submitter || request.submitterId() == null || request.submitterId().isBlank()
+                ? actor
+                : request.submitterId().trim();
         Submission submission = new Submission(
                 UUID.randomUUID(),
                 request.category(),
@@ -96,13 +101,16 @@ public class SubmissionService {
                 request.purpose().trim(),
                 request.problemAddressed().trim(),
                 actor,
-                submitter || request.submitterId() == null || request.submitterId().isBlank()
-                        ? actor
-                        : request.submitterId().trim(),
+                submitterId,
                 clean(request.studentNumber()),
                 clean(request.programme()),
                 clean(request.supervisor()),
                 request.recommendationLetterStatus(),
+                submitter
+                        ? actor
+                        : clean(request.submitterEmail()) == null
+                                ? emailFromSubmitterId(request.submitterId())
+                                : request.submitterEmail().trim(),
                 now
         );
         submission.assignTrackingReference(caseCodeGenerator.next(
@@ -145,6 +153,11 @@ public class SubmissionService {
                 request.recommendationLetterStatus(),
                 clock.instant()
         );
+        if (submitter) {
+            submission.clearInformationRequest();
+        } else if (request.submitterEmail() != null && !request.submitterEmail().isBlank()) {
+            submission.updateSubmitterEmail(request.submitterEmail().trim());
+        }
         submissions.flush();
         return SubmissionResponse.from(submission);
     }
@@ -223,6 +236,11 @@ public class SubmissionService {
                 .orElseThrow(() -> new SubmissionNotFoundException(id));
         Instant now = clock.instant();
         String note = request.note().trim();
+        if (!isEmailAddress(submission.getSubmitterEmail())) {
+            throw new InvalidSubmissionException(
+                    "A submitter email address is required before requesting more information."
+            );
+        }
         submission.requestInformation(note, actor, now);
         stageHistory.save(new CaseStageHistory(
                 UUID.randomUUID(),
@@ -237,6 +255,7 @@ public class SubmissionService {
                 submission.getId(),
                 submission.getCode(),
                 submission.getSubmitterId(),
+                submission.getSubmitterEmail(),
                 note,
                 actor,
                 now
@@ -430,14 +449,31 @@ public class SubmissionService {
                 || request.recommendationLetterStatus() != null;
     }
 
-    private static void requireSubmitterOwnership(Submission submission, String actor, boolean submitter) {
+    static void requireSubmitterOwnership(Submission submission, String actor, boolean submitter) {
         if (submitter) {
             if (!submission.getSubmitterId().equals(actor)) {
-                throw new AccessDeniedException("Submitters may only update their own submissions.");
+                throw new AccessDeniedException("Submitters may only modify their own submissions.");
             }
             if (submission.getStage() != SubmissionStage.DRAFT) {
-                throw new AccessDeniedException("Submitters may only update documents while their submission is a draft.");
+                throw new AccessDeniedException("Submitters may only modify their own draft submissions.");
             }
+        }
+    }
+
+    private static String emailFromSubmitterId(String submitterId) {
+        return isEmailAddress(submitterId) ? submitterId : null;
+    }
+
+    private static boolean isEmailAddress(String email) {
+        if (email == null || email.isBlank()) {
+            return false;
+        }
+        try {
+            InternetAddress address = new InternetAddress(email);
+            address.validate();
+            return email.equals(address.getAddress());
+        } catch (AddressException exception) {
+            return false;
         }
     }
 

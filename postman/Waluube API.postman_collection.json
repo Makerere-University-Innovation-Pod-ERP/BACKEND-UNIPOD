@@ -115,6 +115,48 @@
               }
             }
           ]
+        },
+        {
+          "name": "POST /admin/users (Submitter)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/users",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{newUserEmail}}\",\n  \"password\": \"{{newUserPassword}}\",\n  \"role\": \"SUBMITTER\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create a Submitter account for the walk-in intake example\n\nAdministrator only. The response saves the account email as submitterSubject. Use unique credentials.\n\nExpected documented status codes: 201, 400, 401, 403, 409"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([201, 400, 401, 403, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.id) pm.environment.set('createdUserId', data.id);",
+                  "  if (data.email) pm.environment.set('submitterSubject', data.email);",
+                  "}"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -142,6 +184,48 @@
               }
             },
             "description": "Create an intake draft\n\nAvailable to Administrator, Innovation Coordinator, Receptionist,\nFact-Finding Officer, and Submitter. A Submitter's identity is taken\nfrom the authenticated principal; a supplied submitterId cannot change\nownership. Intake staff may create walk-in submissions for another\nsubmitter. A unique case code is allocated atomically at creation.\n\n\nExpected documented status codes: 201, 400, 401, 403, 500"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([201, 400, 401, 403, 500]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.id) pm.environment.set('submissionId', data.id);",
+                  "  if (data.code) pm.environment.set('submissionCode', data.code);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /submissions (walk-in for Submitter)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/submissions",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"category\": \"student\",\n  \"title\": \"Postman walk-in test innovation\",\n  \"purpose\": \"Validate a Receptionist-created draft owned by a Submitter.\",\n  \"problemAddressed\": \"The walk-in workflow needs an end-to-end test.\",\n  \"submitterId\": \"{{submitterSubject}}\",\n  \"submitterEmail\": \"{{submitterSubject}}\",\n  \"studentNumber\": \"TEST-0002\",\n  \"programme\": \"Engineering\",\n  \"supervisor\": \"Test Supervisor\",\n  \"recommendationLetterStatus\": \"submitted\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create a walk-in draft for the Submitter account\n\nRun as Receptionist after creating the account with POST /admin/users (Submitter). submitterSubject is used as both the submitter identity and notification email.\n\nExpected documented status codes: 201, 400, 401, 403, 500"
           },
           "response": [],
           "event": [
@@ -299,7 +383,7 @@
             "method": "POST",
             "header": [],
             "url": "{{baseUrl}}/submissions/{{submissionId}}/register",
-            "description": "Register a submission as received\n\nAvailable to Administrator, Innovation Coordinator, Receptionist, and\nFact-Finding Officer. Preserves the code assigned at creation (and\nassigns a code only for legacy drafts created before tracking-at-create).\nStudent number, programme, supervisor, and recommendation-letter status must be present for\nstudent submissions. A submission can be registered only once.\n\n\nExpected documented status codes: 200, 400, 401, 403"
+            "description": "Register a submission as received\n\nAvailable to Administrator, Innovation Coordinator, Receptionist, and\nFact-Finding Officer. Preserves the code assigned at creation.\nStudent number, programme, supervisor, and recommendation-letter status must be present for\nstudent submissions. A submission can be registered only once; repeating registration returns 409.\n\n\nExpected documented status codes: 200, 400, 401, 403, 409"
           },
           "response": [],
           "event": [
@@ -309,7 +393,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status is documented for this endpoint', function () {",
-                  "  pm.expect([200, 400, 401, 403]).to.include(pm.response.code);",
+                  "  pm.expect([200, 400, 401, 403, 409]).to.include(pm.response.code);",
                   "});",
                   "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
                   "  const data = pm.response.json();",
