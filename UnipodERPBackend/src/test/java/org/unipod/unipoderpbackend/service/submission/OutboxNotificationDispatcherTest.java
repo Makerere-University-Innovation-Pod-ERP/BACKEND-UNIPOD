@@ -11,6 +11,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import tools.jackson.databind.ObjectMapper;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
@@ -48,8 +49,8 @@ class OutboxNotificationDispatcherTest {
                           "submissionTitle": "Irrigation monitor"
                         }
                         """,
-                        1,
-                        UUID.randomUUID()
+                1,
+                UUID.randomUUID()
         ));
 
         var message = org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
@@ -61,6 +62,30 @@ class OutboxNotificationDispatcherTest {
                 eq((Object) eventId),
                 any(Object.class)
         );
+    }
+
+    @Test
+    void notifiesSubmitterWhenReceptionRequestsMoreInformation() {
+        dispatcher.dispatch(new OutboxNotificationDispatcher.OutboxMessage(
+                eventId,
+                "submission.information_requested",
+                """
+                        {
+                          "notificationEmail": "submitter@example.invalid",
+                          "caseCode": "GEN-2026-000001",
+                          "requestedBy": "receptionist-1",
+                          "note": "Please attach a project brief."
+                        }
+                        """,
+                1,
+                UUID.randomUUID()
+        ));
+
+        var message = org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(message.capture());
+        assertEquals("submitter@example.invalid", message.getValue().getTo()[0]);
+        assertEquals("More information needed for submission GEN-2026-000001", message.getValue().getSubject());
+        assertTrue(message.getValue().getText().contains("Please attach a project brief."));
     }
 
     @Test
@@ -79,8 +104,8 @@ class OutboxNotificationDispatcherTest {
                           "submissionTitle": "Irrigation monitor"
                         }
                         """,
-                        1,
-                        UUID.randomUUID()
+                1,
+                UUID.randomUUID()
         ));
 
         var retryArguments = org.mockito.ArgumentCaptor.forClass(Object[].class);

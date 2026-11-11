@@ -38,15 +38,19 @@ The Waluube API contract is documented in [`openapi.yaml`](./openapi.yaml).
 
 ### Submission Creation and Registration
 
-* `POST /api/submissions` creates a draft submission.
-* `POST /api/submissions/{id}/register` records receipt, creates the case-stage history entry, and allocates an immutable case code.
+* `POST /api/submissions` creates a draft and atomically assigns its immutable tracking reference.
+* Submitters may create submissions for themselves. Their identity comes from the authenticated principal, not the request body. Intake staff may create a walk-in submission for a separate submitter.
+* `PUT /api/submissions/{id}` updates a draft. Submitters may update only their own drafts; intake staff may update drafts they manage.
+* `POST /api/submissions/{id}/register` records receipt and adds the stage-history entry while preserving the original tracking reference.
+* `POST /api/submissions/{id}/forward` can register and forward a draft to a department in one transaction, or forward an already received submission.
+* Intake staff can use `POST /api/submissions/{id}/request-information` to attach a note to a draft and enqueue a notification. Updating the draft clears the outstanding request.
 
 Case codes follow these formats:
 
 * Student submissions: `STU-{year}-{sequence}`
 * General-public submissions: `GEN-{year}-{sequence}`
 
-Sequence allocation is transactional and safe for concurrent registrations.
+Sequence allocation is transactional and safe for concurrent submissions sharing a category and year.
 
 Student drafts may be saved before all student details are available. However, registration requires:
 
@@ -67,9 +71,10 @@ The API rejects skipped and backward transitions.
 
 Forwarding a case:
 
-1. Assigns an active sector from the catalog.
-2. Records the stage history.
-3. Inserts a `submission.forwarded` record, including the sector's notification
+1. For a draft, validates required student evidence and registers it as received.
+2. Assigns an active sector from the catalog.
+3. Records each stage-history change.
+4. Inserts a `submission.forwarded` record, including the sector's notification
    address, into `notification_outbox`.
 
 These operations happen within the same database transaction.
@@ -85,6 +90,10 @@ Delivery attempts are capped at ten. Events that continue to fail are moved to
 the dead-letter state for operator review. V6 retires pre-existing forwarded
 events that lack the sector recipient fields required by the SMTP worker,
 rather than retrying them indefinitely.
+
+Information requests are stored on the draft and written to the same outbox.
+Waluube HTTP requests, including denied requests, are recorded in
+`audit_events`.
 
 ### Reception Queue
 
@@ -109,11 +118,13 @@ This endpoint returns paginated drafts and queue counters:
 | GET    | `/api/me/capabilities`               | Returns submitter registration guidance and locked modules. |
 | GET    | `/api/sectors/filter-options`        | Returns sector IDs and names to authorized submission readers. |
 | GET    | `/api/submissions/{id}`            | Returns a submission, documents, and stage history.     |
-| POST   | `/api/submissions`                 | Creates a draft submission.                             |
-| POST   | `/api/submissions/{id}/register`   | Registers a submission and generates its case code.     |
-| POST   | `/api/submissions/{id}/forward`    | Forwards a submission to a sector.                      |
+| POST   | `/api/submissions`                 | Creates a draft and assigns its tracking reference.     |
+| PUT    | `/api/submissions/{id}`            | Updates an owned draft and clears an information request. |
+| POST   | `/api/submissions/{id}/register`   | Registers a draft as received without changing its code. |
+| POST   | `/api/submissions/{id}/request-information` | Requests missing information and enqueues a notification. |
+| POST   | `/api/submissions/{id}/forward`    | Registers a draft if needed, then forwards it to a sector. |
 | POST   | `/api/submissions/{id}/transition` | Advances a submission to the next lifecycle stage.      |
-| POST   | `/api/submissions/{id}/documents`  | Adds document metadata.                                 |
+| POST   | `/api/submissions/{id}/documents`  | Adds typed document metadata.                           |
 | GET    | `/api/queues/reception`            | Returns the reception queue and counters.               |
 | GET    | `/api/dashboard/overview`          | Returns dashboard statistics.                           |
 
@@ -328,6 +339,8 @@ Intake creation and lifecycle operations are restricted to:
 * `INNOVATION_COORDINATOR`
 * `RECEPTIONIST`
 * `FACT_FINDING_OFFICER`
+* `SUBMITTER` (can submit and update its own draft but cannot perform reception
+  registration or forwarding)
 
 Submission list and global search additionally support:
 
@@ -583,7 +596,10 @@ The API must not expose sensitive implementation details to clients.
 
 ## Testing the API with Postman
 
-Follow these steps to test the submission workflow.
+For the endpoint-by-endpoint checklist and importable Postman collection
+covering every OpenAPI operation, see [`POSTMAN_TESTING.md`](./POSTMAN_TESTING.md).
+The collection and local/Render environment templates are in
+[`postman/`](./postman/).
 
 ### 1. Start PostgreSQL and the Backend
 
@@ -617,9 +633,11 @@ On Linux/macOS:
 ./mvnw spring-boot:run
 ```
 
-### 2. Obtain an Access Token
+### 2. Obtain a Bearer Access Token
 
-Obtain an access token from the configured identity provider.
+The backend issues a short-lived access token from `POST /api/auth/login`.
+Use credentials for an existing provisioned account; public account
+registration is disabled. Login returns `accessToken` and `expiresAt`.
 
 The authenticated user must have one of the following roles:
 
@@ -628,7 +646,12 @@ The authenticated user must have one of the following roles:
 * `RECEPTIONIST`
 * `FACT_FINDING_OFFICER`
 
-Do not put real access tokens or database credentials in the repository or a shared Postman collection.
+Submitters can also authenticate. They may create a submission for themselves,
+update their own drafts, and add submitted document metadata; they cannot
+register or forward cases.
+
+Do not put real access tokens or account passwords in the repository, a
+collection, or a shared Postman environment.
 
 ### 3. Configure Postman
 
@@ -640,12 +663,7 @@ Create a Postman environment containing the following variables:
 | `accessToken`  | Your valid access token                 |
 | `submissionId` | ID returned when creating a submission. |
 
-For protected requests:
-
-1. Open the Authorization tab.
-2. Select the built-in Bearer Token authorization option.
-3. Enter `{{accessToken}}` as the token.
-4. Ensure the request uses `Content-Type: application/json` when sending JSON.
+For protected requests, the collection uses the access token obtained by its login request. Log in again when it expires. Ensure JSON requests use `Content-Type: application/json`.
 
 ### 4. Create a Student Draft
 
@@ -683,9 +701,10 @@ Save the returned submission `id` in the Postman environment as:
 
 `submissionId`
 
-### 5. Register the Submission
+### 5. Register and Forward the Submission
 
-Send:
+The submission response already contains a tracking code. Reception may record
+receipt explicitly:
 
 `POST {{baseUrl}}/submissions/{{submissionId}}/register`
 
@@ -699,11 +718,15 @@ The response should contain:
 
 * The registered submission.
 * Stage: `RECEIVED`.
-* A generated case code.
+* The same tracking code that was assigned when the draft was created.
 
 Repeating this registration request should return:
 
 `409 Conflict`
+
+Reception can instead use `POST {{baseUrl}}/submissions/{{submissionId}}/forward`
+with `{"sectorId":"<active-sector-uuid>"}` to register and forward a draft in
+one transaction.
 
 ### 6. Verify Error Handling
 
@@ -741,10 +764,10 @@ On Linux/macOS:
 
 Database-backed integration tests require:
 
-* A reachable PostgreSQL database.
+* A reachable, dedicated local test PostgreSQL database. The test suite runs Flyway migrations and writes test records; never point it at Render or another production database.
 * A correctly configured database URL.
 * Valid database credentials.
-* The required database schema and migrations.
+* Set `JDBC_DATABASE_URL`, `DB_USER`, and `DATABASE_PASSWORD` to that test database before running tests.
 
 Ensure PostgreSQL is running and the required environment variables are configured before executing the integration tests.
 

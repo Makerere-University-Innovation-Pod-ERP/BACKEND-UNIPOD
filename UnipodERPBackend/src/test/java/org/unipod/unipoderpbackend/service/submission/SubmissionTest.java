@@ -2,6 +2,8 @@ package org.unipod.unipoderpbackend.service.submission;
 
 import org.unipod.unipoderpbackend.exception.submission.InvalidSubmissionException;
 import org.unipod.unipoderpbackend.exception.submission.SubmissionConflictException;
+import org.springframework.security.access.AccessDeniedException;
+import org.unipod.unipoderpbackend.model.submission.DocumentStatus;
 import org.unipod.unipoderpbackend.model.submission.Submission;
 import org.unipod.unipoderpbackend.model.submission.SubmissionCategory;
 import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
@@ -12,6 +14,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class SubmissionTest {
@@ -60,6 +63,81 @@ class SubmissionTest {
         assertEquals(SubmissionStage.RECEIVED, submission.getStage());
         assertEquals(receivedAt, submission.getReceivedAt());
         assertEquals("staff-2", submission.getReceivingOfficer());
+    }
+
+    @Test
+    void registrationKeepsTrackingReferenceAndClearsInformationRequest() {
+        Instant createdAt = Instant.parse("2026-11-04T00:00:00Z");
+        Instant requestedAt = Instant.parse("2026-11-04T01:00:00Z");
+        Submission submission = new Submission(
+                UUID.randomUUID(),
+                SubmissionCategory.GENERAL,
+                "Public idea",
+                "Improve access",
+                "Current access is limited",
+                "submitter@example.test",
+                "submitter@example.test",
+                null,
+                null,
+                null,
+                null,
+                createdAt
+        );
+        submission.assignTrackingReference("GEN-2026-000001");
+        submission.requestInformation("Please attach a brief.", "receptionist-1", requestedAt);
+
+        submission.register("GEN-2026-000001", requestedAt.plusSeconds(60), "receptionist-1");
+
+        assertEquals("GEN-2026-000001", submission.getCode());
+        assertEquals(SubmissionStage.RECEIVED, submission.getStage());
+        assertNull(submission.getInformationRequestedNote());
+        assertNull(submission.getInformationRequestedBy());
+        assertNull(submission.getInformationRequestedAt());
+    }
+
+    @Test
+    void draftUpdateClearsAnOutstandingInformationRequest() {
+        Instant createdAt = Instant.parse("2026-11-04T00:00:00Z");
+        Instant updatedAt = Instant.parse("2026-11-04T02:00:00Z");
+        Submission submission = new Submission(
+                UUID.randomUUID(),
+                SubmissionCategory.GENERAL,
+                "Public idea",
+                "Improve access",
+                "Current access is limited",
+                "submitter@example.test",
+                "submitter@example.test",
+                null,
+                null,
+                null,
+                null,
+                createdAt
+        );
+        submission.requestInformation("Please attach a brief.", "receptionist-1", createdAt.plusSeconds(60));
+
+        submission.updateDraft(
+                "Updated idea",
+                "Improve access",
+                "Current access is limited",
+                null,
+                null,
+                null,
+                null,
+                updatedAt
+        );
+
+        assertEquals("Updated idea", submission.getTitle());
+        assertNull(submission.getInformationRequestedNote());
+        assertNull(submission.getInformationRequestedAt());
+    }
+
+    @Test
+    void submittersCannotMarkDocumentsAsVerified() {
+        assertThrows(
+                AccessDeniedException.class,
+                () -> SubmissionService.requireSubmitterDocumentStatus(DocumentStatus.VERIFIED, true)
+        );
+        SubmissionService.requireSubmitterDocumentStatus(DocumentStatus.SUBMITTED, true);
     }
 
     @Test

@@ -33,7 +33,7 @@ public class OutboxNotificationDispatcher {
             WITH candidate AS (
                 SELECT id
                 FROM notification_outbox
-                WHERE event_type = 'submission.forwarded'
+                WHERE event_type IN ('submission.forwarded', 'submission.information_requested')
                     AND published_at IS NULL
                     AND (locked_until IS NULL OR locked_until <= CURRENT_TIMESTAMP)
                     AND dead_lettered_at IS NULL
@@ -48,7 +48,8 @@ public class OutboxNotificationDispatcher {
                 locked_by = CAST(? AS uuid)
             FROM candidate
             WHERE event.id = candidate.id
-            RETURNING event.id, event.payload::text AS payload, event.attempt_count, event.locked_by
+            RETURNING event.id, event.event_type, event.payload::text AS payload,
+                event.attempt_count, event.locked_by
             """;
 
     private final JdbcTemplate jdbcTemplate;
@@ -102,20 +103,38 @@ public class OutboxNotificationDispatcher {
         try {
             JsonNode payload = objectMapper.readTree(event.payload());
             String recipient = required(payload, "notificationEmail");
-            String sectorName = required(payload, "sectorName");
             String caseCode = required(payload, "caseCode");
-            String title = required(payload, "submissionTitle");
+            if (!isValidAddress(recipient)) {
+                throw new IllegalArgumentException("Notification recipient is not a valid email address.");
+            }
 
             message = new SimpleMailMessage();
             message.setFrom(fromAddress);
             message.setTo(recipient);
-            message.setSubject("Submission " + caseCode + " forwarded to " + safeHeader(sectorName));
-            message.setText("""
-                    A submission has been forwarded to your sector.
+            if ("submission.forwarded".equals(event.eventType())) {
+                String sectorName = required(payload, "sectorName");
+                String title = required(payload, "submissionTitle");
+                message.setSubject("Submission " + caseCode + " forwarded to " + safeHeader(sectorName));
+                message.setText("""
+                        A submission has been forwarded to your sector.
 
-                    Case code: %s
-                    Title: %s
-                    """.formatted(caseCode, title));
+                        Case code: %s
+                        Title: %s
+                        """.formatted(caseCode, title));
+            } else if ("submission.information_requested".equals(event.eventType())) {
+                String note = required(payload, "note");
+                String requestedBy = required(payload, "requestedBy");
+                message.setSubject("More information needed for submission " + caseCode);
+                message.setText("""
+                        Reception needs more information to continue reviewing your submission.
+
+                        Case code: %s
+                        Requested by: %s
+                        Details: %s
+                        """.formatted(caseCode, safeHeader(requestedBy), note));
+            } else {
+                throw new IllegalArgumentException("Unsupported notification event type.");
+            }
         } catch (JacksonException | IllegalArgumentException exception) {
             retry(event, exception);
             return;
@@ -169,6 +188,7 @@ public class OutboxNotificationDispatcher {
     private static OutboxMessage mapMessage(ResultSet result) throws SQLException {
         return new OutboxMessage(
                 result.getObject("id", UUID.class),
+                result.getString("event_type"),
                 result.getString("payload"),
                 result.getInt("attempt_count"),
                 result.getObject("locked_by", UUID.class)
@@ -197,6 +217,9 @@ public class OutboxNotificationDispatcher {
         }
     }
 
-    record OutboxMessage(UUID id, String payload, int attemptCount, UUID claimToken) {
+    record OutboxMessage(UUID id, String eventType, String payload, int attemptCount, UUID claimToken) {
+        OutboxMessage(UUID id, String payload, int attemptCount, UUID claimToken) {
+            this(id, "submission.forwarded", payload, attemptCount, claimToken);
+        }
     }
 }

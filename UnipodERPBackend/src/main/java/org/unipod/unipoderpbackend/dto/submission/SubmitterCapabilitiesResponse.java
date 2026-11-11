@@ -17,12 +17,20 @@ public record SubmitterCapabilitiesResponse(
                          "ROLE_FACT_FINDING_OFFICER" -> true;
                     default -> false;
                 });
+        boolean isSubmitter = hasSubmitterRole(authentication);
         return new SubmitterCapabilitiesResponse(
                 canRegister,
-                canRegister
-                        ? "Your intake role can register a submission."
-                        : "Only authorized intake roles can register a submission.",
+                isSubmitter && !canRegister
+                        ? "You can submit a brief for reception review. Only authorized intake roles can register a submission."
+                        : canRegister
+                                ? "Your intake role can register a submission."
+                                : "Only authorized intake roles can register a submission.",
                 List.of("Reception", "Reviews", "Facilities", "Finance", "Sectors", "Dashboard")
         );
+    }
+
+    private static boolean hasSubmitterRole(Authentication authentication) {
+        return authentication.getAuthorities().stream()
+                .anyMatch(authority -> authority.getAuthority().equals("ROLE_SUBMITTER"));
     }
 }

@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -19,6 +20,7 @@ import org.unipod.unipoderpbackend.exception.submission.InvalidSubmissionExcepti
 import org.unipod.unipoderpbackend.exception.submission.SubmissionConflictException;
 import org.unipod.unipoderpbackend.exception.submission.SubmissionNotFoundException;
 import org.unipod.unipoderpbackend.model.submission.DocumentStatus;
+import org.unipod.unipoderpbackend.model.submission.DocumentType;
 import org.unipod.unipoderpbackend.model.submission.Submission;
 import org.unipod.unipoderpbackend.model.submission.SubmissionDocument;
 import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
@@ -65,17 +67,31 @@ public class UploadedDocumentService {
             MultipartFile file,
             String actor
     ) {
+        return upload(submissionId, name, DocumentType.OTHER, status, file, actor, false);
+    }
+
+    public DocumentResponse upload(
+            UUID submissionId,
+            String name,
+            DocumentType documentType,
+            DocumentStatus status,
+            MultipartFile file,
+            String actor,
+            boolean submitter
+    ) {
         if (file == null || file.isEmpty() || file.getSize() > maxFileSize) {
             throw new InvalidSubmissionException("The uploaded file is empty or exceeds the allowed size.");
         }
         String documentName = name == null ? "" : name.trim();
-        if (documentName.isEmpty() || documentName.length() > 255 || status == null) {
+        if (documentName.isEmpty() || documentName.length() > 255 || documentType == null || status == null) {
             throw new InvalidSubmissionException("Document details are invalid.");
         }
+        SubmissionService.requireSubmitterDocumentStatus(status, submitter);
         String originalFilename = safeFilename(file.getOriginalFilename(), documentName);
         transaction.execute(statusTransaction -> {
             Submission submission = submissions.findByIdForUpdate(submissionId)
                     .orElseThrow(() -> new SubmissionNotFoundException(submissionId));
+            requireSubmitterOwnership(submission, actor, submitter);
             if (submission.getStage() == SubmissionStage.COMPLETED) {
                 throw new SubmissionConflictException("The submission cannot be changed in its current state.");
             }
@@ -94,12 +110,14 @@ public class UploadedDocumentService {
             SubmissionDocument document = transaction.execute(statusTransaction -> {
                 Submission submission = submissions.findByIdForUpdate(submissionId)
                         .orElseThrow(() -> new SubmissionNotFoundException(submissionId));
+                requireSubmitterOwnership(submission, actor, submitter);
                 Instant now = clock.instant();
                 submission.touch(now);
                 return documents.saveAndFlush(new SubmissionDocument(
                         UUID.randomUUID(),
                         submissionId,
                         documentName,
+                        documentType,
                         status,
                         reference,
                         contentType,
@@ -151,6 +169,17 @@ public class UploadedDocumentService {
             return fallback;
         }
         return filename.length() <= 255 ? filename : filename.substring(0, 255);
+    }
+
+    private static void requireSubmitterOwnership(Submission submission, String actor, boolean submitter) {
+        if (submitter) {
+            if (!submission.getSubmitterId().equals(actor)) {
+                throw new AccessDeniedException("Submitters may only upload documents to their own submissions.");
+            }
+            if (submission.getStage() != SubmissionStage.DRAFT) {
+                throw new AccessDeniedException("Submitters may only upload documents while their submission is a draft.");
+            }
+        }
     }
 
     public record DownloadedDocument(SubmissionDocument document, java.io.InputStream content) {

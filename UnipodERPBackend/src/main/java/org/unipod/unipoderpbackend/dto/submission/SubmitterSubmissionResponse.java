@@ -21,6 +21,8 @@ public record SubmitterSubmissionResponse(
         SubmissionStage stage,
         Instant receivedAt,
         Instant forwardedAt,
+        String informationRequestedNote,
+        Instant informationRequestedAt,
         Instant createdAt,
         Instant updatedAt
 ) {
@@ -39,6 +41,8 @@ public record SubmitterSubmissionResponse(
                 submission.getStage(),
                 submission.getReceivedAt(),
                 submission.getForwardedAt(),
+                submission.getInformationRequestedNote(),
+                submission.getInformationRequestedAt(),
                 submission.getCreatedAt(),
                 submission.getUpdatedAt()
         );

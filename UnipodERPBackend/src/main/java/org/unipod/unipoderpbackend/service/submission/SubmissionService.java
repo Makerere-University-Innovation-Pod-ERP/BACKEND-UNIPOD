@@ -20,10 +20,14 @@ import org.unipod.unipoderpbackend.dto.submission.CreateSubmissionRequest;
 import org.unipod.unipoderpbackend.dto.submission.DocumentResponse;
 import org.unipod.unipoderpbackend.dto.submission.SubmissionResponse;
 import org.unipod.unipoderpbackend.dto.submission.SubmitterSubmissionResponse;
+import org.unipod.unipoderpbackend.dto.submission.RequestInformationRequest;
 import org.unipod.unipoderpbackend.exception.submission.InvalidSubmissionException;
 import org.unipod.unipoderpbackend.exception.submission.SubmissionNotFoundException;
+import org.springframework.security.access.AccessDeniedException;
 import org.unipod.unipoderpbackend.model.sector.Sector;
 import org.unipod.unipoderpbackend.model.submission.CaseStageHistory;
+import org.unipod.unipoderpbackend.model.submission.DocumentStatus;
+import org.unipod.unipoderpbackend.model.submission.RecommendationLetterStatus;
 import org.unipod.unipoderpbackend.model.submission.Submission;
 import org.unipod.unipoderpbackend.model.submission.SubmissionCategory;
 import org.unipod.unipoderpbackend.model.submission.SubmissionDocument;
@@ -72,6 +76,12 @@ public class SubmissionService {
 
     @Transactional
     public SubmissionResponse create(CreateSubmissionRequest request, String actor) {
+        return create(request, actor, false);
+    }
+
+    @Transactional
+    public SubmissionResponse create(CreateSubmissionRequest request, String actor, boolean submitter) {
+        requireSubmitterRecommendationStatus(request, submitter);
         if (request.category() == SubmissionCategory.GENERAL && hasStudentDetails(request)) {
             throw new InvalidSubmissionException(
                     "Student-specific details may only be provided for student submissions."
@@ -86,7 +96,7 @@ public class SubmissionService {
                 request.purpose().trim(),
                 request.problemAddressed().trim(),
                 actor,
-                request.submitterId() == null || request.submitterId().isBlank()
+                submitter || request.submitterId() == null || request.submitterId().isBlank()
                         ? actor
                         : request.submitterId().trim(),
                 clean(request.studentNumber()),
@@ -95,6 +105,10 @@ public class SubmissionService {
                 request.recommendationLetterStatus(),
                 now
         );
+        submission.assignTrackingReference(caseCodeGenerator.next(
+                request.category(),
+                caseYear(now)
+        ));
         submissions.save(submission);
         stageHistory.save(new CaseStageHistory(
                 UUID.randomUUID(),
@@ -108,13 +122,43 @@ public class SubmissionService {
     }
 
     @Transactional
+    public SubmissionResponse updateDraft(UUID id, CreateSubmissionRequest request, String actor, boolean submitter) {
+        requireSubmitterRecommendationStatus(request, submitter);
+        if (request.category() == SubmissionCategory.GENERAL && hasStudentDetails(request)) {
+            throw new InvalidSubmissionException(
+                    "Student-specific details may only be provided for student submissions."
+            );
+        }
+        Submission submission = submissions.findByIdForUpdate(id)
+                .orElseThrow(() -> new SubmissionNotFoundException(id));
+        requireSubmitterOwnership(submission, actor, submitter);
+        if (submission.getCategory() != request.category()) {
+            throw new InvalidSubmissionException("The submission category cannot be changed after creation.");
+        }
+        submission.updateDraft(
+                request.title().trim(),
+                request.purpose().trim(),
+                request.problemAddressed().trim(),
+                clean(request.studentNumber()),
+                clean(request.programme()),
+                clean(request.supervisor()),
+                request.recommendationLetterStatus(),
+                clock.instant()
+        );
+        submissions.flush();
+        return SubmissionResponse.from(submission);
+    }
+
+    @Transactional
     public SubmissionResponse register(UUID id, String actor) {
         Submission submission = submissions.findByIdForUpdate(id)
                 .orElseThrow(() -> new SubmissionNotFoundException(id));
         Instant receivedAt = clock.instant();
         SubmissionStage previousStage = submission.getStage();
         int year = caseYear(receivedAt);
-        String code = caseCodeGenerator.next(submission.getCategory(), year);
+        String code = submission.getCode() == null
+                ? caseCodeGenerator.next(submission.getCategory(), year)
+                : submission.getCode();
         submission.register(code, receivedAt, actor);
         stageHistory.save(new CaseStageHistory(
                 UUID.randomUUID(),
@@ -134,6 +178,21 @@ public class SubmissionService {
                 .orElseThrow(() -> new SubmissionNotFoundException(id));
         Sector sector = sectorsCatalog.requireActive(sectorId);
         Instant now = clock.instant();
+        if (submission.getStage() == SubmissionStage.DRAFT) {
+            SubmissionStage draftStage = submission.getStage();
+            String code = submission.getCode() == null
+                    ? caseCodeGenerator.next(submission.getCategory(), caseYear(now))
+                    : submission.getCode();
+            submission.register(code, now, actor);
+            stageHistory.save(new CaseStageHistory(
+                    UUID.randomUUID(),
+                    submission.getId(),
+                    draftStage,
+                    SubmissionStage.RECEIVED,
+                    actor,
+                    now
+            ));
+        }
         SubmissionStage previousStage = submission.getStage();
         submission.forward(sector, now);
         stageHistory.save(new CaseStageHistory(
@@ -159,6 +218,34 @@ public class SubmissionService {
     }
 
     @Transactional
+    public SubmissionResponse requestInformation(UUID id, RequestInformationRequest request, String actor) {
+        Submission submission = submissions.findByIdForUpdate(id)
+                .orElseThrow(() -> new SubmissionNotFoundException(id));
+        Instant now = clock.instant();
+        String note = request.note().trim();
+        submission.requestInformation(note, actor, now);
+        stageHistory.save(new CaseStageHistory(
+                UUID.randomUUID(),
+                submission.getId(),
+                SubmissionStage.DRAFT,
+                SubmissionStage.DRAFT,
+                actor,
+                note,
+                now
+        ));
+        notificationOutbox.recordInformationRequested(
+                submission.getId(),
+                submission.getCode(),
+                submission.getSubmitterId(),
+                note,
+                actor,
+                now
+        );
+        submissions.flush();
+        return SubmissionResponse.from(submission);
+    }
+
+    @Transactional
     public SubmissionResponse advance(UUID id, SubmissionStage targetStage, String actor) {
         Submission submission = submissions.findByIdForUpdate(id)
                 .orElseThrow(() -> new SubmissionNotFoundException(id));
@@ -179,8 +266,15 @@ public class SubmissionService {
 
     @Transactional
     public DocumentResponse addDocument(UUID id, CreateDocumentRequest request, String actor) {
+        return addDocument(id, request, actor, false);
+    }
+
+    @Transactional
+    public DocumentResponse addDocument(UUID id, CreateDocumentRequest request, String actor, boolean submitter) {
+        requireSubmitterDocumentStatus(request.status(), submitter);
         Submission submission = submissions.findByIdForUpdate(id)
                 .orElseThrow(() -> new SubmissionNotFoundException(id));
+        requireSubmitterOwnership(submission, actor, submitter);
         String fileReference = clean(request.fileReference());
         if (fileReference != null && !fileReference.matches("[A-Za-z0-9_-]{1,256}")) {
             throw new InvalidSubmissionException("The file reference is invalid.");
@@ -191,8 +285,12 @@ public class SubmissionService {
                 UUID.randomUUID(),
                 id,
                 request.name().trim(),
+                request.documentType(),
                 request.status(),
                 fileReference,
+                null,
+                null,
+                null,
                 actor,
                 now
         ));
@@ -330,6 +428,32 @@ public class SubmissionService {
                 || clean(request.programme()) != null
                 || clean(request.supervisor()) != null
                 || request.recommendationLetterStatus() != null;
+    }
+
+    private static void requireSubmitterOwnership(Submission submission, String actor, boolean submitter) {
+        if (submitter) {
+            if (!submission.getSubmitterId().equals(actor)) {
+                throw new AccessDeniedException("Submitters may only update their own submissions.");
+            }
+            if (submission.getStage() != SubmissionStage.DRAFT) {
+                throw new AccessDeniedException("Submitters may only update documents while their submission is a draft.");
+            }
+        }
+    }
+
+    private static void requireSubmitterRecommendationStatus(
+            CreateSubmissionRequest request,
+            boolean submitter
+    ) {
+        if (submitter && request.recommendationLetterStatus() == RecommendationLetterStatus.VERIFIED) {
+            throw new AccessDeniedException("Submitters cannot mark a recommendation letter as verified.");
+        }
+    }
+
+    static void requireSubmitterDocumentStatus(DocumentStatus status, boolean submitter) {
+        if (submitter && status != DocumentStatus.SUBMITTED) {
+            throw new AccessDeniedException("Submitters may only mark documents as submitted.");
+        }
     }
 
     private static String clean(String value) {

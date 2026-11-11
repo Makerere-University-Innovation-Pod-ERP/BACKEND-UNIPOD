@@ -3,10 +3,11 @@ info:
   title: Makerere Innovation Hub ERP API
   version: 1.0.0
   description: |
-    Waluube intake and case workflow contract. A submission is first saved as a
-    draft, registered as received, assigned to a sector, and advanced through
-    the pipeline. Student evidence is conditionally required at registration;
-    general-public cases must not include student-specific fields.
+    Waluube intake and case workflow contract. A submission receives its
+    tracking reference when it is created, remains a draft while information
+    is being completed, and can be registered and forwarded to a sector.
+    Student evidence is required before registration; general-public cases
+    must not include student-specific fields.
 servers:
   - url: https://backend-unipod.onrender.com/api
     description: Production API on Render
@@ -91,9 +92,11 @@ paths:
       operationId: createSubmission
       summary: Create an intake draft
       description: |
-        Available to Administrator, Innovation Coordinator, Receptionist, and
-        Fact-Finding Officer. The authenticated principal is recorded as
-        registeredBy. This operation does not allocate a case code.
+        Available to Administrator, Innovation Coordinator, Receptionist,
+        Fact-Finding Officer, and Submitter. A Submitter's identity is taken
+        from the authenticated principal; a supplied submitterId cannot change
+        ownership. Intake staff may create walk-in submissions for another
+        submitter. A unique case code is allocated atomically at creation.
       security:
         - bearerAuth: []
       requestBody:
@@ -262,9 +265,9 @@ paths:
       summary: Register a submission as received
       description: |
         Available to Administrator, Innovation Coordinator, Receptionist, and
-        Fact-Finding Officer. Allocates a unique STU-{year}-{sequence} or
-        GEN-{year}-{sequence} code atomically. Student number, programme,
-        supervisor, and recommendation-letter status must be present for
+        Fact-Finding Officer. Preserves the code assigned at creation (and
+        assigns a code only for legacy drafts created before tracking-at-create).
+        Student number, programme, supervisor, and recommendation-letter status must be present for
         student submissions. A submission can be registered only once.
       security:
         - bearerAuth: []
@@ -283,6 +286,39 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /submissions/{id}/request-information:
+    post:
+      tags: [Submissions]
+      operationId: requestSubmissionInformation
+      summary: Ask a submitter to complete or correct a draft
+      description: Intake roles can attach a required-information note to a draft. The change and notification outbox event are committed together.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestInformationRequest'
+      responses:
+        '200':
+          description: Draft with the information request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /submissions/{id}/reviewer:
     put:
       tags: [Submissions]
@@ -305,8 +341,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Submission'
-        '404':
-          $ref: '#/components/responses/NotFound'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -339,6 +373,38 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Submissions]
+      operationId: updateSubmissionDraft
+      summary: Update an owned draft
+      description: Submitters can update only their own drafts; intake roles can update drafts they manage. Updating a draft clears its outstanding information request. The tracking reference and submitter ownership remain unchanged.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSubmissionRequest'
+      responses:
+        '200':
+          description: Updated draft
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /cases/{id}:
     get:
       tags: [Case Files]
@@ -492,8 +558,10 @@ paths:
     post:
       tags: [Submissions]
       operationId: forwardSubmission
-      summary: Assign a received submission to a sector
-      description: Stores the sector UUID as an opaque reference and writes a durable submission.forwarded outbox event in the same transaction. Notification delivery requires a downstream worker.
+      summary: Register and forward a draft, or forward a received submission
+      description: A draft is registered and forwarded in one transaction. Stores the sector assignment, stage history, and durable submission.forwarded outbox event in the same transaction.
+      security:
+        - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/SubmissionId'
       requestBody:
@@ -1043,6 +1111,15 @@ components:
                 - required: [programme]
                 - required: [supervisor]
                 - required: [recommendationLetterStatus]
+    RequestInformationRequest:
+      type: object
+      additionalProperties: false
+      required: [note]
+      properties:
+        note:
+          type: string
+          minLength: 1
+          maxLength: 2000
     RecommendationLetterStatus:
       type: string
       enum: [verified, submitted, one_file, not_required]
@@ -1058,6 +1135,9 @@ components:
     DocumentStatus:
       type: string
       enum: [VERIFIED, SUBMITTED, ONE_FILE, NOT_REQUIRED]
+    DocumentType:
+      type: string
+      enum: [PROJECT_BRIEF, RECOMMENDATION_LETTER, SUPPORTING_EVIDENCE, OTHER]
     ForwardSubmissionRequest:
       type: object
       additionalProperties: false
@@ -1083,6 +1163,8 @@ components:
           type: string
           minLength: 1
           maxLength: 255
+        documentType:
+          $ref: '#/components/schemas/DocumentType'
         status:
           $ref: '#/components/schemas/DocumentStatus'
         fileReference:
@@ -1091,7 +1173,7 @@ components:
           pattern: '^[A-Za-z0-9_-]+$'
     SubmissionDocument:
       type: object
-      required: [id, submissionId, name, status, createdBy, createdAt]
+      required: [id, submissionId, name, documentType, status, createdBy, createdAt]
       properties:
         id:
           type: string
@@ -1101,6 +1183,8 @@ components:
           format: uuid
         name:
           type: string
+        documentType:
+          $ref: '#/components/schemas/DocumentType'
         status:
           $ref: '#/components/schemas/DocumentStatus'
         fileReference:
@@ -1467,6 +1551,8 @@ components:
       properties:
         status:
           $ref: '#/components/schemas/DocumentStatus'
+        documentType:
+          $ref: '#/components/schemas/DocumentType'
         version:
           type: integer
           format: int64
@@ -1663,6 +1749,13 @@ components:
           type: [string, 'null']
           format: date-time
         forwardedAt:
+          type: [string, 'null']
+          format: date-time
+        informationRequestedNote:
+          type: [string, 'null']
+        informationRequestedBy:
+          type: [string, 'null']
+        informationRequestedAt:
           type: [string, 'null']
           format: date-time
         createdAt:

@@ -27,6 +27,9 @@ public record SubmissionResponse(
         SubmissionStage stage,
         Instant receivedAt,
         Instant forwardedAt,
+        String informationRequestedNote,
+        String informationRequestedBy,
+        Instant informationRequestedAt,
         Instant createdAt,
         Instant updatedAt,
         Long version
@@ -52,6 +55,9 @@ public record SubmissionResponse(
                 submission.getStage(),
                 submission.getReceivedAt(),
                 submission.getForwardedAt(),
+                submission.getInformationRequestedNote(),
+                submission.getInformationRequestedBy(),
+                submission.getInformationRequestedAt(),
                 submission.getCreatedAt(),
                 submission.getUpdatedAt(),
                 submission.getVersion()

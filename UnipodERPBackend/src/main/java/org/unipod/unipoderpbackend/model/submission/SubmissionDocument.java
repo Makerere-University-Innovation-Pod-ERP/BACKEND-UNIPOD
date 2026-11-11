@@ -23,6 +23,10 @@ public class SubmissionDocument {
     private String name;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "document_type", nullable = false, length = 32)
+    private DocumentType documentType = DocumentType.OTHER;
+
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 24)
     private DocumentStatus status;
 
@@ -56,13 +60,15 @@ public class SubmissionDocument {
             String createdBy,
             Instant createdAt
     ) {
-        this(id, submissionId, name, status, fileReference, null, null, null, createdBy, createdAt);
+        this(id, submissionId, name, DocumentType.OTHER, status, fileReference,
+                null, null, null, createdBy, createdAt);
     }
 
     public SubmissionDocument(
             UUID id,
             UUID submissionId,
             String name,
+            DocumentType documentType,
             DocumentStatus status,
             String fileReference,
             String contentType,
@@ -74,6 +80,7 @@ public class SubmissionDocument {
         this.id = id;
         this.submissionId = submissionId;
         this.name = name;
+        this.documentType = documentType == null ? DocumentType.OTHER : documentType;
         this.status = status;
         this.fileReference = fileReference;
         this.contentType = contentType;
@@ -93,6 +100,10 @@ public class SubmissionDocument {
 
     public String getName() {
         return name;
+    }
+
+    public DocumentType getDocumentType() {
+        return documentType;
     }
 
     public DocumentStatus getStatus() {

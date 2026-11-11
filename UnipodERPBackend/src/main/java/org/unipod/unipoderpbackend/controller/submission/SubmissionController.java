@@ -27,6 +27,7 @@ import org.unipod.unipoderpbackend.dto.submission.CreateSubmissionRequest;
 import org.unipod.unipoderpbackend.dto.submission.DocumentResponse;
 import org.unipod.unipoderpbackend.dto.submission.ForwardSubmissionRequest;
 import org.unipod.unipoderpbackend.dto.submission.ReviewerAssignmentRequest;
+import org.unipod.unipoderpbackend.dto.submission.RequestInformationRequest;
 import org.unipod.unipoderpbackend.dto.submission.SubmissionResponse;
 import org.unipod.unipoderpbackend.exception.submission.InvalidSubmissionException;
 import org.unipod.unipoderpbackend.model.submission.SubmissionCategory;
@@ -45,12 +46,22 @@ public class SubmissionController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'RECEPTIONIST', 'FACT_FINDING_OFFICER')")
+    @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'RECEPTIONIST', 'FACT_FINDING_OFFICER', 'SUBMITTER')")
     public SubmissionResponse create(
             @Valid @RequestBody CreateSubmissionRequest request,
             Authentication authentication
     ) {
-        return submissions.create(request, authentication.getName());
+        return submissions.create(request, authentication.getName(), hasSubmitterRole(authentication));
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'RECEPTIONIST', 'FACT_FINDING_OFFICER', 'SUBMITTER')")
+    public SubmissionResponse updateDraft(
+            @PathVariable UUID id,
+            @Valid @RequestBody CreateSubmissionRequest request,
+            Authentication authentication
+    ) {
+        return submissions.updateDraft(id, request, authentication.getName(), hasSubmitterRole(authentication));
     }
 
     @GetMapping
@@ -112,6 +123,16 @@ public class SubmissionController {
         return submissions.forward(id, request.sectorId(), authentication.getName());
     }
 
+    @PostMapping("/{id}/request-information")
+    @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'RECEPTIONIST', 'FACT_FINDING_OFFICER')")
+    public SubmissionResponse requestInformation(
+            @PathVariable UUID id,
+            @Valid @RequestBody RequestInformationRequest request,
+            Authentication authentication
+    ) {
+        return submissions.requestInformation(id, request, authentication.getName());
+    }
+
     @PostMapping("/{id}/transition")
     @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR')")
     public SubmissionResponse transition(
@@ -128,13 +149,13 @@ public class SubmissionController {
 
     @PostMapping("/{id}/documents")
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'RECEPTIONIST', 'FACT_FINDING_OFFICER')")
+    @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'RECEPTIONIST', 'FACT_FINDING_OFFICER', 'SUBMITTER')")
     public DocumentResponse addDocument(
             @PathVariable UUID id,
             @Valid @RequestBody CreateDocumentRequest request,
             Authentication authentication
     ) {
-        return submissions.addDocument(id, request, authentication.getName());
+        return submissions.addDocument(id, request, authentication.getName(), hasSubmitterRole(authentication));
     }
 
     @PutMapping("/{id}/reviewer")
@@ -159,5 +180,10 @@ public class SubmissionController {
         } catch (IllegalArgumentException exception) {
             throw new InvalidSubmissionException("The category is invalid.");
         }
+    }
+
+    private static boolean hasSubmitterRole(Authentication authentication) {
+        return authentication.getAuthorities().stream()
+                .anyMatch(authority -> authority.getAuthority().equals("ROLE_SUBMITTER"));
     }
 }
