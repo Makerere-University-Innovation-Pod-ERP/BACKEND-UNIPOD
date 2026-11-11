@@ -195,6 +195,14 @@ public class FactFindingCheck {
         return completedAt;
     }
 
+    public void complete(FactFindingResult result, Instant now) {
+        if (completedAt != null) {
+            throw new IllegalStateException("Fact-finding check is already completed.");
+        }
+        this.result = result;
+        this.completedAt = now;
+    }
+
     public void setCompletedAt(Instant completedAt) {
         this.completedAt = completedAt;
     }

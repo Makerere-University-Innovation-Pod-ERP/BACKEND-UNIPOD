@@ -5,10 +5,12 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.unipod.unipoderpbackend.dto.factfinding.CompleteFactFindingRequest;
 import org.unipod.unipoderpbackend.dto.factfinding.FactFindingResponse;
 import org.unipod.unipoderpbackend.dto.factfinding.SaveFactFindingRequest;
 import org.unipod.unipoderpbackend.service.factfinding.FactFindingCommandService;
@@ -41,5 +43,14 @@ public class FactFindingController {
             Authentication authentication
     ) {
         return commands.saveDraft(id, request, authentication);
+    }
+
+    @PostMapping("/fact-finding/complete")
+    public FactFindingResponse complete(
+            @PathVariable UUID id,
+            @RequestBody CompleteFactFindingRequest request,
+            Authentication authentication
+    ) {
+        return commands.complete(id, request, authentication);
     }
 }
