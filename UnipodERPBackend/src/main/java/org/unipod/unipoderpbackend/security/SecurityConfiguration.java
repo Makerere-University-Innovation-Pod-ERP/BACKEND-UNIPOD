@@ -4,10 +4,16 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
@@ -18,6 +24,7 @@ import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWrite
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.unipod.unipoderpbackend.service.submission.WaluubeAuditLog;
 
 import jakarta.servlet.DispatcherType;
 import java.util.Arrays;
@@ -26,6 +33,7 @@ import java.util.List;
 @Configuration
 @EnableMethodSecurity
 public class SecurityConfiguration {
+    private static final Logger log = LoggerFactory.getLogger(SecurityConfiguration.class);
     @Bean
     SecurityFilterChain apiSecurityFilterChain(
             HttpSecurity http,
@@ -98,8 +106,12 @@ public class SecurityConfiguration {
     }
 
     @Bean
-    AuthenticationEntryPoint authenticationEntryPoint() {
+    AuthenticationEntryPoint authenticationEntryPoint(WaluubeAuditLog auditLog) {
         return (request, response, exception) -> {
+            recordSecurityAudit(auditLog, request,
+                    currentActor(),
+                    HttpStatus.UNAUTHORIZED.value()
+            );
             response.setStatus(HttpStatus.UNAUTHORIZED.value());
             response.setHeader("WWW-Authenticate", "Bearer");
             response.setContentType("application/problem+json");
@@ -110,8 +122,12 @@ public class SecurityConfiguration {
     }
 
     @Bean
-    AccessDeniedHandler accessDeniedHandler() {
+    AccessDeniedHandler accessDeniedHandler(WaluubeAuditLog auditLog) {
         return (request, response, exception) -> {
+            recordSecurityAudit(auditLog, request,
+                    currentActor(),
+                    HttpStatus.FORBIDDEN.value()
+            );
             response.setStatus(HttpStatus.FORBIDDEN.value());
             response.setHeader("WWW-Authenticate", "Bearer");
             response.setContentType("application/problem+json");
@@ -119,5 +135,34 @@ public class SecurityConfiguration {
                     {"type":"about:blank","title":"Forbidden","status":403,"detail":"You do not have permission to perform this action."}
                     """.trim());
         };
+    }
+
+    private static String currentActor() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return authentication == null
+                || !authentication.isAuthenticated()
+                || authentication instanceof AnonymousAuthenticationToken
+                ? "anonymous"
+                : authentication.getName();
+    }
+
+    private static void recordSecurityAudit(
+            WaluubeAuditLog auditLog,
+            jakarta.servlet.http.HttpServletRequest request,
+            String actor,
+            int status
+    ) {
+        try {
+            auditLog.recordRequest(
+                    actor,
+                    request.getMethod(),
+                    request.getRequestURI(),
+                    request.getContextPath(),
+                    status
+            );
+        } catch (DataAccessException exception) {
+            log.warn("Unable to persist Waluube security audit event for {} {} (status {})",
+                    request.getMethod(), request.getRequestURI(), status, exception);
+        }
     }
 }

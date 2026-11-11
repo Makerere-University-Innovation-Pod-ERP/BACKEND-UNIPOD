@@ -25,6 +25,8 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 import org.unipod.unipoderpbackend.dto.submission.DocumentResponse;
 import org.unipod.unipoderpbackend.model.submission.DocumentStatus;
+import org.unipod.unipoderpbackend.model.submission.DocumentType;
+import org.unipod.unipoderpbackend.security.SubmitterAuthorization;
 import org.unipod.unipoderpbackend.service.submission.UploadedDocumentService;
 
 @RestController
@@ -40,15 +42,24 @@ public class DocumentUploadController {
 
     @PostMapping(path = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'RECEPTIONIST', 'FACT_FINDING_OFFICER')")
+    @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'RECEPTIONIST', 'FACT_FINDING_OFFICER', 'SUBMITTER')")
     public DocumentResponse upload(
             @PathVariable UUID id,
             @RequestParam("name") @NotBlank @Size(max = 255) String name,
             @RequestParam("status") @NotNull DocumentStatus status,
+            @RequestParam(name = "documentType", defaultValue = "OTHER") @NotNull DocumentType documentType,
             @RequestParam("file") MultipartFile file,
             Authentication authentication
     ) {
-        return documents.upload(id, name, status, file, authentication.getName());
+        return documents.upload(
+                id,
+                name,
+                documentType,
+                status,
+                file,
+                authentication.getName(),
+                SubmitterAuthorization.hasSubmitterRole(authentication)
+        );
     }
 
     @GetMapping("/{documentId}/file")
@@ -79,4 +90,5 @@ public class DocumentUploadController {
                     }
                 });
     }
+
 }

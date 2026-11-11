@@ -3,6 +3,7 @@ package org.unipod.unipoderpbackend.dto.submission;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.Email;
 import org.unipod.unipoderpbackend.model.submission.RecommendationLetterStatus;
 import org.unipod.unipoderpbackend.model.submission.SubmissionCategory;
 
@@ -15,8 +16,24 @@ public record CreateSubmissionRequest(
         @Size(max = 80) String studentNumber,
         @Size(max = 200) String programme,
         @Size(max = 255) String supervisor,
-        RecommendationLetterStatus recommendationLetterStatus
+        RecommendationLetterStatus recommendationLetterStatus,
+        @Email @Size(max = 254) String submitterEmail
 ) {
+    public CreateSubmissionRequest(
+            SubmissionCategory category,
+            String title,
+            String purpose,
+            String problemAddressed,
+            String submitterId,
+            String studentNumber,
+            String programme,
+            String supervisor,
+            RecommendationLetterStatus recommendationLetterStatus
+    ) {
+        this(category, title, purpose, problemAddressed, submitterId, studentNumber, programme,
+                supervisor, recommendationLetterStatus, null);
+    }
+
     public CreateSubmissionRequest(
             SubmissionCategory category,
             String title,
@@ -28,6 +45,6 @@ public record CreateSubmissionRequest(
             RecommendationLetterStatus recommendationLetterStatus
     ) {
         this(category, title, purpose, problemAddressed, null, studentNumber, programme,
-                supervisor, recommendationLetterStatus);
+                supervisor, recommendationLetterStatus, null);
     }
 }

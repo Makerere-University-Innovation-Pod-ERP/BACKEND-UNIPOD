@@ -1,0 +1,1274 @@
+{
+  "info": {
+    "name": "Makerere Innovation Hub ERP API",
+    "description": "Generated from openapi.yaml. Select an environment first, set tester credentials and obtain accessToken using Authentication > POST /auth/login. The login test script stores the short-lived token in the selected environment. Never share populated environment values.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080/api",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "POST /auth/login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/login",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{testerEmail}}\",\n  \"password\": \"{{testerPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Exchange administrator-provisioned credentials for a bearer token\n\nPublic account registration is disabled. Login failures return the same response for unknown, disabled, or invalid credentials.\n\nExpected documented status codes: 200, 400, 401"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 400, 401]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.accessToken) pm.environment.set('accessToken', data.accessToken);",
+                  "  if (data.expiresAt) pm.environment.set('tokenExpiresAt', data.expiresAt);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /admin/users",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/users",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{newUserEmail}}\",\n  \"password\": \"{{newUserPassword}}\",\n  \"role\": \"RECEPTIONIST\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create an account with an application role\n\nAdministrator only. The password is never returned; public signup is not available.\n\nExpected documented status codes: 201, 400, 401, 403, 409"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([201, 400, 401, 403, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.id) pm.environment.set('createdUserId', data.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /admin/users (Submitter)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/users",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{newUserEmail}}\",\n  \"password\": \"{{newUserPassword}}\",\n  \"role\": \"SUBMITTER\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create a Submitter account for the walk-in intake example\n\nAdministrator only. The response saves the account email as submitterSubject. Use unique credentials.\n\nExpected documented status codes: 201, 400, 401, 403, 409"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([201, 400, 401, 403, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.id) pm.environment.set('createdUserId', data.id);",
+                  "  if (data.email) pm.environment.set('submitterSubject', data.email);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Submissions",
+      "item": [
+        {
+          "name": "POST /submissions",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/submissions",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"category\": \"student\",\n  \"title\": \"Postman test innovation\",\n  \"purpose\": \"Validate the API workflow from Postman.\",\n  \"problemAddressed\": \"The workflow needs an end-to-end test.\",\n  \"studentNumber\": \"TEST-0001\",\n  \"programme\": \"Engineering\",\n  \"supervisor\": \"Test Supervisor\",\n  \"recommendationLetterStatus\": \"submitted\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create an intake draft\n\nAvailable to Administrator, Innovation Coordinator, Receptionist,\nFact-Finding Officer, and Submitter. A Submitter's identity is taken\nfrom the authenticated principal; a supplied submitterId cannot change\nownership. Intake staff may create walk-in submissions for another\nsubmitter. A unique case code is allocated atomically at creation.\n\n\nExpected documented status codes: 201, 400, 401, 403, 500"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([201, 400, 401, 403, 500]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.id) pm.environment.set('submissionId', data.id);",
+                  "  if (data.code) pm.environment.set('submissionCode', data.code);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /submissions (walk-in for Submitter)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/submissions",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"category\": \"student\",\n  \"title\": \"Postman walk-in test innovation\",\n  \"purpose\": \"Validate a Receptionist-created draft owned by a Submitter.\",\n  \"problemAddressed\": \"The walk-in workflow needs an end-to-end test.\",\n  \"submitterId\": \"{{submitterSubject}}\",\n  \"submitterEmail\": \"{{submitterSubject}}\",\n  \"studentNumber\": \"TEST-0002\",\n  \"programme\": \"Engineering\",\n  \"supervisor\": \"Test Supervisor\",\n  \"recommendationLetterStatus\": \"submitted\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create a walk-in draft for the Submitter account\n\nRun as Receptionist after creating the account with POST /admin/users (Submitter). submitterSubject is used as both the submitter identity and notification email.\n\nExpected documented status codes: 201, 400, 401, 403, 500"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([201, 400, 401, 403, 500]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.id) pm.environment.set('submissionId', data.id);",
+                  "  if (data.code) pm.environment.set('submissionCode', data.code);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /submissions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/submissions?page=0&size=25",
+            "description": "List all submissions\n\nResults are role-scoped, filtered, paginated, and stably ordered by received date then id.\n\nExpected documented status codes: 200, 401, 403"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 401, 403]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /submissions/search",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/submissions/search?code={{searchCode}}&page=0&size=25",
+            "description": "Search submissions by exact code or title\n\nExact case-code matches are returned first; otherwise code is treated as a title substring.\n\nExpected documented status codes: 200, 401, 403"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 401, 403]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /submissions/mine",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/submissions/mine?page=0&size=25",
+            "description": "List submissions created by the authenticated user\n\nExpected documented status codes: 200, 401, 403"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 401, 403]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /me/submissions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/me/submissions?page=0&size=25",
+            "description": "List cases linked to the authenticated submitter\n\nExpected documented status codes: 200, 401, 403"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 401, 403]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /me/capabilities",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/me/capabilities",
+            "description": "Return submitter navigation capabilities\n\nExpected documented status codes: 200, 401, 403"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 401, 403]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /submissions/{id}/register",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/submissions/{{submissionId}}/register",
+            "description": "Register a submission as received\n\nAvailable to Administrator, Innovation Coordinator, Receptionist, and\nFact-Finding Officer. Preserves the code assigned at creation.\nStudent number, programme, supervisor, and recommendation-letter status must be present for\nstudent submissions. A submission can be registered only once; repeating registration returns 409.\n\n\nExpected documented status codes: 200, 400, 401, 403, 409"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 400, 401, 403, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /submissions/{id}/request-information",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/submissions/{{submissionId}}/request-information",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Please add your supervisor details and recommendation letter.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Ask a submitter to complete or correct a draft\n\nIntake roles can attach a required-information note to a draft. The change and notification outbox event are committed together.\n\nExpected documented status codes: 200, 400, 401, 403, 404, 409"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 400, 401, 403, 404, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT /submissions/{id}/reviewer",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/submissions/{{submissionId}}/reviewer",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"{{reviewerSubject}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Assign or clear a reviewer\n\nExpected documented status codes: 200, 401, 403, 404, 409, 500"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 401, 403, 404, 409, 500]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /submissions/{id}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/submissions/{{submissionId}}",
+            "description": "Get the case file, documents, and stage history\n\nExpected documented status codes: 200, 401, 403, 404"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 401, 403, 404]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT /submissions/{id}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/submissions/{{submissionId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"category\": \"student\",\n  \"title\": \"Postman test innovation\",\n  \"purpose\": \"Validate the API workflow from Postman.\",\n  \"problemAddressed\": \"The workflow needs an end-to-end test.\",\n  \"studentNumber\": \"TEST-0001\",\n  \"programme\": \"Engineering\",\n  \"supervisor\": \"Test Supervisor\",\n  \"recommendationLetterStatus\": \"submitted\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Update an owned draft\n\nSubmitters can update only their own drafts; intake roles can update drafts they manage. Updating a draft clears its outstanding information request. The tracking reference and submitter ownership remain unchanged.\n\nExpected documented status codes: 200, 400, 401, 403, 404, 409"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 400, 401, 403, 404, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /submissions/{id}/forward",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/submissions/{{submissionId}}/forward",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sectorId\": \"{{sectorId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Register and forward a draft, or forward a received submission\n\nA draft is registered and forwarded in one transaction. Stores the sector assignment, stage history, and durable submission.forwarded outbox event in the same transaction.\n\nExpected documented status codes: 200, 400, 401, 403, 404, 409"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 400, 401, 403, 404, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /submissions/{id}/transition",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/submissions/{{submissionId}}/transition",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stage\": \"IN_PROGRESS\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Advance a forwarded submission through the pipeline\n\nOnly FORWARDED to IN_PROGRESS and IN_PROGRESS to COMPLETED are allowed. Backward transitions and skipped stages are rejected.\n\nExpected documented status codes: 200, 400, 401, 403, 404, 409"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 400, 401, 403, 404, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /submissions/{id}/documents",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/submissions/{{submissionId}}/documents",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Recommendation letter\",\n  \"documentType\": \"RECOMMENDATION_LETTER\",\n  \"status\": \"SUBMITTED\",\n  \"fileReference\": \"postman_document_001\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Add document metadata to a case\n\nAccepts an opaque storage reference, not a URL, filesystem path, or file bytes. File storage is provided by an external storage integration.\n\nExpected documented status codes: 201, 400, 401, 403, 404, 409"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([201, 400, 401, 403, 404, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.id) pm.environment.set('documentId', data.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /submissions/{id}/documents/upload",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/submissions/{{submissionId}}/documents/upload",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "name",
+                  "value": "Postman test upload",
+                  "type": "text"
+                },
+                {
+                  "key": "status",
+                  "value": "SUBMITTED",
+                  "type": "text"
+                },
+                {
+                  "key": "documentType",
+                  "value": "OTHER",
+                  "type": "text"
+                },
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "{{uploadFilePath}}"
+                }
+              ]
+            },
+            "description": "Upload a document to configured S3-compatible storage\n\nAvailable only when S3 storage is enabled. Files are limited by the configured server-side upload limit.\n\nExpected documented status codes: 201, 400, 413, 401, 403, 404"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([201, 400, 413, 401, 403, 404]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /submissions/{id}/documents/{documentId}/file",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/submissions/{{submissionId}}/documents/{{documentId}}/file",
+            "description": "Download a case document\n\nThe response is always an attachment with an octet-stream content type and nosniff protection.\n\nExpected documented status codes: 200, 401, 403, 404"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 401, 403, 404]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Case Files",
+      "item": [
+        {
+          "name": "GET /cases/{id}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/cases/{{submissionId}}",
+            "description": "Get the W4 case file aggregate\n\nAvailable to Administrator, Innovation Coordinator, Fact-Finding\nOfficer, Reviewer, Sector Officer, IP Liaison, Submitter, and Observer.\nReviewer and Sector Officer results are row-scoped. Mark's reviewer\npanel/quorum and David's activity are marked NOT_CONFIGURED until their\nintegration providers are supplied.\n\n\nExpected documented status codes: 200, 401, 403, 404"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 401, 403, 404]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /cases/{id}/capabilities",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/cases/{{submissionId}}/capabilities",
+            "description": "Get enabled state and reason for each case-file control\n\nExpected documented status codes: 200, 403, 404"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 403, 404]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /cases/{id}/transitions/allowed",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/cases/{{submissionId}}/transitions/allowed",
+            "description": "Get valid next case stages for the actor\n\nExpected documented status codes: 200, 403, 404"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 403, 404]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /cases/{id}/transitions",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/cases/{{submissionId}}/transitions",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"to_stage\": \"REGISTERED\",\n  \"note\": \"Postman test transition\",\n  \"version\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Move a case to its next allowed stage\n\nOnly Administrator and Innovation Coordinator may transition cases. Leaving Fact-Finding is coordinator-controlled. The current version is required to reject stale writes.\n\nExpected documented status codes: 200, 403, 404, 409"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 403, 404, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT /cases/{id}/outcome",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/cases/{{submissionId}}/outcome",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"Approve\",\n  \"note\": \"Postman test outcome\",\n  \"version\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Save case outcome\n\nOnly Administrator and Innovation Coordinator may save outcomes. Save is rejected with 409 until Mark's configured reviewer quorum is available and met.\n\nExpected documented status codes: 200, 403, 404, 409"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 403, 404, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH /cases/{id}/documents/{documentId}",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/cases/{{submissionId}}/documents/{{documentId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"VERIFIED\",\n  \"version\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Update document verification status\n\nOnly Administrator and Innovation Coordinator may update status. Include the current case version.\n\nExpected documented status codes: 200, 403, 404, 409"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 403, 404, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Sectors",
+      "item": [
+        {
+          "name": "GET /sectors",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/sectors",
+            "description": "List active sectors\n\nExpected documented status codes: 200, 401, 403"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 401, 403]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /sectors",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/sectors",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman Test Sector\",\n  \"notificationEmail\": \"{{testerEmail}}\",\n  \"active\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create a sector\n\nAdministrator only.\n\nExpected documented status codes: 201, 400, 401, 403, 409"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([201, 400, 401, 403, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.id) pm.environment.set('sectorId', data.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /sectors/catalog",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/sectors/catalog",
+            "description": "List active and inactive sectors\n\nAdministrator only; use this list to reactivate a deactivated sector.\n\nExpected documented status codes: 200, 401, 403"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 401, 403]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /sectors/filter-options",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/sectors/filter-options",
+            "description": "List sector names for submission filters\n\nReturns only sector IDs and names to roles permitted to read submissions.\n\nExpected documented status codes: 200, 401, 403"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 401, 403]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT /sectors/{id}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/sectors/{{sectorId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman Test Sector\",\n  \"notificationEmail\": \"{{testerEmail}}\",\n  \"active\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Update or deactivate a sector\n\nAdministrator only. Deactivation is soft; existing cases retain their sector reference.\n\nExpected documented status codes: 200, 400, 401, 403, 404, 409"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 400, 401, 403, 404, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /sectors/{id}/members",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/sectors/{{sectorId}}/members",
+            "description": "List sector officer subjects\n\nExpected documented status codes: 200, 401, 403"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 401, 403]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /sectors/{id}/members",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/sectors/{{sectorId}}/members",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"{{memberSubject}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Add a sector officer subject\n\nExpected documented status codes: 200, 400, 401, 403, 404"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 400, 401, 403, 404]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE /sectors/{id}/members",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/sectors/{{sectorId}}/members?subject={{memberSubject}}",
+            "description": "Remove a sector officer subject\n\nExpected documented status codes: 204, 401, 403, 404"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([204, 401, 403, 404]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Reception",
+      "item": [
+        {
+          "name": "GET /queues/reception",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/queues/reception?page=0&size=25",
+            "description": "Get draft reception queue and queue counters\n\nThe queue contains DRAFT submissions. Awaiting action counts RECEIVED submissions; recently updated counts all submissions updated in the last 14 days.\n\nExpected documented status codes: 200, 401, 403"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 401, 403]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "item": [
+        {
+          "name": "GET /dashboard/overview",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/dashboard/overview",
+            "description": "Get the role-scoped dashboard composed from workflow and module summaries\n\nAvailable to every authenticated role. Operational tiles are visible to all roles; finance data is returned only to Administrators and Innovation Coordinators. Results are cached for 30 seconds. Unconfigured external modules identify their availability rather than returning fabricated metrics.\n\nExpected documented status codes: 200, 401, 403"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 401, 403]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

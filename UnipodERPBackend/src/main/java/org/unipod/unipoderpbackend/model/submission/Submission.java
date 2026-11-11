@@ -44,6 +44,9 @@ public class Submission {
     @Column(name = "submitter_id", nullable = false)
     private String submitterId;
 
+    @Column(name = "submitter_email", length = 254)
+    private String submitterEmail;
+
     @Column(name = "receiving_officer")
     private String receivingOfficer;
 
@@ -96,6 +99,15 @@ public class Submission {
     @Column(name = "outcome_decided_at")
     private Instant outcomeDecidedAt;
 
+    @Column(name = "information_requested_note", columnDefinition = "text")
+    private String informationRequestedNote;
+
+    @Column(name = "information_requested_by")
+    private String informationRequestedBy;
+
+    @Column(name = "information_requested_at")
+    private Instant informationRequestedAt;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -123,6 +135,25 @@ public class Submission {
             RecommendationLetterStatus recommendationLetterStatus,
             Instant createdAt
     ) {
+        this(id, category, title, purpose, problemAddressed, registeredBy, submitterId, studentNumber,
+                programme, supervisor, recommendationLetterStatus, null, createdAt);
+    }
+
+    public Submission(
+            UUID id,
+            SubmissionCategory category,
+            String title,
+            String purpose,
+            String problemAddressed,
+            String registeredBy,
+            String submitterId,
+            String studentNumber,
+            String programme,
+            String supervisor,
+            RecommendationLetterStatus recommendationLetterStatus,
+            String submitterEmail,
+            Instant createdAt
+    ) {
         this.id = id;
         this.category = category;
         this.title = title;
@@ -134,6 +165,7 @@ public class Submission {
         this.programme = programme;
         this.supervisor = supervisor;
         this.recommendationLetterStatus = recommendationLetterStatus;
+        this.submitterEmail = submitterEmail;
         this.stage = SubmissionStage.DRAFT;
         this.createdAt = createdAt;
         this.updatedAt = createdAt;
@@ -167,10 +199,68 @@ public class Submission {
                     "Student submissions require student number, programme, supervisor, and recommendation-letter status."
             );
         }
-        this.code = caseCode;
+        if (this.code == null) {
+            this.code = caseCode;
+        } else if (!this.code.equals(caseCode)) {
+            throw new SubmissionConflictException("A submission tracking reference cannot be changed.");
+        }
         this.receivedAt = time;
         this.receivingOfficer = officer;
         this.stage = SubmissionStage.RECEIVED;
+        this.updatedAt = time;
+        clearInformationRequest();
+    }
+
+    public void clearInformationRequest() {
+        this.informationRequestedNote = null;
+        this.informationRequestedBy = null;
+        this.informationRequestedAt = null;
+    }
+
+    public void updateSubmitterEmail(String submitterEmail) {
+        this.submitterEmail = submitterEmail;
+    }
+
+    public void assignTrackingReference(String caseCode) {
+        if (stage != SubmissionStage.DRAFT || code != null || isBlank(caseCode)) {
+            throw new SubmissionConflictException("A tracking reference cannot be assigned in the current state.");
+        }
+        this.code = caseCode;
+    }
+
+    public void updateDraft(
+            String title,
+            String purpose,
+            String problemAddressed,
+            String studentNumber,
+            String programme,
+            String supervisor,
+            RecommendationLetterStatus recommendationLetterStatus,
+            Instant time
+    ) {
+        if (stage != SubmissionStage.DRAFT) {
+            throw new SubmissionConflictException("Only a draft submission can be updated.");
+        }
+        this.title = title;
+        this.purpose = purpose;
+        this.problemAddressed = problemAddressed;
+        this.studentNumber = studentNumber;
+        this.programme = programme;
+        this.supervisor = supervisor;
+        this.recommendationLetterStatus = recommendationLetterStatus;
+        this.updatedAt = time;
+    }
+
+    public void requestInformation(String note, String actor, Instant time) {
+        if (stage != SubmissionStage.DRAFT) {
+            throw new SubmissionConflictException("Information can only be requested for a draft submission.");
+        }
+        if (isBlank(note)) {
+            throw new InvalidSubmissionException("A reason is required when requesting more information.");
+        }
+        this.informationRequestedNote = note.trim();
+        this.informationRequestedBy = actor;
+        this.informationRequestedAt = time;
         this.updatedAt = time;
     }
 
@@ -270,6 +360,10 @@ public class Submission {
         return submitterId;
     }
 
+    public String getSubmitterEmail() {
+        return submitterEmail;
+    }
+
     public String getReceivingOfficer() {
         return receivingOfficer;
     }
@@ -337,6 +431,18 @@ public class Submission {
 
     public Instant getOutcomeDecidedAt() {
         return outcomeDecidedAt;
+    }
+
+    public String getInformationRequestedNote() {
+        return informationRequestedNote;
+    }
+
+    public String getInformationRequestedBy() {
+        return informationRequestedBy;
+    }
+
+    public Instant getInformationRequestedAt() {
+        return informationRequestedAt;
     }
 
     public Long getVersion() {

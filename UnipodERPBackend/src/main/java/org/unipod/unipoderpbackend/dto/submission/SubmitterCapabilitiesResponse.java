@@ -2,6 +2,7 @@ package org.unipod.unipoderpbackend.dto.submission;
 
 import java.util.List;
 import org.springframework.security.core.Authentication;
+import org.unipod.unipoderpbackend.security.SubmitterAuthorization;
 
 public record SubmitterCapabilitiesResponse(
         boolean canRegisterSubmission,
@@ -17,12 +18,16 @@ public record SubmitterCapabilitiesResponse(
                          "ROLE_FACT_FINDING_OFFICER" -> true;
                     default -> false;
                 });
+        boolean isSubmitter = SubmitterAuthorization.hasSubmitterRole(authentication);
         return new SubmitterCapabilitiesResponse(
                 canRegister,
-                canRegister
-                        ? "Your intake role can register a submission."
-                        : "Only authorized intake roles can register a submission.",
+                isSubmitter && !canRegister
+                        ? "You can submit a brief for reception review. Only authorized intake roles can register a submission."
+                        : canRegister
+                                ? "Your intake role can register a submission."
+                                : "Only authorized intake roles can register a submission.",
                 List.of("Reception", "Reviews", "Facilities", "Finance", "Sectors", "Dashboard")
         );
     }
+
 }

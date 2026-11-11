@@ -3,12 +3,14 @@ package org.unipod.unipoderpbackend.dto.submission;
 import java.time.Instant;
 import java.util.UUID;
 import org.unipod.unipoderpbackend.model.submission.DocumentStatus;
+import org.unipod.unipoderpbackend.model.submission.DocumentType;
 import org.unipod.unipoderpbackend.model.submission.SubmissionDocument;
 
 public record DocumentResponse(
         UUID id,
         UUID submissionId,
         String name,
+        DocumentType documentType,
         DocumentStatus status,
         String fileReference,
         String contentType,
@@ -22,6 +24,7 @@ public record DocumentResponse(
                 document.getId(),
                 document.getSubmissionId(),
                 document.getName(),
+                document.getDocumentType(),
                 document.getStatus(),
                 document.getFileReference(),
                 document.getContentType(),
