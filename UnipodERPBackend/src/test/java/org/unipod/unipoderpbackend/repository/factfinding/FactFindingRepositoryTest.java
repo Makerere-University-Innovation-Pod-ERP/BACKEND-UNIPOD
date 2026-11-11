@@ -222,7 +222,7 @@ class FactFindingRepositoryTest {
                   AND column_name = 'officer_id'
                 """, Integer.class);
         assertEquals("character varying", officerType);
-        assertEquals(100, officerLength);
+        assertEquals(254, officerLength);
 
         List<String> uniqueColumns = jdbcTemplate.queryForList("""
                 SELECT kcu.column_name
@@ -247,6 +247,27 @@ class FactFindingRepositoryTest {
                   AND indexname = 'ix_fact_finding_checks_brief_id'
                 """, Integer.class);
         assertEquals(1, indexCount);
+    }
+
+    @Test
+    void migrationWidensOfficerIdToVarchar254() {
+        String type = jdbcTemplate.queryForObject("""
+                SELECT data_type
+                FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = 'fact_finding_checks'
+                  AND column_name = 'officer_id'
+                """, String.class);
+        Integer length = jdbcTemplate.queryForObject("""
+                SELECT character_maximum_length
+                FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = 'fact_finding_checks'
+                  AND column_name = 'officer_id'
+                """, Integer.class);
+
+        assertEquals("character varying", type);
+        assertEquals(254, length);
     }
 
     @Test

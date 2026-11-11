@@ -27,7 +27,7 @@ public class FactFindingCheck {
     @Column(nullable = false)
     private int round = 1;
 
-    @Column(name = "officer_id", nullable = false, length = 100)
+    @Column(name = "officer_id", nullable = false, length = 254)
     private String officerId;
 
     @Column(name = "title_clear")

@@ -5,9 +5,13 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.unipod.unipoderpbackend.dto.factfinding.FactFindingResponse;
+import org.unipod.unipoderpbackend.dto.factfinding.SaveFactFindingRequest;
+import org.unipod.unipoderpbackend.service.factfinding.FactFindingCommandService;
 import org.unipod.unipoderpbackend.service.factfinding.FactFindingQueryService;
 
 @RestController
@@ -17,14 +21,25 @@ public class FactFindingController {
             "hasAnyRole('FACT_FINDING_OFFICER', 'INNOVATION_COORDINATOR', 'ADMINISTRATOR')";
 
     private final FactFindingQueryService queries;
+    private final FactFindingCommandService commands;
 
-    public FactFindingController(FactFindingQueryService queries) {
+    public FactFindingController(FactFindingQueryService queries, FactFindingCommandService commands) {
         this.queries = queries;
+        this.commands = commands;
     }
 
     @GetMapping("/fact-finding")
     @PreAuthorize(FACT_FINDING_READ_ROLES)
     public FactFindingResponse get(@PathVariable UUID id, Authentication authentication) {
         return queries.getForBrief(id, authentication);
+    }
+
+    @PutMapping("/fact-finding")
+    public FactFindingResponse save(
+            @PathVariable UUID id,
+            @RequestBody SaveFactFindingRequest request,
+            Authentication authentication
+    ) {
+        return commands.saveDraft(id, request, authentication);
     }
 }
