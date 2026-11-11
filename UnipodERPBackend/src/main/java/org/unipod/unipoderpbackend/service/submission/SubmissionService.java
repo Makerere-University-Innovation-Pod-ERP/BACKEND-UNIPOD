@@ -3,8 +3,10 @@ package org.unipod.unipoderpbackend.service.submission;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import jakarta.mail.internet.AddressException;
 import jakarta.mail.internet.InternetAddress;
@@ -48,6 +50,7 @@ import org.unipod.unipoderpbackend.util.CaseCodeGenerator;
 @Service
 public class SubmissionService {
     private static final ZoneId CASE_CODE_ZONE = ZoneId.of("Africa/Kampala");
+    private static final Instant FAR_FUTURE = Instant.parse("9999-12-31T23:59:59Z");
 
     private final SubmissionRepository submissions;
     private final CaseStageHistoryRepository stageHistory;
@@ -100,6 +103,11 @@ public class SubmissionService {
         String submitterId = submitter || request.submitterId() == null || request.submitterId().isBlank()
                 ? actor
                 : request.submitterId().trim();
+        String submitterEmail = submitter
+                ? actor
+                : clean(request.submitterEmail()) == null
+                        ? emailFromSubmitterId(request.submitterId())
+                        : request.submitterEmail().trim();
         Submission submission = new Submission(
                 UUID.randomUUID(),
                 request.category(),
@@ -112,11 +120,8 @@ public class SubmissionService {
                 clean(request.programme()),
                 clean(request.supervisor()),
                 request.recommendationLetterStatus(),
-                submitter
-                        ? actor
-                        : clean(request.submitterEmail()) == null
-                                ? emailFromSubmitterId(request.submitterId())
-                                : request.submitterEmail().trim(),
+                submitterEmail,
+                submitter ? null : clean(request.submitterName()),
                 now
         );
         submission.assignTrackingReference(caseCodeGenerator.next(
@@ -161,8 +166,13 @@ public class SubmissionService {
         );
         if (submitter) {
             submission.clearInformationRequest();
-        } else if (request.submitterEmail() != null && !request.submitterEmail().isBlank()) {
-            submission.updateSubmitterEmail(request.submitterEmail().trim());
+        } else {
+            if (request.submitterEmail() != null && !request.submitterEmail().isBlank()) {
+                submission.updateSubmitterEmail(request.submitterEmail().trim());
+            }
+            if (request.submitterName() != null) {
+                submission.updateSubmitterName(request.submitterName());
+            }
         }
         submissions.flush();
         return SubmissionResponse.from(submission);
@@ -377,15 +387,22 @@ public class SubmissionService {
             SubmissionStage stage,
             UUID sectorId,
             String query,
+            LocalDate receivedFrom,
+            LocalDate receivedTo,
             Pageable pageable,
             org.springframework.security.core.Authentication authentication
     ) {
+        validateDateRange(receivedFrom, receivedTo);
         String scope = SubmissionVisibility.scope(authentication);
+        boolean dateFiltered = receivedFrom != null || receivedTo != null;
         return submissions.searchVisible(
                 category,
                 stage,
                 sectorId,
-                query == null ? null : escapeLike(clean(query)),
+                escapeLike(clean(query)),
+                dateFiltered,
+                receivedFrom == null ? Instant.EPOCH : startOfDay(receivedFrom),
+                receivedTo == null ? FAR_FUTURE : startOfDayExclusive(receivedTo),
                 scope,
                 authentication.getName(),
                 pageable
@@ -403,7 +420,9 @@ public class SubmissionService {
         }
         String scope = SubmissionVisibility.scope(authentication);
         String principal = authentication.getName();
-        Submission exact = submissions.findVisibleByCode(query.trim(), scope, principal).orElse(null);
+        String term = query.trim();
+        Submission exact = submissions.findVisibleByCode(term.toUpperCase(Locale.ROOT), scope, principal)
+                .orElse(null);
         if (exact != null) {
             if (pageable.getOffset() > 0) {
                 return new org.springframework.data.domain.PageImpl<>(
@@ -417,8 +436,23 @@ public class SubmissionService {
             );
         }
         return submissions.searchVisible(
-                null, null, null, escapeLike(query.trim()), scope, principal, pageable
+                null, null, null, escapeLike(term), false, Instant.EPOCH, FAR_FUTURE,
+                scope, principal, pageable
         ).map(SubmissionResponse::from);
+    }
+
+    private static void validateDateRange(LocalDate receivedFrom, LocalDate receivedTo) {
+        if (receivedFrom != null && receivedTo != null && receivedFrom.isAfter(receivedTo)) {
+            throw new InvalidSubmissionException("The received date range is invalid.");
+        }
+    }
+
+    private static Instant startOfDay(LocalDate date) {
+        return date == null ? null : date.atStartOfDay(CASE_CODE_ZONE).toInstant();
+    }
+
+    private static Instant startOfDayExclusive(LocalDate date) {
+        return date == null ? null : date.plusDays(1).atStartOfDay(CASE_CODE_ZONE).toInstant();
     }
 
     @Transactional

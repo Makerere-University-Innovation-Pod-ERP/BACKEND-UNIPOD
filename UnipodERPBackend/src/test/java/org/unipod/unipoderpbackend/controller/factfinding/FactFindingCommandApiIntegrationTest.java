@@ -511,7 +511,7 @@ class FactFindingCommandApiIntegrationTest {
     }
 
     private static Submission briefEntity(String code, String title) {
-        return new Submission(
+        Submission brief = new Submission(
                 UUID.randomUUID(),
                 SubmissionCategory.GENERAL,
                 title,
@@ -525,5 +525,7 @@ class FactFindingCommandApiIntegrationTest {
                 null,
                 Instant.parse("2026-11-01T08:00:00Z")
         );
+        brief.assignTrackingReference(code);
+        return brief;
     }
 }

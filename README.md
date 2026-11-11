@@ -116,7 +116,7 @@ This endpoint returns paginated drafts and queue counters:
 | Method | Endpoint                           | Description                                             |
 | ------ | ---------------------------------- | ------------------------------------------------------- |
 | GET    | `/api/submissions`                 | Lists all submissions.                                  |
-| GET    | `/api/submissions/search`           | Exact code search, then title substring search.         |
+| GET    | `/api/submissions/search`           | Reference, title, or submitter-name search.             |
 | GET    | `/api/submissions/mine`            | Lists submissions registered by the authenticated user. |
 | GET    | `/api/me/submissions`               | Lists cases linked to the signed-in submitter.           |
 | GET    | `/api/me/capabilities`               | Returns submitter registration guidance and locked modules. |
@@ -190,17 +190,20 @@ Pagination defaults:
 
 ### All Submissions and Global Search
 
-`GET /api/submissions` supports the optional `category`, `stage`, `sector`, and
-`q` filters. Results are ordered by received date descending, with the
-submission ID as a deterministic tie-breaker, and use the same page-size limits
-as the other submission lists.
+`GET /api/submissions` supports the optional `category` (type), `stage`
+(status), `sector` (department), `receivedFrom`, `receivedTo` (inclusive
+received-date bounds in Africa/Kampala), and `q` filters. Results are ordered by
+received date descending, with the submission ID as a deterministic
+tie-breaker, and use the same page-size limits as the other submission lists.
 
-`GET /api/submissions/search?code=...` first checks for an exact visible case
-code. If no exact code is visible, it searches visible titles using a
+`GET /api/submissions/search?code=...` first checks for an exact visible
+tracking reference. If no exact reference is visible, it searches visible
+tracking references (project codes), titles, and submitter names using a
 case-insensitive substring match.
 
 The `code` value must not be blank. Literal `%`, `_`, and `\` characters in
-title searches are treated as ordinary text, not wildcard operators.
+substring searches are treated as ordinary text, not wildcard operators.
+`receivedFrom` must not be after `receivedTo`.
 
 Visibility is enforced in the database query:
 

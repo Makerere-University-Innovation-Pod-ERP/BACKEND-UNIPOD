@@ -1,6 +1,7 @@
 package org.unipod.unipoderpbackend.repository.submission;
 
 import jakarta.persistence.LockModeType;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -31,6 +32,19 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
             where submission.id = :id
               and """ + SubmissionVisibilityPredicate.QUERY)
     Optional<Submission> findVisibleById(
+            @Param("id") UUID id,
+            @Param("scope") String scope,
+            @Param("principal") String principal
+    );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @EntityGraph(attributePaths = "responsibleSector")
+    @Query("""
+            select submission
+            from Submission submission
+            where submission.id = :id
+              and """ + SubmissionVisibilityPredicate.QUERY)
+    Optional<Submission> findVisibleByIdForUpdate(
             @Param("id") UUID id,
             @Param("scope") String scope,
             @Param("principal") String principal
@@ -68,8 +82,19 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
               and (:stage is null or submission.stage = :stage)
               and (:sectorId is null or submission.responsibleSectorId = :sectorId)
               and (
-                  coalesce(:titleQuery, '') = ''
-                  or lower(submission.title) like lower(concat('%', coalesce(:titleQuery, ''), '%'))
+                  :dateFiltered = false
+                  or (
+                      submission.receivedAt is not null
+                      and submission.receivedAt >= :receivedFrom
+                      and submission.receivedAt < :receivedTo
+                  )
+              )
+              and (
+                  coalesce(:query, '') = ''
+                  or lower(submission.code) like lower(concat('%', coalesce(:query, ''), '%')) escape '\\'
+                  or lower(submission.title) like lower(concat('%', coalesce(:query, ''), '%')) escape '\\'
+                  or lower(coalesce(submission.submitterName, ''))
+                      like lower(concat('%', coalesce(:query, ''), '%')) escape '\\'
               )
               and """ + SubmissionVisibilityPredicate.QUERY + """
             order by case when submission.receivedAt is null then 1 else 0 end,
@@ -80,7 +105,10 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
             @Param("category") SubmissionCategory category,
             @Param("stage") SubmissionStage stage,
             @Param("sectorId") UUID sectorId,
-            @Param("titleQuery") String titleQuery,
+            @Param("query") String query,
+            @Param("dateFiltered") boolean dateFiltered,
+            @Param("receivedFrom") Instant receivedFrom,
+            @Param("receivedTo") Instant receivedTo,
             @Param("scope") String scope,
             @Param("principal") String principal,
             Pageable pageable

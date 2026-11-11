@@ -47,6 +47,9 @@ public class Submission {
     @Column(name = "submitter_email", length = 254)
     private String submitterEmail;
 
+    @Column(name = "submitter_name", length = 255)
+    private String submitterName;
+
     @Column(name = "receiving_officer")
     private String receivingOfficer;
 
@@ -154,6 +157,26 @@ public class Submission {
             String submitterEmail,
             Instant createdAt
     ) {
+        this(id, category, title, purpose, problemAddressed, registeredBy, submitterId, studentNumber,
+                programme, supervisor, recommendationLetterStatus, submitterEmail, null, createdAt);
+    }
+
+    public Submission(
+            UUID id,
+            SubmissionCategory category,
+            String title,
+            String purpose,
+            String problemAddressed,
+            String registeredBy,
+            String submitterId,
+            String studentNumber,
+            String programme,
+            String supervisor,
+            RecommendationLetterStatus recommendationLetterStatus,
+            String submitterEmail,
+            String submitterName,
+            Instant createdAt
+    ) {
         this.id = id;
         this.category = category;
         this.title = title;
@@ -166,6 +189,7 @@ public class Submission {
         this.supervisor = supervisor;
         this.recommendationLetterStatus = recommendationLetterStatus;
         this.submitterEmail = submitterEmail;
+        this.submitterName = submitterName;
         this.stage = SubmissionStage.DRAFT;
         this.createdAt = createdAt;
         this.updatedAt = createdAt;
@@ -219,6 +243,10 @@ public class Submission {
 
     public void updateSubmitterEmail(String submitterEmail) {
         this.submitterEmail = submitterEmail;
+    }
+
+    public void updateSubmitterName(String submitterName) {
+        this.submitterName = submitterName == null || submitterName.isBlank() ? null : submitterName.trim();
     }
 
     public void assignTrackingReference(String caseCode) {
@@ -363,6 +391,10 @@ public class Submission {
 
     public String getSubmitterEmail() {
         return submitterEmail;
+    }
+
+    public String getSubmitterName() {
+        return submitterName;
     }
 
     public String getReceivingOfficer() {

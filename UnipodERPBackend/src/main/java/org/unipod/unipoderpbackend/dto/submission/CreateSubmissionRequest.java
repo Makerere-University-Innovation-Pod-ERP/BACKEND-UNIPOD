@@ -17,8 +17,25 @@ public record CreateSubmissionRequest(
         @Size(max = 200) String programme,
         @Size(max = 255) String supervisor,
         RecommendationLetterStatus recommendationLetterStatus,
-        @Email @Size(max = 254) String submitterEmail
+        @Email @Size(max = 254) String submitterEmail,
+        @Size(max = 255) String submitterName
 ) {
+    public CreateSubmissionRequest(
+            SubmissionCategory category,
+            String title,
+            String purpose,
+            String problemAddressed,
+            String submitterId,
+            String studentNumber,
+            String programme,
+            String supervisor,
+            RecommendationLetterStatus recommendationLetterStatus,
+            String submitterEmail
+    ) {
+        this(category, title, purpose, problemAddressed, submitterId, studentNumber, programme,
+                supervisor, recommendationLetterStatus, submitterEmail, null);
+    }
+
     public CreateSubmissionRequest(
             SubmissionCategory category,
             String title,
@@ -31,7 +48,7 @@ public record CreateSubmissionRequest(
             RecommendationLetterStatus recommendationLetterStatus
     ) {
         this(category, title, purpose, problemAddressed, submitterId, studentNumber, programme,
-                supervisor, recommendationLetterStatus, null);
+                supervisor, recommendationLetterStatus, null, null);
     }
 
     public CreateSubmissionRequest(
@@ -45,6 +62,6 @@ public record CreateSubmissionRequest(
             RecommendationLetterStatus recommendationLetterStatus
     ) {
         this(category, title, purpose, problemAddressed, null, studentNumber, programme,
-                supervisor, recommendationLetterStatus, null);
+                supervisor, recommendationLetterStatus, null, null);
     }
 }
