@@ -13,6 +13,9 @@ CREATE TABLE fact_finding_checks (
     relevant_note VARCHAR(255),
     missing_items VARCHAR(2000),
     result VARCHAR(32),
+    CONSTRAINT ck_fact_finding_checks_result CHECK (
+        result IS NULL OR result IN ('READY_FOR_REVIEW', 'NEEDS_MORE_INFORMATION')
+    ),
     completed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
