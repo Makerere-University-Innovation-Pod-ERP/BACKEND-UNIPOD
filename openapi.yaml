@@ -112,6 +112,13 @@ tags:
     description: The in-app bell (NT1). Always the signed-in person's own notifications
   - name: Configuration
     description: Read-only settings from ConfigService (case code format, review defaults, document rules, departments)
+  - name: Partners
+    description: |
+      Partners and their MOUs (operations module F5). Reads are open to every role except
+      SUBMITTER; writes need ADMINISTRATOR or DEPARTMENT_COORDINATOR. Dates are `YYYY-MM-DD`,
+      enums are upper case, and a missing date is `null`. A value that fails validation (blank,
+      too long, missing) is `422`. A broken body, an unknown field or a bad enum or date value is
+      `400`, and so is a rule the request shape cannot express, such as a blank `name` on PATCH.
 x-cors:
   allowedOrigins:
     - http://localhost:5173
@@ -2088,6 +2095,162 @@ paths:
                 $ref: '#/components/schemas/Config'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /operations/partners:
+    get:
+      tags: [Partners]
+      operationId: listPartners
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER]
+      summary: All partners, soonest MOU renewal first
+      description: |
+        A plain array (not paged). Ordered by `renewalDate` ascending with partners that have no
+        renewal date last, then by name ignoring case. `status` is worked out on every read from
+        `renewalDate` and today's date in Kampala. Every role except SUBMITTER may read.
+      responses:
+        '200':
+          description: The partners
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Partner'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Partners]
+      operationId: createPartner
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Add a partner
+      description: |
+        Names are unique ignoring case and surrounding spaces; a second partner with the same name
+        returns `409`. Blank contact fields are stored as no value (`null`). The change is written to the audit
+        log as `partner.created`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePartnerRequest'
+      responses:
+        '201':
+          description: The new partner (`version` is 0)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Partner'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /operations/partners/overview:
+    get:
+      tags: [Partners]
+      operationId: getPartnersOverview
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER]
+      summary: Everything the Partnerships screen needs in one call
+      description: |
+        The counts are computed from the data on every call. `renewalDueCount` is the number of
+        partners whose status is not `ACTIVE`. `partners` has the same content and order as
+        `GET /operations/partners`.
+      responses:
+        '200':
+          description: The totals and the partner list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnersOverview'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /operations/partners/{id}:
+    patch:
+      tags: [Partners]
+      operationId: updatePartner
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Change a partner's details
+      description: |
+        Send the `version` you last read plus only the fields you want to change; an omitted or
+        `null` field is left as it is. An empty string clears `contactPerson`, `contactEmail` or
+        `notes`. `renewalDate` can be replaced but not cleared. A stale `version`, or a `name`
+        already used by another partner, returns `409`. A PATCH that changes nothing audited does
+        not write an audit entry. Recorded in the audit log as `partner.updated`; contact details
+        are never copied into it, only whether they changed.
+      parameters:
+        - $ref: '#/components/parameters/PartnerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePartnerRequest'
+      responses:
+        '200':
+          description: The partner after the change, with its new `version`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Partner'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /operations/partners/{id}/mou:
+    put:
+      tags: [Partners]
+      operationId: recordPartnerMouRenewal
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Record a renewed MOU
+      description: |
+        Replaces the renewal date and the document reference; leaving `documentReference` out
+        clears the previous one. The reference is stored but is not part of the `Partner`
+        response. The new date may be in the past. No `version` is needed; if two renewals race,
+        the loser gets `409`. Renewing a partner that was due or expired returns it to `ACTIVE`
+        when the new date is far enough away; once the daily job has seen it as `ACTIVE`, its next
+        warning is announced again. Recorded in the audit log as `partner.mou_renewed`.
+      parameters:
+        - $ref: '#/components/parameters/PartnerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordMouRenewalRequest'
+      responses:
+        '200':
+          description: The partner with the new renewal date and status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Partner'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
 components:
   securitySchemes:
     bearerAuth:
@@ -2116,6 +2279,14 @@ components:
       name: id
       in: path
       required: true
+      schema:
+        type: string
+        format: uuid
+    PartnerId:
+      name: id
+      in: path
+      required: true
+      description: The partner's id
       schema:
         type: string
         format: uuid
@@ -3726,6 +3897,136 @@ components:
           type: [string, 'null']
         message:
           type: string
+    PartnerType:
+      type: string
+      enum: [INDUSTRY_PARTNER, FUNDER, ACADEMIC_PARTNER]
+    PartnerStatus:
+      type: string
+      description: |
+        Derived from `renewalDate` and today's date in Kampala, never stored. Past the date is
+        `EXPIRED`; 0 to 30 days left is `EXPIRING_SOON`; 31 to 60 days is `RENEWAL_DUE`; anything
+        further out, or no date, is `ACTIVE`. The 30 and 60 day limits are configurable.
+      enum: [ACTIVE, RENEWAL_DUE, EXPIRING_SOON, EXPIRED]
+    Partner:
+      type: object
+      required: [id, name, type, renewalDate, status, contactPerson, contactEmail, notes, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 255
+        type:
+          $ref: '#/components/schemas/PartnerType'
+        renewalDate:
+          type: [string, 'null']
+          format: date
+          description: When the current MOU ends, `YYYY-MM-DD`. `null` when no MOU date is recorded.
+        status:
+          $ref: '#/components/schemas/PartnerStatus'
+        contactPerson:
+          type: [string, 'null']
+        contactEmail:
+          type: [string, 'null']
+        notes:
+          type: [string, 'null']
+        version:
+          type: integer
+          format: int64
+          description: Send this back in `PATCH` so a stale edit is refused with `409`.
+      example:
+        id: 5b0f6d0e-6a53-4c0b-9d59-3f1d3d7a2c11
+        name: Acme Uganda Ltd
+        type: INDUSTRY_PARTNER
+        renewalDate: '2027-03-01'
+        status: ACTIVE
+        contactPerson: Jane Doe
+        contactEmail: jane@acme.example
+        notes: Prefers email
+        version: 0
+    PartnersOverview:
+      type: object
+      required: [totalPartners, renewalDueCount, partners]
+      properties:
+        totalPartners:
+          type: integer
+          format: int64
+        renewalDueCount:
+          type: integer
+          format: int64
+          description: Partners whose status is not `ACTIVE`
+        partners:
+          type: array
+          items:
+            $ref: '#/components/schemas/Partner'
+    CreatePartnerRequest:
+      type: object
+      additionalProperties: false
+      required: [name, type]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        type:
+          $ref: '#/components/schemas/PartnerType'
+        renewalDate:
+          type: [string, 'null']
+          format: date
+        contactPerson:
+          type: [string, 'null']
+          maxLength: 255
+        contactEmail:
+          type: [string, 'null']
+          format: email
+          maxLength: 254
+        notes:
+          type: [string, 'null']
+          maxLength: 2000
+    UpdatePartnerRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      description: Only `version` is required. Fields left out are not changed.
+      properties:
+        version:
+          type: integer
+          format: int64
+        name:
+          type: string
+          maxLength: 255
+        type:
+          $ref: '#/components/schemas/PartnerType'
+        renewalDate:
+          type: string
+          format: date
+          description: Replaces the current date. It cannot be cleared.
+        contactPerson:
+          type: string
+          maxLength: 255
+          description: An empty string clears it
+        contactEmail:
+          type: string
+          format: email
+          maxLength: 254
+          description: An empty string clears it
+        notes:
+          type: string
+          maxLength: 2000
+          description: An empty string clears it
+    RecordMouRenewalRequest:
+      type: object
+      additionalProperties: false
+      required: [renewalDate]
+      properties:
+        renewalDate:
+          type: string
+          format: date
+        documentReference:
+          type: [string, 'null']
+          maxLength: 500
+          description: Reference to the signed MOU. Replaces the previous one; leave out to clear it.
   responses:
     ValidationFailed:
       description: One or more request values are invalid. The body lists each field in `errors`.
