@@ -15,6 +15,8 @@ import static org.unipod.unipoderpbackend.model.authorization.AuthorizationActio
 import static org.unipod.unipoderpbackend.model.authorization.AuthorizationAction.CASE_FORWARD;
 import static org.unipod.unipoderpbackend.model.authorization.AuthorizationAction.CASE_REVIEW;
 import static org.unipod.unipoderpbackend.model.authorization.AuthorizationAction.CASE_VIEW;
+import static org.unipod.unipoderpbackend.model.authorization.AuthorizationAction.PRICE_LIST_MANAGE;
+import static org.unipod.unipoderpbackend.model.authorization.AuthorizationAction.PRICE_LIST_PROPOSE;
 
 @Component
 public class AuthorizationPolicy {
@@ -62,9 +64,12 @@ public class AuthorizationPolicy {
                 CASE_VIEW, Scope.ALL
         ));
         rules.put(ApiUserRole.DEPARTMENT_HEAD, Map.of(
-                CASE_VIEW, Scope.DEPARTMENT
+                CASE_VIEW, Scope.DEPARTMENT,
+                PRICE_LIST_PROPOSE, Scope.DEPARTMENT
         ));
-        rules.put(ApiUserRole.FINANCE_OFFICER, Map.of());
+        rules.put(ApiUserRole.FINANCE_OFFICER, Map.of(
+                PRICE_LIST_MANAGE, Scope.ALL
+        ));
     }
 
     public Map<AuthorizationAction, Scope> capabilitiesFor(ApiUserRole role) {
