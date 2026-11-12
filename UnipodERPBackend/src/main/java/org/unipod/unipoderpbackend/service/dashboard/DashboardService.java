@@ -33,7 +33,7 @@ public class DashboardService {
     public DashboardOverviewResponse overview(Authentication authentication) {
         String scope = SubmissionVisibility.scope(authentication);
         boolean restrictedTilesVisible = DashboardVisibility.canViewRestrictedTiles(authentication);
-        String principal = scope.equals("ALL") ? "" : authentication.getName();
+        String principal = authentication.getName();
         CacheKey key = new CacheKey(scope, principal, restrictedTilesVisible);
         Instant now = clock.instant();
         cache.entrySet().removeIf(entry -> !entry.getValue().expiresAt().isAfter(now));

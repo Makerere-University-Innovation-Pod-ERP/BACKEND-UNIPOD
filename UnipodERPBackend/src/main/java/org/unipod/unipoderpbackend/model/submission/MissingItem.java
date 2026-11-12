@@ -1,0 +1,239 @@
+package org.unipod.unipoderpbackend.model.submission;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import java.time.Instant;
+import java.util.UUID;
+
+/**
+ * A single outstanding information or document request raised during intake.
+ *
+ * <p>{@code label} is the short line shown in lists, {@code reason} explains why
+ * the item is needed, and {@code message} carries the longer submitter-facing
+ * instruction. {@code dueAt} is the optional response deadline.</p>
+ */
+@Entity
+@Table(name = "missing_items")
+public class MissingItem {
+    @Id
+    private UUID id;
+
+    @Column(name = "submission_id", nullable = false)
+    private UUID submissionId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    private MissingItemKind kind;
+
+    @Column(nullable = false, length = 255)
+    private String label;
+
+    @Column(columnDefinition = "text")
+    private String note;
+
+    @Column(length = 255)
+    private String reason;
+
+    @Column(name = "due_at")
+    private Instant dueAt;
+
+    @Column(columnDefinition = "text")
+    private String message;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "document_type", length = 32)
+    private DocumentType documentType;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    private MissingItemStatus status;
+
+    @Column(name = "requested_by", nullable = false, length = 255)
+    private String requestedBy;
+
+    @Column(name = "requested_at", nullable = false)
+    private Instant requestedAt;
+
+    @Column(name = "last_reminded_at")
+    private Instant lastRemindedAt;
+
+    @Column(name = "resolved_by", length = 255)
+    private String resolvedBy;
+
+    @Column(name = "resolved_at")
+    private Instant resolvedAt;
+
+    @Column(name = "resolution_note", columnDefinition = "text")
+    private String resolutionNote;
+
+    protected MissingItem() {
+    }
+
+    private MissingItem(
+            UUID id,
+            UUID submissionId,
+            MissingItemKind kind,
+            String label,
+            String note,
+            String reason,
+            Instant dueAt,
+            String message,
+            DocumentType documentType,
+            String requestedBy,
+            Instant requestedAt
+    ) {
+        this.id = id;
+        this.submissionId = submissionId;
+        this.kind = kind;
+        this.label = label;
+        this.note = note;
+        this.reason = reason;
+        this.dueAt = dueAt;
+        this.message = message;
+        this.documentType = documentType;
+        this.status = MissingItemStatus.OPEN;
+        this.requestedBy = requestedBy;
+        this.requestedAt = requestedAt;
+    }
+
+    public static MissingItem information(
+            UUID id,
+            UUID submissionId,
+            String label,
+            String note,
+            String requestedBy,
+            Instant requestedAt
+    ) {
+        return information(id, submissionId, label, note, null, null, null, requestedBy, requestedAt);
+    }
+
+    public static MissingItem information(
+            UUID id,
+            UUID submissionId,
+            String label,
+            String note,
+            String reason,
+            Instant dueAt,
+            String message,
+            String requestedBy,
+            Instant requestedAt
+    ) {
+        return new MissingItem(
+                id, submissionId, MissingItemKind.INFORMATION, label, note,
+                reason, dueAt, message, null, requestedBy, requestedAt
+        );
+    }
+
+    public static MissingItem document(
+            UUID id,
+            UUID submissionId,
+            String label,
+            String note,
+            DocumentType documentType,
+            String requestedBy,
+            Instant requestedAt
+    ) {
+        return document(id, submissionId, label, note, null, null, null,
+                documentType, requestedBy, requestedAt);
+    }
+
+    public static MissingItem document(
+            UUID id,
+            UUID submissionId,
+            String label,
+            String note,
+            String reason,
+            Instant dueAt,
+            String message,
+            DocumentType documentType,
+            String requestedBy,
+            Instant requestedAt
+    ) {
+        return new MissingItem(
+                id, submissionId, MissingItemKind.DOCUMENT, label, note,
+                reason, dueAt, message, documentType, requestedBy, requestedAt
+        );
+    }
+
+    public void markReminded(Instant time) {
+        this.lastRemindedAt = time;
+    }
+
+    public void resolve(String actor, String note, Instant time) {
+        if (status == MissingItemStatus.RESOLVED) {
+            return;
+        }
+        this.status = MissingItemStatus.RESOLVED;
+        this.resolvedBy = actor;
+        this.resolvedAt = time;
+        this.resolutionNote = note;
+    }
+
+    public UUID getId() {
+        return id;
+    }
+
+    public UUID getSubmissionId() {
+        return submissionId;
+    }
+
+    public MissingItemKind getKind() {
+        return kind;
+    }
+
+    public String getLabel() {
+        return label;
+    }
+
+    public String getNote() {
+        return note;
+    }
+
+    public String getReason() {
+        return reason;
+    }
+
+    public Instant getDueAt() {
+        return dueAt;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+
+    public DocumentType getDocumentType() {
+        return documentType;
+    }
+
+    public MissingItemStatus getStatus() {
+        return status;
+    }
+
+    public String getRequestedBy() {
+        return requestedBy;
+    }
+
+    public Instant getRequestedAt() {
+        return requestedAt;
+    }
+
+    public Instant getLastRemindedAt() {
+        return lastRemindedAt;
+    }
+
+    public String getResolvedBy() {
+        return resolvedBy;
+    }
+
+    public Instant getResolvedAt() {
+        return resolvedAt;
+    }
+
+    public String getResolutionNote() {
+        return resolutionNote;
+    }
+}
