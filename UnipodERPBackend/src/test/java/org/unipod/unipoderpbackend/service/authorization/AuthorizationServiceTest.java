@@ -94,6 +94,25 @@ class AuthorizationServiceTest {
     }
 
     @Test
+    void intakeStaffMayEditDrafts() {
+        AuthorizationResource draft = submission("student@mak.ac.ug", Set.of(), null);
+
+        assertTrue(service.check(actor("desk@unipod.ac.ug", ApiUserRole.RECEPTIONIST),
+                AuthorizationAction.CASE_EDIT, draft).allowed());
+        assertTrue(service.check(actor("ffo@unipod.ac.ug", ApiUserRole.FACT_FINDING_OFFICER),
+                AuthorizationAction.CASE_EDIT, draft).allowed());
+    }
+
+    @Test
+    void ipLiaisonKeepsReadAccessLikeTheExistingCaseEndpoints() {
+        Actor liaison = actor("ip@unipod.ac.ug", ApiUserRole.IP_LIAISON);
+
+        assertTrue(service.check(liaison, AuthorizationAction.CASE_VIEW, submission(null, Set.of(), null)).allowed());
+        assertEquals(DenialCode.ROLE_NOT_PERMITTED, service.check(liaison, AuthorizationAction.CASE_EDIT,
+                submission(null, Set.of(), null)).code());
+    }
+
+    @Test
     void authorizeThrowsWithTheDecisionWhenDenied() {
         Actor submitter = actor("student@mak.ac.ug", ApiUserRole.SUBMITTER);
 
