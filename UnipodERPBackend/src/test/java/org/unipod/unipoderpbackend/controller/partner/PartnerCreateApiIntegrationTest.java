@@ -1,6 +1,7 @@
 package org.unipod.unipoderpbackend.controller.partner;
 
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.hasItem;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -117,25 +118,50 @@ class PartnerCreateApiIntegrationTest {
     }
 
     @Test
-    void rejectsInvalidRequestsWithBadRequest() throws Exception {
+    void rejectsInvalidValuesWithValidationError() throws Exception {
         String[] invalidBodies = {
                 "{\"type\": \"FUNDER\"}",
                 "{\"name\": \"   \", \"type\": \"FUNDER\"}",
                 "{\"name\": \"No Type Ltd\"}",
-                "{\"name\": \"Bad Type Ltd\", \"type\": \"VENDOR\"}",
-                "{\"name\": \"Bad Date Ltd\", \"type\": \"FUNDER\", \"renewalDate\": \"29 Oct 2026\"}",
                 "{\"name\": \"Bad Email Ltd\", \"type\": \"FUNDER\", \"contactEmail\": \"not-an-email\"}",
                 "{\"name\": \"" + "n".repeat(256) + "\", \"type\": \"FUNDER\"}",
-                "{\"name\": \"Long Notes Ltd\", \"type\": \"FUNDER\", \"notes\": \"" + "x".repeat(2001) + "\"}",
-                "{\"name\": \"Unknown Field Ltd\", \"type\": \"FUNDER\", \"status\": \"EXPIRED\"}",
-                "not json"
+                "{\"name\": \"Long Notes Ltd\", \"type\": \"FUNDER\", \"notes\": \"" + "x".repeat(2001) + "\"}"
         };
         for (String body : invalidBodies) {
             mockMvc.perform(post("/operations/partners")
                             .with(manager())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(body))
-                    .andExpect(status().isBadRequest());
+                    .andExpect(status().isUnprocessableContent())
+                    .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+        }
+    }
+
+    @Test
+    void validationErrorNamesTheOffendingField() throws Exception {
+        mockMvc.perform(post("/operations/partners")
+                        .with(manager())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\": \"No Type Ltd\"}"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[*].field", hasItem("type")));
+    }
+
+    @Test
+    void rejectsMalformedBodiesWithBadRequest() throws Exception {
+        String[] malformedBodies = {
+                "{\"name\": \"Bad Type Ltd\", \"type\": \"VENDOR\"}",
+                "{\"name\": \"Bad Date Ltd\", \"type\": \"FUNDER\", \"renewalDate\": \"29 Oct 2026\"}",
+                "{\"name\": \"Unknown Field Ltd\", \"type\": \"FUNDER\", \"status\": \"EXPIRED\"}",
+                "not json"
+        };
+        for (String body : malformedBodies) {
+            mockMvc.perform(post("/operations/partners")
+                            .with(manager())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("MALFORMED_BODY"));
         }
     }
 

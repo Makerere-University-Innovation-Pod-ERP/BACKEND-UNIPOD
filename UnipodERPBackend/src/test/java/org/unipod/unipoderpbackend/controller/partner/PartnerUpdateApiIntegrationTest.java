@@ -1,5 +1,6 @@
 package org.unipod.unipoderpbackend.controller.partner;
 
+import static org.hamcrest.Matchers.hasItem;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -129,22 +130,52 @@ class PartnerUpdateApiIntegrationTest {
     }
 
     @Test
-    void rejectsInvalidRequestsWithBadRequest() throws Exception {
+    void rejectsInvalidValuesWithValidationError() throws Exception {
         Partner partner = seed(uniqueName("Invalid"));
         String[] invalidBodies = {
                 "{\"notes\": \"no version\"}",
-                "{\"version\": 0, \"name\": \"   \"}",
                 "{\"version\": 0, \"name\": \"" + "n".repeat(256) + "\"}",
-                "{\"version\": 0, \"type\": \"VENDOR\"}",
-                "{\"version\": 0, \"renewalDate\": \"29 Oct 2026\"}",
                 "{\"version\": 0, \"contactEmail\": \"not-an-email\"}",
-                "{\"version\": 0, \"notes\": \"" + "x".repeat(2001) + "\"}",
-                "{\"version\": 0, \"status\": \"EXPIRED\"}",
-                "{\"version\": \"zero\"}"
+                "{\"version\": 0, \"notes\": \"" + "x".repeat(2001) + "\"}"
         };
         for (String body : invalidBodies) {
             mockMvc.perform(patchRequest(partner.getId(), body, manager()))
-                    .andExpect(status().isBadRequest());
+                    .andExpect(status().isUnprocessableContent())
+                    .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+        }
+    }
+
+    @Test
+    void validationErrorNamesTheOffendingField() throws Exception {
+        Partner partner = seed(uniqueName("Field"));
+
+        mockMvc.perform(patchRequest(partner.getId(), "{\"notes\": \"no version\"}", manager()))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[*].field", hasItem("version")));
+    }
+
+    @Test
+    void blankNameIsRejectedByTheDomainWithBadRequest() throws Exception {
+        Partner partner = seed(uniqueName("Blank"));
+
+        patch(partner, "{\"version\": 0, \"name\": \"   \"}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("Partner name is required."));
+    }
+
+    @Test
+    void rejectsMalformedBodiesWithBadRequest() throws Exception {
+        Partner partner = seed(uniqueName("Malformed"));
+        String[] malformedBodies = {
+                "{\"version\": 0, \"type\": \"VENDOR\"}",
+                "{\"version\": 0, \"renewalDate\": \"29 Oct 2026\"}",
+                "{\"version\": 0, \"status\": \"EXPIRED\"}",
+                "{\"version\": \"zero\"}"
+        };
+        for (String body : malformedBodies) {
+            mockMvc.perform(patchRequest(partner.getId(), body, manager()))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("MALFORMED_BODY"));
         }
     }
 

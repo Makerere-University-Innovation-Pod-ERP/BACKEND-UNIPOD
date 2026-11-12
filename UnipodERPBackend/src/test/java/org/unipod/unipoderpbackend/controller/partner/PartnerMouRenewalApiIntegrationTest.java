@@ -2,6 +2,7 @@ package org.unipod.unipoderpbackend.controller.partner;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.hamcrest.Matchers.hasItem;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -111,20 +112,42 @@ class PartnerMouRenewalApiIntegrationTest {
     }
 
     @Test
-    void rejectsInvalidRequestsWithBadRequest() throws Exception {
+    void rejectsInvalidValuesWithValidationError() throws Exception {
         Partner partner = seed(null);
         String[] invalidBodies = {
                 "{}",
                 "{\"renewalDate\": null}",
                 "{\"documentReference\": \"MOU-1\"}",
-                "{\"renewalDate\": \"29 Oct 2026\"}",
-                "{\"renewalDate\": \"2030-01-01\", \"documentReference\": \"" + "r".repeat(501) + "\"}",
-                "{\"renewalDate\": \"2030-01-01\", \"status\": \"ACTIVE\"}",
-                "not json"
+                "{\"renewalDate\": \"2030-01-01\", \"documentReference\": \"" + "r".repeat(501) + "\"}"
         };
         for (String body : invalidBodies) {
             mockMvc.perform(put(partner.getId(), body, manager()))
-                    .andExpect(status().isBadRequest());
+                    .andExpect(status().isUnprocessableContent())
+                    .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+        }
+    }
+
+    @Test
+    void validationErrorNamesTheOffendingField() throws Exception {
+        Partner partner = seed(null);
+
+        mockMvc.perform(put(partner.getId(), "{}", manager()))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[*].field", hasItem("renewalDate")));
+    }
+
+    @Test
+    void rejectsMalformedBodiesWithBadRequest() throws Exception {
+        Partner partner = seed(null);
+        String[] malformedBodies = {
+                "{\"renewalDate\": \"29 Oct 2026\"}",
+                "{\"renewalDate\": \"2030-01-01\", \"status\": \"ACTIVE\"}",
+                "not json"
+        };
+        for (String body : malformedBodies) {
+            mockMvc.perform(put(partner.getId(), body, manager()))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("MALFORMED_BODY"));
         }
     }
 
