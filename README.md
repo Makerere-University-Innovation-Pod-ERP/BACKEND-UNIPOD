@@ -134,9 +134,9 @@ Drafts are private to their owner and do not appear in the queue. The list is or
 | GET    | `/api/submissions`                 | Lists all submissions.                                  |
 | GET    | `/api/submissions/search`           | Reference, title, or submitter-name search.             |
 | GET    | `/api/submissions/mine`            | Lists submissions registered by the authenticated user. |
-| GET    | `/api/me/submissions`               | Lists cases linked to the signed-in submitter.           |
-| GET    | `/api/me/submissions/{id}`          | Returns one submitter-owned case.                        |
-| GET    | `/api/me/capabilities`               | Returns submitter registration guidance and locked modules. |
+| GET    | `/api/me/submissions`               | Lists the signed-in submitter's own briefs and any waiting-for-you action. |
+| GET    | `/api/me/submissions/{id}`          | Returns one submitter-owned case with its waiting-for-you action. |
+| GET    | `/api/me/capabilities`               | Returns the submitter's actions and tab/module availability. |
 | GET    | `/api/sectors/filter-options`        | Returns sector IDs and names to authorized submission readers. |
 | GET    | `/api/submissions/{id}`            | Returns a submission, documents, and stage history.     |
 | POST   | `/api/submissions`                 | Creates a draft and assigns its tracking reference.     |
@@ -496,21 +496,28 @@ cases where their endpoint permission allows it. Observers are read-only.
 
 `GET /api/me/submissions` returns only submissions whose `submitterId` matches
 the authenticated subject, and `GET /api/me/submissions/{id}` returns one
-submitter-owned brief with its documents and stage history.
-`GET /api/me/capabilities` returns the locked navigation modules and explains
-that only authorized intake roles can register a submission. Submitters may
-create submissions, update and submit their own drafts, reply to an information
-request, and upload documents while their brief is `DRAFT`, `SUBMITTED`, or
-`AWAITING_INFORMATION`. Attempts to register, forward, confirm, reject,
-transition, modify another submitter's draft, or mark a document as verified
-return `403` with the safe permission envelope.
+submitter-owned brief. Both expose `pendingAction`, `waitingForYou`, and
+`waitingSince` when the submitter has work to do, and omit staff-only fields.
+The list accepts `tab=BRIEFS|SERVICE_REQUESTS`; invoices and bookings are
+separate modules. `GET /api/me/capabilities` reports the submitter's own
+actions (create, edit, submit, respond, upload) and the availability of every
+home tab. Briefs and service requests are `AVAILABLE`; invoices and payments
+(D4) and bookings (F1) report `NOT_CONFIGURED` until those services are
+connected.
+
+Submitters may create submissions, update and submit their own drafts, reply to
+an information request, and upload documents while their brief is `DRAFT`,
+`SUBMITTED`, or `AWAITING_INFORMATION`. Attempts to register, forward, confirm,
+reject, transition, modify another submitter's draft, or mark a document as
+verified return `403` with the safe permission envelope.
 
 Administrators, Innovation Coordinators, Receptionists, and Fact-Finding
 Officers may set `submitterId` when creating a case for another person.
 For backwards compatibility, omitted values default to the registering
 principal; the persisted field remains separate from `registeredBy`.
 
-The W3 submitter endpoints are read-only and do not publish workflow commands.
+The W3 submitter home endpoints are read-only. Submitter-scoped workflow
+commands remain on the submission endpoints and never expose staff-only fields.
 The existing Waluube notification outbox is a PostgreSQL-backed external-consumer
 boundary for durable asynchronous delivery. This repository does not provide a
 Kafka topic or Kafka consumer; a separate polling or CDC bridge is required

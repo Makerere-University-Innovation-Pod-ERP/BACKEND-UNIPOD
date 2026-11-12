@@ -96,16 +96,18 @@ class WaluubeApiIntegrationTest {
         mockMvc.perform(get("/me/capabilities")
                         .with(user(submitter).roles("SUBMITTER")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.canRegisterSubmission").value(false))
-                .andExpect(jsonPath("$.lockedModules").isArray())
-                .andExpect(jsonPath("$.registrationMessage").value(
-                        "You can submit a brief for reception review. Only authorized intake roles can register a submission."
-                ));
-
-        mockMvc.perform(get("/me/capabilities")
-                        .with(user("intake-submitters").roles("SUBMITTER", "RECEPTIONIST")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.canRegisterSubmission").value(true));
+                .andExpect(jsonPath("$.canCreateBrief").value(true))
+                .andExpect(jsonPath("$.canEditDraft").value(true))
+                .andExpect(jsonPath("$.canSubmitDraft").value(true))
+                .andExpect(jsonPath("$.canRespondToInformationRequest").value(true))
+                .andExpect(jsonPath("$.canUploadDocuments").value(true))
+                .andExpect(jsonPath("$.canUploadPaymentProof").value(false))
+                .andExpect(jsonPath("$.canBook").value(false))
+                .andExpect(jsonPath("$.modules.length()").value(4))
+                .andExpect(jsonPath("$.modules[?(@.key == 'INVOICES')].availability")
+                        .value(org.hamcrest.Matchers.hasItem("NOT_CONFIGURED")))
+                .andExpect(jsonPath("$.modules[?(@.key == 'BOOKINGS')].availability")
+                        .value(org.hamcrest.Matchers.hasItem("NOT_CONFIGURED")));
 
         mockMvc.perform(get("/submissions/mine")
                         .with(user(submitter).roles("SUBMITTER")))
@@ -235,6 +237,213 @@ class WaluubeApiIntegrationTest {
     }
 
     @Test
+    void submitterHomeExposesPendingWorkAndFiltersTabs() throws Exception {
+        String submitter = "home-" + UUID.randomUUID() + "@example.test";
+        var submitterUser = user(submitter).roles("SUBMITTER");
+        var receptionist = user("reception-home-" + UUID.randomUUID()).roles("RECEPTIONIST");
+
+        String draftId = idOf(mockMvc.perform(post("/submissions")
+                        .with(submitterUser)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "category": "general",
+                                  "title": "Draft on my home",
+                                  "purpose": "Keep working on the brief",
+                                  "problemAddressed": "The submitter must continue the draft"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString());
+
+        String serviceId = idOf(mockMvc.perform(post("/submissions")
+                        .with(submitterUser)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "category": "service_request",
+                                  "title": "Prototype request",
+                                  "purpose": "Request prototyping support",
+                                  "problemAddressed": "The lab needs a prototype",
+                                  "serviceRequested": "Prototype build",
+                                  "expectedResult": "A working prototype"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString());
+
+        String awaitingId = idOf(mockMvc.perform(post("/submissions")
+                        .with(submitterUser)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "category": "general",
+                                  "title": "Awaiting information",
+                                  "purpose": "Verify pending work on the home screen",
+                                  "problemAddressed": "Reception needs more information",
+                                  "submitterEmail": "%s",
+                                  "submitterPhone": "+256700000000"
+                                }
+                                """.formatted(submitter)))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString());
+
+        mockMvc.perform(post("/submissions/{id}/submit", awaitingId).with(submitterUser))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stage").value("SUBMITTED"));
+
+        mockMvc.perform(post("/submissions/{id}/request-information", awaitingId)
+                        .with(receptionist)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "items": [
+                                    {"label": "Recommendation letter", "documentType": "RECOMMENDATION_LETTER"},
+                                    {"label": "Supervisor contact"}
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stage").value("AWAITING_INFORMATION"));
+
+        mockMvc.perform(get("/me/submissions")
+                        .with(submitterUser)
+                        .param("size", "50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[?(@.id == '" + draftId + "')].pendingAction",
+                        org.hamcrest.Matchers.hasItem("CONTINUE_DRAFT")))
+                .andExpect(jsonPath("$.items[?(@.id == '" + draftId + "')].waitingForYou",
+                        org.hamcrest.Matchers.hasItem("Continue your draft and submit it.")))
+                .andExpect(jsonPath("$.items[?(@.id == '" + awaitingId + "')].pendingAction",
+                        org.hamcrest.Matchers.hasItem("PROVIDE_DOCUMENT")))
+                .andExpect(jsonPath("$.items[?(@.id == '" + awaitingId + "')].waitingForYou",
+                        org.hamcrest.Matchers.hasItem(
+                                "Reception needs 2 more items. Next: Recommendation letter."
+                        )))
+                .andExpect(jsonPath("$.items[?(@.id == '" + awaitingId + "')].waitingSince")
+                        .isNotEmpty());
+
+        mockMvc.perform(get("/me/submissions/{id}", awaitingId).with(submitterUser))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.pendingAction").value("PROVIDE_DOCUMENT"))
+                .andExpect(jsonPath("$.waitingForYou")
+                        .value("Reception needs 2 more items. Next: Recommendation letter."))
+                .andExpect(jsonPath("$.waitingSince").isNotEmpty());
+
+        mockMvc.perform(get("/me/submissions")
+                        .with(submitterUser)
+                        .param("tab", "BRIEFS")
+                        .param("size", "50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[?(@.id == '" + draftId + "')]").isNotEmpty())
+                .andExpect(jsonPath("$.items[?(@.id == '" + serviceId + "')]").isEmpty());
+
+        mockMvc.perform(get("/me/submissions")
+                        .with(submitterUser)
+                        .param("tab", "SERVICE_REQUESTS")
+                        .param("size", "50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[?(@.id == '" + serviceId + "')]").isNotEmpty())
+                .andExpect(jsonPath("$.items[?(@.id == '" + draftId + "')]").isEmpty());
+
+        mockMvc.perform(get("/me/submissions")
+                        .with(submitterUser)
+                        .param("tab", "service-requests")
+                        .param("size", "50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[?(@.id == '" + serviceId + "')]").isNotEmpty());
+
+        mockMvc.perform(get("/me/submissions")
+                        .with(submitterUser)
+                        .param("tab", "receipts"))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(get("/me/submissions")
+                        .with(submitterUser)
+                        .param("tab", "")
+                        .param("size", "50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[?(@.id == '" + draftId + "')]").isNotEmpty())
+                .andExpect(jsonPath("$.items[?(@.id == '" + serviceId + "')]").isNotEmpty());
+
+        for (int i = 0; i < 2; i++) {
+            mockMvc.perform(post("/submissions")
+                            .with(submitterUser)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "category": "service_request",
+                                      "title": "Paged prototype request %s",
+                                      "purpose": "Verify tab pagination",
+                                      "problemAddressed": "The list must paginate per tab",
+                                      "serviceRequested": "Prototype build",
+                                      "expectedResult": "A working prototype"
+                                    }
+                                    """.formatted(i)))
+                    .andExpect(status().isCreated());
+        }
+
+        mockMvc.perform(get("/me/submissions")
+                        .with(submitterUser)
+                        .param("tab", "SERVICE_REQUESTS")
+                        .param("size", "2")
+                        .param("page", "0"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(3))
+                .andExpect(jsonPath("$.totalPages").value(2))
+                .andExpect(jsonPath("$.items.length()").value(2));
+
+        mockMvc.perform(get("/me/submissions")
+                        .with(submitterUser)
+                        .param("tab", "SERVICE_REQUESTS")
+                        .param("size", "2")
+                        .param("page", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(3))
+                .andExpect(jsonPath("$.items.length()").value(1));
+
+        mockMvc.perform(post("/submissions/{id}/documents", awaitingId)
+                        .with(submitterUser)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "Recommendation letter",
+                                  "documentType": "RECOMMENDATION_LETTER",
+                                  "status": "SUBMITTED",
+                                  "fileReference": "home_recommendation_letter"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/me/submissions/{id}", awaitingId).with(submitterUser))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.pendingAction").value("PROVIDE_INFORMATION"))
+                .andExpect(jsonPath("$.waitingForYou").value("Reception needs: Supervisor contact."));
+
+        mockMvc.perform(post("/submissions/{id}/reply", awaitingId)
+                        .with(submitterUser)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stage").value("SUBMITTED"));
+
+        mockMvc.perform(get("/me/submissions/{id}", awaitingId).with(submitterUser))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.pendingAction")
+                        .value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.waitingForYou")
+                        .value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.waitingSince")
+                        .value(org.hamcrest.Matchers.nullValue()));
+    }
+
+    @Test
     void submitterCanCompleteRequestedDraftAndReceptionCanForwardItAtomically() throws Exception {
         String submitter = "owner-" + UUID.randomUUID() + "@example.test";
         String receptionist = "reception-" + UUID.randomUUID();
@@ -278,6 +487,13 @@ class WaluubeApiIntegrationTest {
                 .andExpect(jsonPath("$.informationRequestedNote")
                         .value("Please provide your student number and supervisor."))
                 .andExpect(jsonPath("$.informationRequestedBy").doesNotExist());
+
+        mockMvc.perform(get("/me/submissions/{id}", id).with(submitterUser))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.pendingAction").value("PROVIDE_INFORMATION"))
+                .andExpect(jsonPath("$.waitingForYou")
+                        .value("Please provide your student number and supervisor."))
+                .andExpect(jsonPath("$.waitingSince").isNotEmpty());
 
         mockMvc.perform(get("/submissions/search")
                         .with(submitterUser)
@@ -345,6 +561,12 @@ class WaluubeApiIntegrationTest {
                 .andExpect(jsonPath("$.code").value(code))
                 .andExpect(jsonPath("$.receivedAt").isNotEmpty())
                 .andExpect(jsonPath("$.responsibleSectorId").value(sector.id().toString()));
+
+        mockMvc.perform(get("/me/submissions/{id}", id).with(submitterUser))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.pendingAction").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.waitingForYou").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.waitingSince").value(org.hamcrest.Matchers.nullValue()));
 
         UUID submissionId = UUID.fromString(id);
         assertEquals(1, jdbcTemplate.queryForObject(
@@ -932,5 +1154,11 @@ class WaluubeApiIntegrationTest {
                         .param("receivedFrom", today.toString())
                         .param("receivedTo", today.minusDays(1).toString()))
                 .andExpect(status().isUnprocessableContent());
+    }
+
+    private static String idOf(String response) {
+        Matcher matcher = Pattern.compile("\"id\":\"([^\"]+)\"").matcher(response);
+        assertTrue(matcher.find(), "Response should include the submission id.");
+        return matcher.group(1);
     }
 }

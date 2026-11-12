@@ -7,7 +7,9 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import jakarta.mail.internet.AddressException;
 import jakarta.mail.internet.InternetAddress;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,7 +34,9 @@ import org.unipod.unipoderpbackend.dto.submission.RejectSubmissionRequest;
 import org.unipod.unipoderpbackend.dto.submission.ReplySubmissionRequest;
 import org.unipod.unipoderpbackend.dto.submission.RequestInformationRequest;
 import org.unipod.unipoderpbackend.dto.submission.SubmissionResponse;
+import org.unipod.unipoderpbackend.dto.submission.SubmitterPendingAction;
 import org.unipod.unipoderpbackend.dto.submission.SubmitterSubmissionResponse;
+import org.unipod.unipoderpbackend.dto.submission.SubmitterTab;
 import org.unipod.unipoderpbackend.exception.submission.InvalidSubmissionException;
 import org.unipod.unipoderpbackend.exception.submission.SubmissionConflictException;
 import org.unipod.unipoderpbackend.exception.submission.SubmissionNotFoundException;
@@ -746,16 +750,110 @@ public class SubmissionService {
     }
 
     @Transactional(readOnly = true)
-    public Page<SubmitterSubmissionResponse> forSubmitter(String submitterId, Pageable pageable) {
-        return submissions.findAllBySubmitterIdOrderByUpdatedAtDescIdAsc(submitterId, pageable)
-                .map(SubmitterSubmissionResponse::from);
+    public Page<SubmitterSubmissionResponse> forSubmitter(
+            String submitterId,
+            SubmitterTab tab,
+            Pageable pageable
+    ) {
+        Page<Submission> page;
+        if (tab == SubmitterTab.BRIEFS) {
+            page = submissions.findAllBySubmitterIdAndCategoryNotOrderByUpdatedAtDescIdAsc(
+                    submitterId, SubmissionCategory.SERVICE_REQUEST, pageable
+            );
+        } else if (tab == SubmitterTab.SERVICE_REQUESTS) {
+            page = submissions.findAllBySubmitterIdAndCategoryOrderByUpdatedAtDescIdAsc(
+                    submitterId, SubmissionCategory.SERVICE_REQUEST, pageable
+            );
+        } else {
+            page = submissions.findAllBySubmitterIdOrderByUpdatedAtDescIdAsc(submitterId, pageable);
+        }
+        Map<UUID, List<MissingItem>> openItems = openItemsBySubmission(page.getContent());
+        return page.map(submission -> toSubmitterResponse(
+                submission,
+                openItems.getOrDefault(submission.getId(), List.of())
+        ));
     }
 
     @Transactional(readOnly = true)
     public SubmitterSubmissionResponse forSubmitter(UUID id, String submitterId) {
         Submission submission = submissions.findByIdAndSubmitterId(id, submitterId)
                 .orElseThrow(() -> new SubmissionNotFoundException(id));
-        return SubmitterSubmissionResponse.from(submission);
+        List<MissingItem> openItems = missingItems
+                .findAllBySubmissionIdAndStatusOrderByRequestedAtAscIdAsc(id, MissingItemStatus.OPEN);
+        return toSubmitterResponse(submission, openItems);
+    }
+
+    private Map<UUID, List<MissingItem>> openItemsBySubmission(List<Submission> submissions) {
+        if (submissions.isEmpty()) {
+            return Map.of();
+        }
+        List<UUID> ids = submissions.stream().map(Submission::getId).toList();
+        return missingItems
+                .findAllBySubmissionIdInAndStatusOrderByRequestedAtAscIdAsc(ids, MissingItemStatus.OPEN)
+                .stream()
+                .collect(Collectors.groupingBy(MissingItem::getSubmissionId));
+    }
+
+    private static SubmitterSubmissionResponse toSubmitterResponse(
+            Submission submission,
+            List<MissingItem> openItems
+    ) {
+        Pending pending = pendingFor(submission, openItems);
+        return SubmitterSubmissionResponse.from(
+                submission,
+                pending.action(),
+                pending.message(),
+                pending.since()
+        );
+    }
+
+    private static Pending pendingFor(Submission submission, List<MissingItem> openItems) {
+        if (!submitterCanAct(submission.getStage())) {
+            return Pending.NONE;
+        }
+        if (!openItems.isEmpty()) {
+            MissingItem next = openItems.stream()
+                    .filter(item -> item.getKind() == MissingItemKind.DOCUMENT)
+                    .findFirst()
+                    .orElse(openItems.get(0));
+            String label = next.getLabel().trim();
+            String message = openItems.size() == 1
+                    ? "Reception needs: " + label + "."
+                    : "Reception needs " + openItems.size() + " more items. Next: " + label + ".";
+            SubmitterPendingAction action = next.getKind() == MissingItemKind.DOCUMENT
+                    ? SubmitterPendingAction.PROVIDE_DOCUMENT
+                    : SubmitterPendingAction.PROVIDE_INFORMATION;
+            Instant since = openItems.stream()
+                    .map(MissingItem::getRequestedAt)
+                    .min(Instant::compareTo)
+                    .orElse(next.getRequestedAt());
+            return new Pending(action, message, since);
+        }
+        String note = clean(submission.getInformationRequestedNote());
+        if (note != null) {
+            Instant since = submission.getInformationRequestedAt() == null
+                    ? submission.getUpdatedAt()
+                    : submission.getInformationRequestedAt();
+            return new Pending(SubmitterPendingAction.PROVIDE_INFORMATION, note, since);
+        }
+        if (submission.getStage() == SubmissionStage.DRAFT) {
+            return new Pending(
+                    SubmitterPendingAction.CONTINUE_DRAFT,
+                    "Continue your draft and submit it.",
+                    submission.getUpdatedAt()
+            );
+        }
+        return Pending.NONE;
+    }
+
+    private static boolean submitterCanAct(SubmissionStage stage) {
+        return stage == SubmissionStage.DRAFT
+                || stage == SubmissionStage.SUBMITTED
+                || stage == SubmissionStage.AWAITING_INFORMATION;
+    }
+
+    private record Pending(SubmitterPendingAction action, String message, Instant since) {
+        private static final Pending NONE = new Pending(null, null, null);
     }
 
     @Transactional(readOnly = true)
