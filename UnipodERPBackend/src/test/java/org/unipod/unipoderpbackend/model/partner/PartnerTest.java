@@ -141,6 +141,42 @@ class PartnerTest {
                 () -> partner.updateDetails("  ", null, null, null, null, null, NOW));
     }
 
+    @Test
+    void renewingMouSetsDateAndDocumentReference() {
+        Partner partner = partner("Acme Ltd");
+        Instant later = NOW.plusSeconds(60);
+
+        partner.renewMou(LocalDate.of(2028, 3, 1), "  MOU-2028-014 ", later);
+
+        assertEquals(LocalDate.of(2028, 3, 1), partner.getRenewalDate());
+        assertEquals("MOU-2028-014", partner.getDocumentReference());
+        assertEquals(later, partner.getUpdatedAt());
+    }
+
+    @Test
+    void renewingMouWithoutReferenceClearsThePreviousOne() {
+        Partner partner = partner("Acme Ltd");
+        partner.renewMou(LocalDate.of(2028, 3, 1), "MOU-2028-014", NOW);
+
+        partner.renewMou(LocalDate.of(2029, 3, 1), " ", NOW);
+
+        assertEquals(LocalDate.of(2029, 3, 1), partner.getRenewalDate());
+        assertNull(partner.getDocumentReference());
+    }
+
+    @Test
+    void renewingMouRequiresADateAndKeepsTheOldStateOnFailure() {
+        Partner partner = partner("Acme Ltd");
+        partner.renewMou(LocalDate.of(2028, 3, 1), "MOU-1", NOW);
+
+        assertThrows(InvalidPartnerException.class, () -> partner.renewMou(null, "MOU-2", NOW));
+        assertThrows(InvalidPartnerException.class,
+                () -> partner.renewMou(LocalDate.of(2030, 1, 1), "r".repeat(501), NOW));
+
+        assertEquals(LocalDate.of(2028, 3, 1), partner.getRenewalDate());
+        assertEquals("MOU-1", partner.getDocumentReference());
+    }
+
     private static Partner partner(String name) {
         return new Partner(UUID.randomUUID(), name, PartnerType.ACADEMIC_PARTNER, null, null, null, null, NOW);
     }

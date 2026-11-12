@@ -1,9 +1,11 @@
 package org.unipod.unipoderpbackend.controller.partner;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 
 import java.time.Clock;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -69,6 +71,34 @@ class PartnerUpdateConcurrencyTest {
                 patchStatus(second.getId(), body));
 
         assertEquals(List.of(200, 409), statuses.stream().sorted().toList());
+    }
+
+    @Test
+    void overlappingMouRenewalsNeverFailWithAServerError() throws Exception {
+        Partner partner = seed("Concurrent Renewal");
+
+        List<Integer> statuses = runTogether(
+                putMouStatus(partner.getId(), "{\"renewalDate\": \"2030-01-01\", \"documentReference\": \"A\"}"),
+                putMouStatus(partner.getId(), "{\"renewalDate\": \"2031-01-01\", \"documentReference\": \"B\"}"));
+
+        // Without a version precondition the later request may succeed after the first commits,
+        // or lose the race and get 409; either way one whole renewal is stored and nothing returns 500.
+        assertTrue(statuses.stream().allMatch(code -> code == 200 || code == 409), statuses::toString);
+        assertTrue(statuses.contains(200), statuses::toString);
+        Partner stored = repository.findById(partner.getId()).orElseThrow();
+        assertTrue(
+                (LocalDate.of(2030, 1, 1).equals(stored.getRenewalDate()) && "A".equals(stored.getDocumentReference()))
+                        || (LocalDate.of(2031, 1, 1).equals(stored.getRenewalDate())
+                                && "B".equals(stored.getDocumentReference())),
+                () -> stored.getRenewalDate() + " / " + stored.getDocumentReference());
+    }
+
+    private Callable<Integer> putMouStatus(UUID id, String body) {
+        return () -> mockMvc.perform(MockMvcRequestBuilders.put("/operations/partners/{id}/mou", id)
+                        .with(user("manager-" + UUID.randomUUID() + "@test.local").roles("DEPARTMENT_COORDINATOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andReturn().getResponse().getStatus();
     }
 
     private Callable<Integer> patchStatus(UUID id, String body) {

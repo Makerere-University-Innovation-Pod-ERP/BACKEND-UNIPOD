@@ -19,6 +19,7 @@ public class Partner {
     private static final int PERSON_MAX = 255;
     private static final int EMAIL_MAX = 254;
     private static final int NOTES_MAX = 2000;
+    private static final int DOCUMENT_REFERENCE_MAX = 500;
 
     @Id
     private UUID id;
@@ -42,7 +43,7 @@ public class Partner {
     @Column(length = NOTES_MAX)
     private String notes;
 
-    @Column(name = "document_reference", length = 500)
+    @Column(name = "document_reference", length = DOCUMENT_REFERENCE_MAX)
     private String documentReference;
 
     @Enumerated(EnumType.STRING)
@@ -115,6 +116,16 @@ public class Partner {
         if (renewalDate != null) {
             this.renewalDate = renewalDate;
         }
+        this.updatedAt = now;
+    }
+
+    /** Records a renewed MOU. The document reference is replaced, so omitting it clears the old one. */
+    public void renewMou(LocalDate renewalDate, String documentReference, Instant now) {
+        if (renewalDate == null) {
+            throw new InvalidPartnerException("Renewal date is required.");
+        }
+        this.documentReference = optionalText(documentReference, "Document reference", DOCUMENT_REFERENCE_MAX);
+        this.renewalDate = renewalDate;
         this.updatedAt = now;
     }
 

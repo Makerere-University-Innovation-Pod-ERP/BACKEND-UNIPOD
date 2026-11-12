@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.unipod.unipoderpbackend.dto.partner.CreatePartnerRequest;
 import org.unipod.unipoderpbackend.dto.partner.PartnerResponse;
 import org.unipod.unipoderpbackend.dto.partner.PartnersOverviewResponse;
+import org.unipod.unipoderpbackend.dto.partner.RecordMouRenewalRequest;
 import org.unipod.unipoderpbackend.dto.partner.UpdatePartnerRequest;
 import org.unipod.unipoderpbackend.exception.partner.PartnerConflictException;
 import org.unipod.unipoderpbackend.exception.partner.PartnerNotFoundException;
@@ -76,6 +77,18 @@ public class PartnerService {
             partners.saveAndFlush(partner);
         } catch (DataIntegrityViolationException race) {
             throw nameTaken();
+        } catch (ObjectOptimisticLockingFailureException concurrentEdit) {
+            throw staleVersion();
+        }
+        return toResponse(partner);
+    }
+
+    @Transactional
+    public PartnerResponse recordMouRenewal(UUID id, RecordMouRenewalRequest request) {
+        Partner partner = partners.findById(id).orElseThrow(PartnerNotFoundException::new);
+        partner.renewMou(request.renewalDate(), request.documentReference(), clock.instant());
+        try {
+            partners.saveAndFlush(partner);
         } catch (ObjectOptimisticLockingFailureException concurrentEdit) {
             throw staleVersion();
         }
