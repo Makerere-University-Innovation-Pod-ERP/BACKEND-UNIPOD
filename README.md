@@ -610,6 +610,15 @@ the Docker build context and `Dockerfile` as its Dockerfile path. Select the
 same region as the PostgreSQL instance; set the health-check path to
 `/api/actuator/health`.
 
+Keep the service's Start Command empty so Render uses the Dockerfile
+`ENTRYPOINT`. The application binds to `0.0.0.0` by default (override with
+`SERVER_ADDRESS` only if the platform requires it); Render does not support
+IPv6, so never bind to `::1` or `127.0.0.1`. Deploy one commit at a time:
+pushing or merging again while a deploy is still starting cancels it and
+rolls back to the previous live version. JVM startup on the free plan can
+take several minutes, and Render recommends the `1c-2g` plan or higher for
+JVM services in Docker.
+
 The deployed API base URL is `https://backend-unipod.onrender.com/api`.
 The OpenAPI `servers` list includes this production URL and the relative `/api`
 path for local development.
