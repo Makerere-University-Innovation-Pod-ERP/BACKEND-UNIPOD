@@ -54,7 +54,13 @@ public class SecurityConfiguration {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
-                        .requestMatchers("/actuator/health", "/auth/login", "/auth/set-password").permitAll()
+                        .requestMatchers(
+                                "/actuator/health",
+                                "/auth/login",
+                                "/auth/set-password",
+                                "/auth/signup",
+                                "/auth/forgot-password"
+                        ).permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(authenticationEntryPoint)
