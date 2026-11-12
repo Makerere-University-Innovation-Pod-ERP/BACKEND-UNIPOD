@@ -571,11 +571,11 @@ public class Submission {
             case REGISTERED -> nextStage == SubmissionStage.FACT_FINDING;
             case FACT_FINDING, FORWARDED -> nextStage == SubmissionStage.UNDER_REVIEW
                     || nextStage == SubmissionStage.REFINEMENT_REQUESTED;
-            case CONFIRMED_AS_PROJECT -> nextStage == SubmissionStage.FACT_FINDING;
             case UNDER_REVIEW, IN_PROGRESS -> nextStage == SubmissionStage.REFINEMENT_REQUESTED;
             case REFINEMENT_REQUESTED -> nextStage == SubmissionStage.FURTHER_HANDLING;
             case FURTHER_HANDLING -> nextStage == SubmissionStage.COMPLETED;
-            case DRAFT, SUBMITTED, AWAITING_INFORMATION, REJECTED, COMPLETED -> false;
+            case DRAFT, SUBMITTED, AWAITING_INFORMATION, CONFIRMED_AS_PROJECT,
+                    REJECTED, COMPLETED -> false;
         };
         if (!validTransition) {
             throw new SubmissionConflictException("The requested lifecycle transition is not allowed.");
@@ -584,19 +584,67 @@ public class Submission {
         this.updatedAt = time;
     }
 
-    public void saveOutcome(String decision, String note, String actor, Instant time) {
+    public void confirmOutcomeAsProject(
+            String decision,
+            String note,
+            String actor,
+            String projectCode,
+            Sector sector,
+            Instant time
+    ) {
+        requireOutcomeOpen();
+        if (isBlank(projectCode)) {
+            throw new InvalidSubmissionException("A project code is required to confirm a project.");
+        }
+        if (sector == null) {
+            throw new InvalidSubmissionException("A destination department is required to confirm a project.");
+        }
+        applyOutcomeDecision(decision, note, actor, time);
+        this.projectCode = projectCode.trim();
+        this.responsibleSectorId = sector.getId();
+        this.responsibleSector = sector;
+        this.forwardedAt = time;
+        this.forwardedBy = clean(actor);
+        this.confirmedAt = time;
+        this.stage = SubmissionStage.CONFIRMED_AS_PROJECT;
+        this.updatedAt = time;
+    }
+
+    public void requestOutcomeImprovement(String decision, String note, String actor, Instant time) {
+        requireOutcomeOpen();
+        applyOutcomeDecision(decision, note, actor, time);
+        this.stage = SubmissionStage.REFINEMENT_REQUESTED;
+        this.updatedAt = time;
+    }
+
+    public void closeWithOutcome(String decision, String note, String actor, Instant time) {
+        requireOutcomeOpen();
+        applyOutcomeDecision(decision, note, actor, time);
+        this.stage = SubmissionStage.COMPLETED;
+        this.updatedAt = time;
+    }
+
+    private void requireOutcomeOpen() {
         if (stage == SubmissionStage.DRAFT
                 || stage == SubmissionStage.REJECTED
-                || stage == SubmissionStage.COMPLETED) {
+                || stage == SubmissionStage.COMPLETED
+                || stage == SubmissionStage.CONFIRMED_AS_PROJECT) {
             throw new SubmissionConflictException("The outcome cannot be changed in the current case stage.");
         }
-        this.outcomeDecision = clean(decision);
-        this.outcomeNote = clean(note);
-        this.outcomeStatus = this.outcomeDecision == null
-                ? OutcomeStatus.IN_PROGRESS
-                : OutcomeStatus.DECIDED;
-        this.outcomeDecidedBy = this.outcomeStatus == OutcomeStatus.DECIDED ? actor : null;
-        this.outcomeDecidedAt = this.outcomeStatus == OutcomeStatus.DECIDED ? time : null;
+    }
+
+    private void applyOutcomeDecision(String decision, String note, String actor, Instant time) {
+        if (isBlank(decision)) {
+            throw new InvalidSubmissionException("An outcome decision is required.");
+        }
+        if (isBlank(note)) {
+            throw new InvalidSubmissionException("An outcome note is required.");
+        }
+        this.outcomeDecision = decision.trim();
+        this.outcomeNote = note.trim();
+        this.outcomeStatus = OutcomeStatus.DECIDED;
+        this.outcomeDecidedBy = actor;
+        this.outcomeDecidedAt = time;
         this.updatedAt = time;
     }
 
