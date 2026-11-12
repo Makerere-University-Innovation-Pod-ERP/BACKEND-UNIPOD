@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Smoke test for David's endpoints (D1 authorize, D3 audit log).
+# Smoke test for David's endpoints (D1 authorize, D3 audit log, D3 notifications).
 # Runs against any running backend: local or the hosted one on Render.
 #
 # Usage:
@@ -136,6 +136,33 @@ if [[ -n "$SUBMITTER_TOKEN" ]]; then
 else
     echo "  SKIP  run with --write, or set SUBMITTER_EMAIL and SUBMITTER_PASSWORD"
 fi
+
+echo
+echo "== D3: notifications (the bell)"
+call GET /notifications
+expect_status 401 "no token is refused"
+
+call GET "/notifications?size=5" "$ADMIN_TOKEN"
+expect_status 200 "admin can open their bell"
+expect_json "sorted(j.keys()) == ['items','page','size','totalElements','totalPages']" "True" "response is a page"
+
+call GET "/notifications?unread=true" "$ADMIN_TOKEN"
+expect_status 200 "unread filter works"
+expect_json "all(not n['read'] for n in j['items'])" "True" "unread filter returns only unread"
+
+call GET /notifications/unread-count "$ADMIN_TOKEN"
+expect_status 200 "unread count"
+expect_json "isinstance(j['unread'], int)" "True" "unread is a number"
+
+call POST "/notifications/00000000-0000-0000-0000-000000000000/read" "$ADMIN_TOKEN"
+expect_status 404 "unknown notification is 404"
+
+call POST /notifications/read-all "$ADMIN_TOKEN"
+expect_status 200 "mark all read"
+expect_json "isinstance(j['marked'], int)" "True" "read-all says how many it marked"
+
+call GET /notifications/unread-count "$ADMIN_TOKEN"
+expect_json "j['unread']" "0" "nothing unread after read-all"
 
 echo
 if [[ "$FAILED" -eq 0 ]]; then green "All $PASSED checks passed."; else red "$FAILED failed, $PASSED passed."; fi
