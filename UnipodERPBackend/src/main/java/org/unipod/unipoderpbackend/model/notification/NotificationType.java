@@ -1,6 +1,5 @@
 package org.unipod.unipoderpbackend.model.notification;
 
-/** The NT1 event list from the assignment doc (section 5). */
 public enum NotificationType {
     BRIEF_SUBMITTED,
     DOCUMENT_REQUESTED,
