@@ -330,6 +330,8 @@ public class SubmissionService {
         String projectCode = clean(request.projectCode());
         if (projectCode == null) {
             projectCode = caseCodeGenerator.nextProject(caseYear(now));
+        } else {
+            requireManualProjectCode(projectCode);
         }
         submission.confirmAsProject(projectCode, clean(request.note()), actor, now);
         stageHistory.save(new CaseStageHistory(
@@ -1008,6 +1010,18 @@ public class SubmissionService {
     private static void requireSubmitterRecommendationStatus(RecommendationLetterStatus status) {
         if (status == RecommendationLetterStatus.VERIFIED) {
             throw new AccessDeniedException("Submitters cannot mark a recommendation letter as verified.");
+        }
+    }
+
+    private void requireManualProjectCode(String projectCode) {
+        if (projectCode.matches("PRJ-\\d{4}-\\d{6}")) {
+            throw new InvalidSubmissionException(
+                    "Project codes in the PRJ-YYYY-NNNNNN format are allocated automatically; "
+                            + "leave the code blank or supply a different reference."
+            );
+        }
+        if (submissions.existsByProjectCode(projectCode)) {
+            throw new SubmissionConflictException("The project code is already in use.");
         }
     }
 

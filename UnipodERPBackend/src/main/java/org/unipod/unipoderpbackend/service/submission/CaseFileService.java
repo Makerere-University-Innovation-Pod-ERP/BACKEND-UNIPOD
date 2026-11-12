@@ -258,7 +258,7 @@ public class CaseFileService {
                                 : quorumReason),
                 capability(operator && documentsOpen,
                         !operator ? operatorReason
-                                : !documentsOpen ? "Completed cases cannot be changed." : null)
+                                : !documentsOpen ? "Closed cases cannot be changed." : null)
         );
     }
 

@@ -805,8 +805,11 @@ operations:
 * `INNOVATION_COORDINATOR`
 * `RECEPTIONIST`
 * `FACT_FINDING_OFFICER`
-* `REVIEWER`
-* `SECTOR_OFFICER`
+
+Reviewers and Sector Officers may additionally request information and manage
+missing items for cases they can see; they cannot register, forward, confirm,
+reject, or transition cases. IP Liaisons and Observers have read-only list and
+search access.
 
 Submitters can also authenticate. They may create a submission for themselves,
 update and submit their own drafts, reply to an information request, and upload
