@@ -842,6 +842,118 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /price-list-items:
+    get:
+      tags: [Finance]
+      operationId: listPriceListItems
+      x-required-roles: []
+      summary: Price list [FN1]
+      description: |
+        Finance officers and administrators see every item. Department heads also see
+        PROPOSED items of their own departments. Everyone else sees ACTIVE items only.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: departmentId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/PriceItemStatus'
+      responses:
+        '200':
+          description: Price list items by service name
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PriceListItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Finance]
+      operationId: createPriceListItem
+      x-required-roles: [FINANCE_OFFICER, ADMINISTRATOR, DEPARTMENT_HEAD]
+      summary: Add a price [FN1]
+      description: |
+        A finance officer or administrator creates an ACTIVE price. A department head
+        may only propose (status PROPOSED) for a department they belong to; finance
+        approves it with PUT. Prices are whole UGX. `effectiveFrom` defaults to today.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PriceListItemRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceListItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /price-list-items/{id}:
+    put:
+      tags: [Finance]
+      operationId: updatePriceListItem
+      x-required-roles: [FINANCE_OFFICER, ADMINISTRATOR]
+      summary: Change, approve or retire a price [FN1]
+      description: |
+        Send only the fields that change. Set `status` to ACTIVE to approve a proposal
+        or RETIRED to withdraw a price. Changes never alter invoices already issued,
+        and every change is audited with the old and new values.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PriceListItemUpdateRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceListItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /me/submissions:
     get:
       tags: [Submissions]
@@ -3385,7 +3497,7 @@ components:
       properties:
         action:
           type: string
-          enum: [CASE_VIEW, CASE_EDIT, CASE_FORWARD, CASE_ASSIGN_REVIEWER, CASE_REVIEW, CASE_DECIDE, AUDIT_VIEW, USER_MANAGE]
+          enum: [CASE_VIEW, CASE_EDIT, CASE_FORWARD, CASE_ASSIGN_REVIEWER, CASE_REVIEW, CASE_DECIDE, AUDIT_VIEW, USER_MANAGE, PRICE_LIST_MANAGE, PRICE_LIST_PROPOSE]
         scope:
           type: string
           enum: [OWN, ASSIGNED, DEPARTMENT, ALL]
@@ -3453,6 +3565,76 @@ components:
           $ref: '#/components/schemas/ApiUserRole'
         staff:
           type: boolean
+    PriceUnit:
+      type: string
+      enum: [PER_SESSION, PER_ITEM, PER_HOUR, PER_DAY]
+    PriceItemStatus:
+      type: string
+      enum: [PROPOSED, ACTIVE, RETIRED]
+    PriceListItemRequest:
+      type: object
+      required: [departmentId, service, unit, priceUgx]
+      properties:
+        departmentId:
+          type: string
+          format: uuid
+        service:
+          type: string
+          maxLength: 200
+        unit:
+          $ref: '#/components/schemas/PriceUnit'
+        priceUgx:
+          type: integer
+          format: int64
+          minimum: 1
+        effectiveFrom:
+          type: string
+          format: date
+    PriceListItemUpdateRequest:
+      type: object
+      properties:
+        service:
+          type: string
+          minLength: 1
+          maxLength: 200
+        unit:
+          $ref: '#/components/schemas/PriceUnit'
+        priceUgx:
+          type: integer
+          format: int64
+          minimum: 1
+        effectiveFrom:
+          type: string
+          format: date
+        status:
+          $ref: '#/components/schemas/PriceItemStatus'
+    PriceListItem:
+      type: object
+      required: [id, departmentId, service, unit, priceUgx, effectiveFrom, status, proposedBy, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        departmentId:
+          type: string
+          format: uuid
+        service:
+          type: string
+        unit:
+          $ref: '#/components/schemas/PriceUnit'
+        priceUgx:
+          type: integer
+          format: int64
+        effectiveFrom:
+          type: string
+          format: date
+        status:
+          $ref: '#/components/schemas/PriceItemStatus'
+        proposedBy:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
     SignupRequest:
       type: object
       required: [accountKind, fullName, phone, email, password, rulesAccepted, rulesVersion]
