@@ -14,6 +14,7 @@ import org.unipod.unipoderpbackend.model.auth.ApiUserRole;
 import org.unipod.unipoderpbackend.service.auth.AuthenticationService;
 import tools.jackson.databind.ObjectMapper;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -59,6 +60,15 @@ class SubmitterHomeApiIntegrationTest {
                 .andExpect(jsonPath("$.items[0].waitingForYou").value("Continue your draft and submit it."))
                 .andExpect(jsonPath("$.items[0].waitingSince").isNotEmpty())
                 .andExpect(jsonPath("$.items[0].registeredBy").doesNotExist());
+
+        String draftDetail = mockMvc.perform(get("/me/submissions/{id}", draftId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        var draftJson = objectMapper.readTree(draftDetail);
+        assertEquals(draftJson.get("createdAt").asText(), draftJson.get("waitingSince").asText());
 
         mockMvc.perform(get("/me/capabilities")
                         .header("Authorization", "Bearer " + token))

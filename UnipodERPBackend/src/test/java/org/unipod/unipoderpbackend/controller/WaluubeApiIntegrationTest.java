@@ -304,7 +304,8 @@ class WaluubeApiIntegrationTest {
                         .content("""
                                 {
                                   "items": [
-                                    {"label": "Recommendation letter", "documentType": "RECOMMENDATION_LETTER"},
+                                    {"label": "Recommendation letter", "documentType": "RECOMMENDATION_LETTER",
+                                     "message": "Upload a signed recommendation letter."},
                                     {"label": "Supervisor contact"}
                                   ]
                                 }
@@ -323,9 +324,7 @@ class WaluubeApiIntegrationTest {
                 .andExpect(jsonPath("$.items[?(@.id == '" + awaitingId + "')].pendingAction",
                         org.hamcrest.Matchers.hasItem("PROVIDE_DOCUMENT")))
                 .andExpect(jsonPath("$.items[?(@.id == '" + awaitingId + "')].waitingForYou",
-                        org.hamcrest.Matchers.hasItem(
-                                "Reception needs 2 more items. Next: Recommendation letter."
-                        )))
+                        org.hamcrest.Matchers.hasItem("Upload a signed recommendation letter.")))
                 .andExpect(jsonPath("$.items[?(@.id == '" + awaitingId + "')].waitingSince")
                         .isNotEmpty());
 
@@ -333,7 +332,7 @@ class WaluubeApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.pendingAction").value("PROVIDE_DOCUMENT"))
                 .andExpect(jsonPath("$.waitingForYou")
-                        .value("Reception needs 2 more items. Next: Recommendation letter."))
+                        .value("Upload a signed recommendation letter."))
                 .andExpect(jsonPath("$.waitingSince").isNotEmpty());
 
         mockMvc.perform(get("/me/submissions")
@@ -1154,6 +1153,76 @@ class WaluubeApiIntegrationTest {
                         .param("receivedFrom", today.toString())
                         .param("receivedTo", today.minusDays(1).toString()))
                 .andExpect(status().isUnprocessableContent());
+    }
+
+    @Test
+    void updatingAndSubmittingADraftClearsInformationItems() throws Exception {
+        String submitter = "draft-items-" + UUID.randomUUID() + "@example.test";
+        var submitterUser = user(submitter).roles("SUBMITTER");
+        var receptionist = user("reception-draft-items-" + UUID.randomUUID()).roles("RECEPTIONIST");
+
+        String created = mockMvc.perform(post("/submissions")
+                        .with(receptionist)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "category": "general",
+                                  "title": "Draft with requested items",
+                                  "purpose": "Verify item resolution on draft update",
+                                  "problemAddressed": "Reception needs one more detail",
+                                  "submitterId": "%s",
+                                  "submitterEmail": "%s"
+                                }
+                                """.formatted(submitter, submitter)))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String id = idOf(created);
+
+        mockMvc.perform(post("/submissions/{id}/request-information", id)
+                        .with(receptionist)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"items":[{"label":"Student number"}]}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stage").value("DRAFT"));
+
+        mockMvc.perform(get("/me/submissions/{id}", id).with(submitterUser))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.pendingAction").value("PROVIDE_INFORMATION"))
+                .andExpect(jsonPath("$.waitingForYou").value("Reception needs: Student number."));
+
+        mockMvc.perform(put("/submissions/{id}", id)
+                        .with(submitterUser)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "category": "general",
+                                  "title": "Draft with requested items completed",
+                                  "purpose": "Verify item resolution on draft update",
+                                  "problemAddressed": "Reception needs one more detail"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/submissions/{id}/submit", id).with(submitterUser))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stage").value("SUBMITTED"));
+
+        mockMvc.perform(get("/me/submissions/{id}", id).with(submitterUser))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.pendingAction").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.waitingForYou").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.waitingSince").value(org.hamcrest.Matchers.nullValue()));
+
+        assertEquals(0, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM missing_items WHERE submission_id = ? "
+                        + "AND kind = 'INFORMATION' AND status = 'OPEN'",
+                Integer.class,
+                UUID.fromString(id)
+        ));
     }
 
     private static String idOf(String response) {

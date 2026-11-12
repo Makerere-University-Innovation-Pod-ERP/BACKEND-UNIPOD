@@ -134,7 +134,7 @@ Drafts are private to their owner and do not appear in the queue. The list is or
 | GET    | `/api/submissions`                 | Lists all submissions.                                  |
 | GET    | `/api/submissions/search`           | Reference, title, or submitter-name search.             |
 | GET    | `/api/submissions/mine`            | Lists submissions registered by the authenticated user. |
-| GET    | `/api/me/submissions`               | Lists the signed-in submitter's own briefs and any waiting-for-you action. |
+| GET    | `/api/me/submissions`               | Lists the signed-in submitter's submissions, optionally filtered by `tab=BRIEFS` or `tab=SERVICE_REQUESTS`, with any waiting-for-you action. |
 | GET    | `/api/me/submissions/{id}`          | Returns one submitter-owned case with its waiting-for-you action. |
 | GET    | `/api/me/capabilities`               | Returns the submitter's actions and tab/module availability. |
 | GET    | `/api/sectors/filter-options`        | Returns sector IDs and names to authorized submission readers. |
@@ -516,8 +516,9 @@ Officers may set `submitterId` when creating a case for another person.
 For backwards compatibility, omitted values default to the registering
 principal; the persisted field remains separate from `registeredBy`.
 
-The W3 submitter home endpoints are read-only. Submitter-scoped workflow
-commands remain on the submission endpoints and never expose staff-only fields.
+The W3 submitter home responses are read-only and omit staff-only fields.
+Submitter-scoped workflow commands remain on the submission endpoints and return
+the standard submission response.
 The existing Waluube notification outbox is a PostgreSQL-backed external-consumer
 boundary for durable asynchronous delivery. This repository does not provide a
 Kafka topic or Kafka consumer; a separate polling or CDC bridge is required

@@ -32,21 +32,25 @@ public record SubmitterCapabilitiesResponse(
             "Bookings are provided by the facilities module (F1) and are not configured in this backend.";
 
     public static SubmitterCapabilitiesResponse forSubmitter() {
+        Module invoices = new Module(
+                "INVOICES", "Invoices and payments", Availability.NOT_CONFIGURED, INVOICES_NOT_CONFIGURED
+        );
+        Module bookings = new Module(
+                "BOOKINGS", "Bookings", Availability.NOT_CONFIGURED, BOOKINGS_NOT_CONFIGURED
+        );
         return new SubmitterCapabilitiesResponse(
                 true,
                 true,
                 true,
                 true,
                 true,
-                false,
-                false,
+                invoices.availability() == Availability.AVAILABLE,
+                bookings.availability() == Availability.AVAILABLE,
                 List.of(
                         new Module("BRIEFS", "Briefs", Availability.AVAILABLE, null),
                         new Module("SERVICE_REQUESTS", "Service requests", Availability.AVAILABLE, null),
-                        new Module("INVOICES", "Invoices and payments", Availability.NOT_CONFIGURED,
-                                INVOICES_NOT_CONFIGURED),
-                        new Module("BOOKINGS", "Bookings", Availability.NOT_CONFIGURED,
-                                BOOKINGS_NOT_CONFIGURED)
+                        invoices,
+                        bookings
                 ),
                 "You can create and edit your own drafts, submit them to reception, "
                         + "respond to information requests, and upload documents while a brief is still open."

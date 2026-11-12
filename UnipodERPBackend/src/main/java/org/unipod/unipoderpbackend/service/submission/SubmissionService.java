@@ -177,6 +177,7 @@ public class SubmissionService {
         if (submission.getCategory() != request.category()) {
             throw new InvalidSubmissionException("The submission category cannot be changed after creation.");
         }
+        Instant now = clock.instant();
         submission.updateDraft(
                 request.title().trim(),
                 request.purpose().trim(),
@@ -185,11 +186,12 @@ public class SubmissionService {
                 clean(request.programme()),
                 clean(request.supervisor()),
                 request.recommendationLetterStatus(),
-                clock.instant()
+                now
         );
         applyIntakeDetails(submission, request);
         if (submitter) {
             submission.clearInformationRequest();
+            resolveOpenInformationItems(submission.getId(), actor, now);
         } else {
             if (request.submitterEmail() != null && !request.submitterEmail().isBlank()) {
                 submission.updateSubmitterEmail(request.submitterEmail().trim());
@@ -817,9 +819,11 @@ public class SubmissionService {
                     .findFirst()
                     .orElse(openItems.get(0));
             String label = next.getLabel().trim();
-            String message = openItems.size() == 1
+            String requestedMessage = clean(next.getMessage());
+            String generatedMessage = openItems.size() == 1
                     ? "Reception needs: " + label + "."
                     : "Reception needs " + openItems.size() + " more items. Next: " + label + ".";
+            String message = requestedMessage != null ? requestedMessage : generatedMessage;
             SubmitterPendingAction action = next.getKind() == MissingItemKind.DOCUMENT
                     ? SubmitterPendingAction.PROVIDE_DOCUMENT
                     : SubmitterPendingAction.PROVIDE_INFORMATION;
@@ -840,7 +844,7 @@ public class SubmissionService {
             return new Pending(
                     SubmitterPendingAction.CONTINUE_DRAFT,
                     "Continue your draft and submit it.",
-                    submission.getUpdatedAt()
+                    submission.getCreatedAt()
             );
         }
         return Pending.NONE;
