@@ -2,11 +2,13 @@ package org.unipod.unipoderpbackend.controller.submission;
 
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import java.util.UUID;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -35,6 +37,15 @@ public class MySubmissionsController {
         return PageResponse.from(submissions.forSubmitter(
                 authentication.getName(), PageRequest.of(page, size)
         ));
+    }
+
+    @GetMapping("/submissions/{id}")
+    @PreAuthorize("hasRole('SUBMITTER')")
+    public SubmitterSubmissionResponse submission(
+            @PathVariable UUID id,
+            Authentication authentication
+    ) {
+        return submissions.forSubmitter(id, authentication.getName());
     }
 
     @GetMapping("/capabilities")
