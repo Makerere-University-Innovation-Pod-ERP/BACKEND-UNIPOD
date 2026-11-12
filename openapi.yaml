@@ -94,6 +94,8 @@ tags:
     description: Case file aggregate, controls, stages, outcome, and document review
   - name: Fact-Finding
     description: Structured brief assessment and readiness for review
+  - name: Audit
+    description: Append-only audit log (AD2) and the history panel on a brief
 x-cors:
   allowedOrigins:
     - http://localhost:5173
@@ -1241,6 +1243,96 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /activity:
+    get:
+      tags: [Audit]
+      operationId: listActivity
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, OBSERVER]
+      summary: Search the audit log (AD2)
+      description: |
+        Newest first. Every filter is optional. Access is decided by authorize()
+        with the AUDIT_VIEW action, so a refusal is a 403 whose body carries
+        `code` (for example ROLE_NOT_PERMITTED) and a readable `detail`.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: actor
+          in: query
+          required: false
+          description: Email of the person who acted (case-insensitive)
+          schema:
+            type: string
+        - name: action
+          in: query
+          required: false
+          description: Exact action name, e.g. user.created
+          schema:
+            type: string
+        - name: entityType
+          in: query
+          required: false
+          description: Kind of record, e.g. user or submission
+          schema:
+            type: string
+        - name: entityId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          required: false
+          description: First day to include (Kampala time)
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: false
+          description: Last day to include (Kampala time)
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: One page of audit entries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditEntryPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /cases/{id}/activity:
+    get:
+      tags: [Audit]
+      operationId: listCaseActivity
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
+      summary: History panel for one brief
+      description: |
+        Same visibility as GET /cases/{id}. If you can open the brief you can
+        see its history. A brief you cannot see returns 404.
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: One page of audit entries for this brief, newest first
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditEntryPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
 components:
   securitySchemes:
     bearerAuth:
@@ -1541,6 +1633,61 @@ components:
           type: string
           minLength: 1
           maxLength: 255
+    AuditEntry:
+      type: object
+      required: [id, occurredAt, actor, actorRole, action, entityType]
+      properties:
+        id:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        actor:
+          type: string
+          description: Email of the person who acted
+        actorRole:
+          type: string
+        action:
+          type: string
+          example: user.created
+        entityType:
+          type: string
+          example: user
+        entityId:
+          type: [string, 'null']
+          format: uuid
+        before:
+          type: [object, 'null']
+          additionalProperties: true
+          description: The record before the change (null on create)
+        after:
+          type: [object, 'null']
+          additionalProperties: true
+          description: The record after the change (null on delete)
+        departmentId:
+          type: [string, 'null']
+          format: uuid
+        requestId:
+          type: [string, 'null']
+          description: The X-Request-Id header of the request that made the change, if one was sent
+    AuditEntryPage:
+      type: object
+      required: [items, page, size, totalElements, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditEntry'
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
     SubmissionPage:
       type: object
       required: [items, page, size, totalElements, totalPages]
