@@ -1,5 +1,6 @@
 package org.unipod.unipoderpbackend.repository.submission;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -14,6 +15,11 @@ public interface MissingItemRepository extends JpaRepository<MissingItem, UUID> 
 
     List<MissingItem> findAllBySubmissionIdAndStatusOrderByRequestedAtAscIdAsc(
             UUID submissionId,
+            MissingItemStatus status
+    );
+
+    List<MissingItem> findAllBySubmissionIdInAndStatusOrderByRequestedAtAscIdAsc(
+            Collection<UUID> submissionIds,
             MissingItemStatus status
     );
 
