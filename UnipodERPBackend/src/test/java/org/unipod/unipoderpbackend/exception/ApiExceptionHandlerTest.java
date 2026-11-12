@@ -86,7 +86,7 @@ class ApiExceptionHandlerTest {
                 new InvalidSubmissionException("SQL details and internal implementation path")
         );
 
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertEquals(HttpStatus.UNPROCESSABLE_CONTENT, response.getStatusCode());
         assertNotNull(response.getBody());
         assertEquals("Submission details are invalid or incomplete.", response.getBody().getDetail());
         assertFalse(response.getBody().getDetail().contains("SQL details"));
