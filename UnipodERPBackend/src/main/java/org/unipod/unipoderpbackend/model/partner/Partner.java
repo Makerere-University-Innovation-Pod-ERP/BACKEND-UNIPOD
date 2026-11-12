@@ -87,6 +87,37 @@ public class Partner {
         this.updatedAt = now;
     }
 
+    /**
+     * Applies only the details that are present. A blank contact person, email or note clears it.
+     * The renewal date can be replaced but not cleared, because an omitted value means "unchanged".
+     */
+    public void updateDetails(
+            String name,
+            PartnerType type,
+            LocalDate renewalDate,
+            String contactPerson,
+            String contactEmail,
+            String notes,
+            Instant now) {
+        String newName = name == null ? this.name : requiredText(name, "Partner name", NAME_MAX);
+        String newContactPerson = contactPerson == null
+                ? this.contactPerson : optionalText(contactPerson, "Contact person", PERSON_MAX);
+        String newContactEmail = contactEmail == null
+                ? this.contactEmail : optionalText(contactEmail, "Contact email", EMAIL_MAX);
+        String newNotes = notes == null ? this.notes : optionalText(notes, "Notes", NOTES_MAX);
+        this.name = newName;
+        this.contactPerson = newContactPerson;
+        this.contactEmail = newContactEmail;
+        this.notes = newNotes;
+        if (type != null) {
+            this.type = type;
+        }
+        if (renewalDate != null) {
+            this.renewalDate = renewalDate;
+        }
+        this.updatedAt = now;
+    }
+
     // Blank optional text is stored as null so "no value" has one representation.
     private static String optionalText(String value, String field, int maxLength) {
         if (value == null || value.isBlank()) {

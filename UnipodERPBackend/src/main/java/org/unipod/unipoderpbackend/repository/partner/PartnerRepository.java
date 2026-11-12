@@ -18,4 +18,7 @@ public interface PartnerRepository extends JpaRepository<Partner, UUID> {
     // Same expression as uq_partners_name so the lookup uses that index.
     @Query("select count(p) > 0 from Partner p where lower(p.name) = lower(:name)")
     boolean existsByNameIgnoringCase(@Param("name") String name);
+
+    @Query("select count(p) > 0 from Partner p where lower(p.name) = lower(:name) and p.id <> :id")
+    boolean existsByNameIgnoringCaseExcluding(@Param("name") String name, @Param("id") UUID id);
 }

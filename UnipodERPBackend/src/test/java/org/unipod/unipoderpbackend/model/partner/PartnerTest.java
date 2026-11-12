@@ -80,6 +80,67 @@ class PartnerTest {
                 PartnerType.FUNDER, null, null, null, "n".repeat(2001), NOW));
     }
 
+    @Test
+    void updateChangesOnlyTheDetailsThatArePresent() {
+        Partner partner = new Partner(UUID.randomUUID(), "Acme Ltd", PartnerType.FUNDER,
+                LocalDate.of(2027, 3, 1), "Jane Doe", "jane@acme.test", "Old note", NOW);
+        Instant later = NOW.plusSeconds(60);
+
+        partner.updateDetails(" New Name ", null, null, null, null, "New note", later);
+
+        assertEquals("New Name", partner.getName());
+        assertEquals(PartnerType.FUNDER, partner.getType());
+        assertEquals(LocalDate.of(2027, 3, 1), partner.getRenewalDate());
+        assertEquals("Jane Doe", partner.getContactPerson());
+        assertEquals("jane@acme.test", partner.getContactEmail());
+        assertEquals("New note", partner.getNotes());
+        assertEquals(NOW, partner.getCreatedAt());
+        assertEquals(later, partner.getUpdatedAt());
+    }
+
+    @Test
+    void updateCanReplaceTypeAndRenewalDate() {
+        Partner partner = partner("Acme Ltd");
+
+        partner.updateDetails(null, PartnerType.INDUSTRY_PARTNER, LocalDate.of(2028, 1, 1), null, null, null, NOW);
+
+        assertEquals(PartnerType.INDUSTRY_PARTNER, partner.getType());
+        assertEquals(LocalDate.of(2028, 1, 1), partner.getRenewalDate());
+    }
+
+    @Test
+    void updateWithBlankOptionalTextClearsIt() {
+        Partner partner = new Partner(UUID.randomUUID(), "Acme Ltd", PartnerType.FUNDER,
+                null, "Jane Doe", "jane@acme.test", "A note", NOW);
+
+        partner.updateDetails(null, null, null, " ", "", " ", NOW);
+
+        assertNull(partner.getContactPerson());
+        assertNull(partner.getContactEmail());
+        assertNull(partner.getNotes());
+    }
+
+    @Test
+    void failedUpdateLeavesThePartnerUnchanged() {
+        Partner partner = new Partner(UUID.randomUUID(), "Acme Ltd", PartnerType.FUNDER,
+                null, "Jane Doe", null, null, NOW);
+
+        assertThrows(InvalidPartnerException.class,
+                () -> partner.updateDetails("Renamed", null, null, "p".repeat(256), null, null, NOW.plusSeconds(1)));
+
+        assertEquals("Acme Ltd", partner.getName());
+        assertEquals("Jane Doe", partner.getContactPerson());
+        assertEquals(NOW, partner.getUpdatedAt());
+    }
+
+    @Test
+    void updateRejectsBlankName() {
+        Partner partner = partner("Acme Ltd");
+
+        assertThrows(InvalidPartnerException.class,
+                () -> partner.updateDetails("  ", null, null, null, null, null, NOW));
+    }
+
     private static Partner partner(String name) {
         return new Partner(UUID.randomUUID(), name, PartnerType.ACADEMIC_PARTNER, null, null, null, null, NOW);
     }

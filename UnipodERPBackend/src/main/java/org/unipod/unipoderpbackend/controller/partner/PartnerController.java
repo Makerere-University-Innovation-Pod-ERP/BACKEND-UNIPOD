@@ -2,10 +2,13 @@ package org.unipod.unipoderpbackend.controller.partner;
 
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -14,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.unipod.unipoderpbackend.dto.partner.CreatePartnerRequest;
 import org.unipod.unipoderpbackend.dto.partner.PartnerResponse;
 import org.unipod.unipoderpbackend.dto.partner.PartnersOverviewResponse;
+import org.unipod.unipoderpbackend.dto.partner.UpdatePartnerRequest;
 import org.unipod.unipoderpbackend.service.partner.PartnerService;
 
 @RestController
@@ -49,5 +53,11 @@ public class PartnerController {
     @PreAuthorize(MANAGE_ROLES)
     public PartnerResponse create(@Valid @RequestBody CreatePartnerRequest request) {
         return partners.create(request);
+    }
+
+    @PatchMapping("/{id}")
+    @PreAuthorize(MANAGE_ROLES)
+    public PartnerResponse update(@PathVariable UUID id, @Valid @RequestBody UpdatePartnerRequest request) {
+        return partners.update(id, request);
     }
 }

@@ -14,7 +14,8 @@ public record PartnerResponse(
         PartnerStatus status,
         String contactPerson,
         String contactEmail,
-        String notes) {
+        String notes,
+        Long version) {
 
     public static PartnerResponse from(Partner partner, PartnerStatus status) {
         return new PartnerResponse(
@@ -25,6 +26,7 @@ public record PartnerResponse(
                 status,
                 partner.getContactPerson(),
                 partner.getContactEmail(),
-                partner.getNotes());
+                partner.getNotes(),
+                partner.getVersion());
     }
 }
