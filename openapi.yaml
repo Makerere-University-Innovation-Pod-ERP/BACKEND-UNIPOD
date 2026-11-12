@@ -108,6 +108,8 @@ tags:
     description: Structured brief assessment and readiness for review
   - name: Audit
     description: Append-only audit log (AD2) and the history panel on a brief
+  - name: Notifications
+    description: The in-app bell (NT1). Always the signed-in person's own notifications
 x-cors:
   allowedOrigins:
     - http://localhost:5173
@@ -1886,6 +1888,88 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /notifications:
+    get:
+      tags: [Notifications]
+      operationId: listNotifications
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
+      summary: My notifications, newest first
+      parameters:
+        - name: unread
+          in: query
+          required: false
+          description: true returns only unread notifications
+          schema:
+            type: boolean
+            default: false
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: One page of my notifications
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /notifications/unread-count:
+    get:
+      tags: [Notifications]
+      operationId: getUnreadNotificationCount
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
+      summary: Number for the red badge on the bell
+      responses:
+        '200':
+          description: How many of my notifications are unread
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnreadCount'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /notifications/{id}/read:
+    post:
+      tags: [Notifications]
+      operationId: markNotificationRead
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
+      summary: Mark one of my notifications as read
+      description: Safe to repeat; the first read time is kept. Someone else's notification returns 404.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The notification, now read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notification'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /notifications/read-all:
+    post:
+      tags: [Notifications]
+      operationId: markAllNotificationsRead
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
+      summary: Mark all my notifications as read
+      responses:
+        '200':
+          description: How many were marked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadAllResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 components:
   securitySchemes:
     bearerAuth:
@@ -2657,6 +2741,64 @@ components:
           type: integer
           format: int64
         totalPages:
+          type: integer
+    Notification:
+      type: object
+      required: [id, type, title, createdAt, read]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [BRIEF_SUBMITTED, DOCUMENT_REQUESTED, BRIEF_FORWARDED, REVIEWER_ASSIGNED, REVIEW_SUBMITTED, IMPROVEMENT_REQUESTED, NEW_VERSION_RECEIVED, PROJECT_CONFIRMED, PAYMENT_PROOF_UPLOADED, PAYMENT_CONFIRMED, PAYMENT_REJECTED, BOOKING_APPROVED, EQUIPMENT_APPROVAL_REQUESTED, FAULT_REPORTED, LOW_STOCK, AGREEMENT_EXPIRING]
+        title:
+          type: string
+        body:
+          type: [string, 'null']
+        entityType:
+          type: [string, 'null']
+          description: What it is about, e.g. submission, so the frontend can link to it
+        entityId:
+          type: [string, 'null']
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        readAt:
+          type: [string, 'null']
+          format: date-time
+        read:
+          type: boolean
+    NotificationPage:
+      type: object
+      required: [items, page, size, totalElements, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+    UnreadCount:
+      type: object
+      required: [unread]
+      properties:
+        unread:
+          type: integer
+          format: int64
+    ReadAllResult:
+      type: object
+      required: [marked]
+      properties:
+        marked:
           type: integer
     SubmissionPage:
       type: object
