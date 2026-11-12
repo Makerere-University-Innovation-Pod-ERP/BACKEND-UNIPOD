@@ -72,6 +72,27 @@ class TrainingRepositoryTest {
     }
 
     @Test
+    void breaksTiesBetweenSessionsStartingTogetherByIdAscending() {
+        Instant sameStart = DAY_ONE.plusSeconds(86_400L * 60);
+        UUID isolated = insertDepartment();
+        Set<UUID> ids = new java.util.HashSet<>();
+        for (int index = 0; index < 4; index++) {
+            ids.add(saveSession(isolated, sameStart, 10, 0).getId());
+        }
+        flushAndClear();
+
+        List<String> found = sessions.findByDepartmentNewestFirst(isolated).stream()
+                .map(session -> session.getId().toString()).toList();
+        List<String> expected = ids.stream().map(UUID::toString).sorted().toList();
+
+        // Postgres orders uuid by its bytes, which is the order of the lower-case hex text.
+        assertEquals(expected, found);
+        List<String> everywhere = sessions.findAllNewestFirst().stream()
+                .map(session -> session.getId().toString()).filter(expected::contains).toList();
+        assertEquals(expected, everywhere);
+    }
+
+    @Test
     void filtersSessionsByDepartment() {
         TrainingSession mine = saveSession(departmentId, DAY_ONE, 10, 0);
         saveSession(otherDepartmentId, DAY_ONE, 10, 0);
@@ -192,6 +213,22 @@ class TrainingRepositoryTest {
         List<UUID> order = followUps.findAllInScheduleOrder().stream().map(MentorshipFollowUp::getId).toList();
 
         assertTrue(order.indexOf(sooner.getId()) < order.indexOf(later.getId()));
+    }
+
+    @Test
+    void breaksTiesBetweenFollowUpsOnTheSameDateByIdAscending() {
+        LocalDate sameDay = LocalDate.of(2031, 5, 5);
+        Set<UUID> ids = new java.util.HashSet<>();
+        for (int index = 0; index < 4; index++) {
+            ids.add(saveFollowUp(sameDay).getId());
+        }
+        flushAndClear();
+
+        List<String> expected = ids.stream().map(UUID::toString).sorted().toList();
+        List<String> found = followUps.findAllInScheduleOrder().stream()
+                .map(followUp -> followUp.getId().toString()).filter(expected::contains).toList();
+
+        assertEquals(expected, found);
     }
 
     @Test

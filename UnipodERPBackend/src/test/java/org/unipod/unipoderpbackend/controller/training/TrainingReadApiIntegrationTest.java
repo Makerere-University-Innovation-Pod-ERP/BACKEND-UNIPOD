@@ -1,5 +1,6 @@
 package org.unipod.unipoderpbackend.controller.training;
 
+import static java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME;
 import static org.hamcrest.Matchers.endsWith;
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
@@ -11,6 +12,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -93,7 +95,10 @@ class TrainingReadApiIntegrationTest {
 
     @Test
     void sessionsUseTheFrontendFieldNamesAndKampalaOffsets() throws Exception {
-        Instant start = Instant.parse("2027-03-10T06:00:00Z");
+        // Relative to the clock so the session is always in the future; whole seconds so the JSON has no fraction.
+        Instant start = clock.instant().plus(Duration.ofDays(30)).truncatedTo(ChronoUnit.SECONDS);
+        String startText = ISO_OFFSET_DATE_TIME.format(start.atZone(clock.getZone()));
+        String endText = ISO_OFFSET_DATE_TIME.format(start.plus(Duration.ofHours(2)).atZone(clock.getZone()));
         TrainingSession session = save(start, 12, 50_000, true);
         TrainingParticipant participant = register(session, "2021/HD01/0001U", 50_000);
 
@@ -103,8 +108,9 @@ class TrainingReadApiIntegrationTest {
                 .andExpect(jsonPath("$.sessions[0].id").value(session.getId().toString()))
                 .andExpect(jsonPath("$.sessions[0].title").value(session.getTitle()))
                 .andExpect(jsonPath("$.sessions[0].facilitator").value("Eng. Nsubuga"))
-                .andExpect(jsonPath("$.sessions[0].date").value("2027-03-10T09:00:00+03:00"))
-                .andExpect(jsonPath("$.sessions[0].endsAt").value("2027-03-10T11:00:00+03:00"))
+                .andExpect(jsonPath("$.sessions[0].date").value(startText))
+                .andExpect(jsonPath("$.sessions[0].endsAt").value(endText))
+                .andExpect(jsonPath("$.sessions[0].date", endsWith("+03:00")))
                 .andExpect(jsonPath("$.sessions[0].enrolledCount").value(1))
                 .andExpect(jsonPath("$.sessions[0].capacity").value(12))
                 .andExpect(jsonPath("$.sessions[0].venue").value("Lab 2"))

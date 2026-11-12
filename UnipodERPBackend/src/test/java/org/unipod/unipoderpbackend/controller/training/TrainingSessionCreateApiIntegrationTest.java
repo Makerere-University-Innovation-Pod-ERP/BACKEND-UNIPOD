@@ -1,5 +1,6 @@
 package org.unipod.unipoderpbackend.controller.training;
 
+import static java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -12,6 +13,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import java.sql.Timestamp;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -42,8 +47,8 @@ class TrainingSessionCreateApiIntegrationTest {
             {
               "title": "Welding safety",
               "facilitator": "Eng. Nsubuga",
-              "date": "2027-03-10T09:00:00+03:00",
-              "endsAt": "2027-03-10T12:00:00+03:00",
+              "date": "START",
+              "endsAt": "END",
               "capacity": 12,
               "venue": "Workshop 1",
               "description": "PPE and fume control",
@@ -69,11 +74,22 @@ class TrainingSessionCreateApiIntegrationTest {
     @PersistenceContext
     private EntityManager entityManager;
 
+    @Autowired
+    private Clock clock;
+
+    // Dates are relative to the clock so the session is always in the future, in whole seconds for exact JSON.
+    private String start;
+    private String endTwoHoursLater;
+    private String endThreeHoursLater;
     private UUID departmentId;
 
     @BeforeEach
     void seedDepartment() {
         departmentId = TrainingFixtures.department(jdbcTemplate);
+        Instant begins = clock.instant().plus(Duration.ofDays(30)).truncatedTo(ChronoUnit.SECONDS);
+        start = format(begins);
+        endTwoHoursLater = format(begins.plus(Duration.ofHours(2)));
+        endThreeHoursLater = format(begins.plus(Duration.ofHours(3)));
         // The department list is cached; this test's department exists only inside its transaction.
         config.refresh();
     }
@@ -92,8 +108,8 @@ class TrainingSessionCreateApiIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.title").value("Welding safety"))
                 .andExpect(jsonPath("$.facilitator").value("Eng. Nsubuga"))
-                .andExpect(jsonPath("$.date").value("2027-03-10T09:00:00+03:00"))
-                .andExpect(jsonPath("$.endsAt").value("2027-03-10T12:00:00+03:00"))
+                .andExpect(jsonPath("$.date").value(start))
+                .andExpect(jsonPath("$.endsAt").value(endThreeHoursLater))
                 .andExpect(jsonPath("$.capacity").value(12))
                 .andExpect(jsonPath("$.enrolledCount").value(0))
                 .andExpect(jsonPath("$.venue").value("Workshop 1"))
@@ -130,11 +146,11 @@ class TrainingSessionCreateApiIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("""
                                 {"title": "Soldering", "facilitator": "Eng. Nsubuga",
-                                 "date": "2027-03-10T09:00:00+03:00", "capacity": 8, "venue": "Lab 1",
+                                 "date": "START", "capacity": 8, "venue": "Lab 1",
                                  "departmentId": "DEPT"}
                                 """)))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.endsAt").value("2027-03-10T11:00:00+03:00"))
+                .andExpect(jsonPath("$.endsAt").value(endTwoHoursLater))
                 .andExpect(jsonPath("$.description").value(""))
                 .andExpect(jsonPath("$.fee").value(0))
                 .andExpect(jsonPath("$.safetyCourse").value(false))
@@ -149,7 +165,7 @@ class TrainingSessionCreateApiIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("""
                                 {"title": "Draft course", "facilitator": "Eng. Nsubuga",
-                                 "date": "2027-03-10T09:00:00+03:00", "capacity": 8, "venue": "Lab 1",
+                                 "date": "START", "capacity": 8, "venue": "Lab 1",
                                  "departmentId": "DEPT", "publish": false}
                                 """)))
                 .andExpect(status().isCreated())
@@ -207,13 +223,13 @@ class TrainingSessionCreateApiIntegrationTest {
 
     static Stream<Arguments> invalidBodies() {
         String base = """
-                {"title": "T", "facilitator": "F", "date": "2027-03-10T09:00:00+03:00",
+                {"title": "T", "facilitator": "F", "date": "START",
                  "capacity": 5, "venue": "V", "departmentId": "DEPT"%s}
                 """;
         return Stream.of(
                 Arguments.of("blank title", base.replace("\"title\": \"T\"", "\"title\": \"  \"").formatted("")),
                 Arguments.of("missing facilitator", base.replace("\"facilitator\": \"F\",", "").formatted("")),
-                Arguments.of("missing date", base.replace("\"date\": \"2027-03-10T09:00:00+03:00\",", "").formatted("")),
+                Arguments.of("missing date", base.replace("\"date\": \"START\",", "").formatted("")),
                 Arguments.of("zero capacity", base.replace("\"capacity\": 5", "\"capacity\": 0").formatted("")),
                 Arguments.of("missing capacity", base.replace("\"capacity\": 5,", "").formatted("")),
                 Arguments.of("blank venue", base.replace("\"venue\": \"V\"", "\"venue\": \"\"").formatted("")),
@@ -229,8 +245,8 @@ class TrainingSessionCreateApiIntegrationTest {
                         .with(administrator("window@test.local"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("""
-                                {"title": "T", "facilitator": "F", "date": "2027-03-10T09:00:00+03:00",
-                                 "endsAt": "2027-03-10T09:00:00+03:00", "capacity": 5, "venue": "V",
+                                {"title": "T", "facilitator": "F", "date": "START",
+                                 "endsAt": "START", "capacity": 5, "venue": "V",
                                  "departmentId": "DEPT"}
                                 """)))
                 .andExpect(status().isBadRequest())
@@ -242,7 +258,7 @@ class TrainingSessionCreateApiIntegrationTest {
         mockMvc.perform(post("/operations/training/sessions")
                         .with(administrator("unknown@test.local"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(FULL_BODY.replace("DEPT", UUID.randomUUID().toString())))
+                        .content(body(FULL_BODY.replace("DEPT", UUID.randomUUID().toString()))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value("Choose an active department."));
     }
@@ -260,8 +276,9 @@ class TrainingSessionCreateApiIntegrationTest {
         mockMvc.perform(post("/operations/training/sessions")
                         .with(administrator("inactive@test.local"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(FULL_BODY.replace("DEPT", inactive.toString())))
-                .andExpect(status().isBadRequest());
+                        .content(body(FULL_BODY.replace("DEPT", inactive.toString()))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("Choose an active department."));
     }
 
     @Test
@@ -283,7 +300,7 @@ class TrainingSessionCreateApiIntegrationTest {
         mockMvc.perform(post("/operations/training/sessions")
                         .with(administrator("shape@test.local"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(body(FULL_BODY.replace("2027-03-10T09:00:00+03:00", "2027-03-10T09:00:00"))))
+                        .content(body(FULL_BODY.replace("START", "2027-03-10T09:00:00"))))
                 .andExpect(status().isBadRequest());
         mockMvc.perform(post("/operations/training/sessions")
                         .with(administrator("shape@test.local"))
@@ -293,7 +310,13 @@ class TrainingSessionCreateApiIntegrationTest {
     }
 
     private String body(String template) {
-        return template.replace("DEPT", departmentId.toString());
+        return template.replace("DEPT", departmentId.toString())
+                .replace("START", start)
+                .replace("END", endThreeHoursLater);
+    }
+
+    private String format(Instant instant) {
+        return ISO_OFFSET_DATE_TIME.format(instant.atZone(clock.getZone()));
     }
 
     private List<Map<String, Object>> auditRows(UUID entityId) {

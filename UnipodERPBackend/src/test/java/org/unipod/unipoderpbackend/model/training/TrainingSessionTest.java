@@ -80,6 +80,15 @@ class TrainingSessionTest {
     }
 
     @Test
+    void trimsAPaddedDescription() {
+        TrainingSession session = new TrainingSession(
+                UUID.randomUUID(), UUID.randomUUID(), "Laser cutting", "Eng. Nsubuga", STARTS, ENDS,
+                20, "Lab 2", "   PPE and fume control \n", 0, false, true, NOW);
+
+        assertEquals("PPE and fume control", session.getDescription());
+    }
+
+    @Test
     void recordsFeeSafetyFlagAndCreationTime() {
         TrainingSession session = new TrainingSession(
                 UUID.randomUUID(), UUID.randomUUID(), "Welding safety", "Eng. Nsubuga", STARTS, ENDS,

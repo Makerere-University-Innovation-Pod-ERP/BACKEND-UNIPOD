@@ -42,7 +42,14 @@ class TrainingSchemaTest {
 
     @Test
     void appliesDefaultsToASessionWithOnlyRequiredColumns() {
-        UUID id = insertSession(departmentId, START, END, 20, 0);
+        // No fee, safety_course, published or description in the insert: the columns must fall back to their defaults.
+        UUID id = UUID.randomUUID();
+        Timestamp now = Timestamp.from(START);
+        jdbcTemplate.update(
+                "INSERT INTO training_sessions (id, department_id, title, facilitator, starts_at, ends_at, "
+                        + "capacity, venue, created_at, updated_at) "
+                        + "VALUES (?, ?, 'Laser cutting basics', 'Eng. Nsubuga', ?, ?, 20, 'Lab 2', ?, ?)",
+                id, departmentId, Timestamp.from(START), Timestamp.from(END), now, now);
 
         var row = jdbcTemplate.queryForMap(
                 "SELECT fee, safety_course, published, version, description FROM training_sessions WHERE id = ?", id);
