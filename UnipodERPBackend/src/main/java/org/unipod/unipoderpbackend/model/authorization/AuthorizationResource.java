@@ -6,15 +6,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-/**
- * The record being acted on, reduced to the facts the policy needs.
- *
- * @param type           what kind of record, e.g. "submission"
- * @param id             the record id (null when creating a new record)
- * @param ownerEmail     who owns it (null if nobody)
- * @param assigneeEmails who it is assigned to (empty if nobody)
- * @param departmentId   which department it belongs to (null if none)
- */
 public record AuthorizationResource(
         String type,
         UUID id,
