@@ -18,15 +18,17 @@ import org.unipod.unipoderpbackend.service.auth.UserAdministrationService;
 @RequestMapping("/admin/users")
 public class AdminUserController {
     private final UserAdministrationService users;
+    private final CurrentActor currentActor;
 
-    public AdminUserController(UserAdministrationService users) {
+    public AdminUserController(UserAdministrationService users, CurrentActor currentActor) {
         this.users = users;
+        this.currentActor = currentActor;
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasRole('ADMINISTRATOR')")
     public ApiUserResponse create(@Valid @RequestBody CreateApiUserRequest request, Authentication authentication) {
-        return users.createUser(request, CurrentActor.from(authentication));
+        return users.createUser(request, currentActor.from(authentication));
     }
 }
