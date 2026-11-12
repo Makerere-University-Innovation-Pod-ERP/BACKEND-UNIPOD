@@ -6,8 +6,10 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -69,14 +71,17 @@ public class ReviewCommandService {
     private final ApiUserRepository users;
     private final ReviewPanelQueryService panels;
     private final Clock clock;
+    private final ReviewAudit audit;
 
+    @Autowired
     public ReviewCommandService(
             SubmissionRepository submissions,
             ReviewSettingsRepository settings,
             ReviewAssignmentRepository assignments,
             ApiUserRepository users,
             ReviewPanelQueryService panels,
-            Clock clock
+            Clock clock,
+            ReviewAudit audit
     ) {
         this.submissions = submissions;
         this.settings = settings;
@@ -84,6 +89,19 @@ public class ReviewCommandService {
         this.users = users;
         this.panels = panels;
         this.clock = clock;
+        this.audit = audit;
+    }
+
+    /** For unit tests of the rejection and conversion paths only; successful writes need the audit. */
+    ReviewCommandService(
+            SubmissionRepository submissions,
+            ReviewSettingsRepository settings,
+            ReviewAssignmentRepository assignments,
+            ApiUserRepository users,
+            ReviewPanelQueryService panels,
+            Clock clock
+    ) {
+        this(submissions, settings, assignments, users, panels, clock, null);
     }
 
     @Transactional
@@ -96,10 +114,13 @@ public class ReviewCommandService {
         lockBriefUnderReview(briefId, authentication);
         requireValidSettings(request);
 
-        ReviewSettings saved = settings.findTopByBriefIdOrderByRoundDesc(briefId)
-                .map(existing -> updatedSettings(existing, request, authentication.getName()))
+        Optional<ReviewSettings> existing = settings.findTopByBriefIdOrderByRoundDesc(briefId);
+        Map<String, Object> before = existing.map(ReviewAudit::settingsDetails).orElse(null);
+        ReviewSettings saved = existing
+                .map(current -> updatedSettings(current, request, authentication.getName()))
                 .orElseGet(() -> newRoundOne(briefId, request, authentication.getName()));
         persist(() -> settings.saveAndFlush(saved), SETTINGS_CHANGED);
+        audit.settingsSaved(authentication.getName(), briefId, before, saved);
         return panels.panelFor(briefId);
     }
 
@@ -141,6 +162,7 @@ public class ReviewCommandService {
         ReviewAssignment assignment = new ReviewAssignment(
                 briefId, latest.getRound(), reviewer.getEmail(), department, position, authentication.getName());
         persist(() -> assignments.saveAndFlush(assignment), ASSIGNMENTS_CHANGED);
+        audit.reviewerAssigned(authentication.getName(), assignment);
         return panels.panelFor(briefId);
     }
 
@@ -167,6 +189,7 @@ public class ReviewCommandService {
             assignments.flush();
             return null;
         }, ASSIGNMENTS_CHANGED);
+        audit.reviewerRemoved(authentication.getName(), assignment);
         return panels.panelFor(briefId);
     }
 

@@ -1,11 +1,13 @@
 package org.unipod.unipoderpbackend.service.review;
 
+import jakarta.persistence.EntityManager;
 import java.time.Clock;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Supplier;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -15,6 +17,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import org.unipod.unipoderpbackend.dto.review.AddFollowUpNoteRequest;
+import org.unipod.unipoderpbackend.dto.review.FollowUpNoteResponse;
 import org.unipod.unipoderpbackend.dto.review.MyReviewResponse;
 import org.unipod.unipoderpbackend.dto.review.ReviewSubmissionResponse;
 import org.unipod.unipoderpbackend.dto.review.SubmitReviewRequest;
@@ -23,11 +27,13 @@ import org.unipod.unipoderpbackend.exception.submission.SubmissionNotFoundExcept
 import org.unipod.unipoderpbackend.model.review.Review;
 import org.unipod.unipoderpbackend.model.review.ReviewAssignment;
 import org.unipod.unipoderpbackend.model.review.ReviewAssignmentStatus;
+import org.unipod.unipoderpbackend.model.review.ReviewFollowUpNote;
 import org.unipod.unipoderpbackend.model.review.ReviewMode;
 import org.unipod.unipoderpbackend.model.review.ReviewSettings;
 import org.unipod.unipoderpbackend.model.submission.Submission;
 import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
 import org.unipod.unipoderpbackend.repository.review.ReviewAssignmentRepository;
+import org.unipod.unipoderpbackend.repository.review.ReviewFollowUpNoteRepository;
 import org.unipod.unipoderpbackend.repository.review.ReviewRepository;
 import org.unipod.unipoderpbackend.repository.review.ReviewSettingsRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
@@ -55,6 +61,13 @@ public class ReviewSubmissionService {
             "Your review assignment was changed by another request. Reload it and try again.";
     static final String NOT_YOUR_TURN = "It is not your turn yet. A reviewer before you has not submitted.";
 
+    static final int MAX_NOTE_LENGTH = 1000;
+    static final int MAX_FOLLOW_UP_NOTES = 20;
+    static final String FOLLOW_UP_STAGE_REQUIRED =
+            "Follow-up notes can only be added while the brief is under review.";
+    static final String SUBMIT_BEFORE_FOLLOW_UP = "Submit your review before adding a follow-up note.";
+    static final String FOLLOW_UP_LIMIT = "The follow-up note limit has been reached.";
+
     private static final String REVIEW_ASSIGNMENT_CONSTRAINT = "uq_reviews_assignment";
 
     private final SubmissionRepository submissions;
@@ -63,14 +76,21 @@ public class ReviewSubmissionService {
     private final ReviewRepository reviews;
     private final ReviewQuorumService quorumService;
     private final Clock clock;
+    private final ReviewAudit audit;
+    private final ReviewFollowUpNoteRepository notes;
+    private final EntityManager entityManager;
 
+    @Autowired
     public ReviewSubmissionService(
             SubmissionRepository submissions,
             ReviewSettingsRepository settings,
             ReviewAssignmentRepository assignments,
             ReviewRepository reviews,
             ReviewQuorumService quorumService,
-            Clock clock
+            Clock clock,
+            ReviewAudit audit,
+            ReviewFollowUpNoteRepository notes,
+            EntityManager entityManager
     ) {
         this.submissions = submissions;
         this.settings = settings;
@@ -78,6 +98,21 @@ public class ReviewSubmissionService {
         this.reviews = reviews;
         this.quorumService = quorumService;
         this.clock = clock;
+        this.audit = audit;
+        this.notes = notes;
+        this.entityManager = entityManager;
+    }
+
+    /** For unit tests of the rejection and conversion paths only; successful writes need the audit. */
+    ReviewSubmissionService(
+            SubmissionRepository submissions,
+            ReviewSettingsRepository settings,
+            ReviewAssignmentRepository assignments,
+            ReviewRepository reviews,
+            ReviewQuorumService quorumService,
+            Clock clock
+    ) {
+        this(submissions, settings, assignments, reviews, quorumService, clock, null, null, null);
     }
 
     @Transactional
@@ -126,6 +161,8 @@ public class ReviewSubmissionService {
             assignments.saveAndFlush(assignment);
             return stored;
         });
+        // Round and position only: no decision, comment or reviewer email (see ReviewAudit).
+        audit.reviewSubmitted(authentication.getName(), assignment);
 
         ReviewQuorum quorum = quorumService.quorumFor(caller.settings());
         return new ReviewSubmissionResponse(
@@ -165,6 +202,70 @@ public class ReviewSubmissionService {
                 review == null ? null : review.getComment(),
                 review == null ? null : review.getSubmittedAt()
         );
+    }
+
+    /**
+     * Adds a follow-up note to the caller's own submitted review. The review itself is never modified.
+     * The brief row lock serialises concurrent notes, so the per-review limit cannot be exceeded.
+     */
+    @Transactional
+    @PreAuthorize(REVIEWER_ONLY)
+    public FollowUpNoteResponse addFollowUpNote(
+            UUID briefId,
+            AddFollowUpNoteRequest request,
+            Authentication authentication
+    ) {
+        requireReviewer(authentication);
+        Submission brief = submissions.findByIdForUpdate(briefId)
+                .orElseThrow(() -> new SubmissionNotFoundException(briefId));
+        ReviewAssignment assignment = callerAssignment(briefId, authentication).assignment();
+
+        if (brief.getStage() != SubmissionStage.UNDER_REVIEW) {
+            throw new SubmissionConflictException(FOLLOW_UP_STAGE_REQUIRED);
+        }
+        Review review = assignment.getStatus() == ReviewAssignmentStatus.SUBMITTED
+                ? reviews.findByAssignmentId(assignment.getId()).orElse(null)
+                : null;
+        if (review == null) {
+            throw new SubmissionConflictException(SUBMIT_BEFORE_FOLLOW_UP);
+        }
+        String note = request.note() == null ? "" : request.note().trim();
+        if (note.isEmpty()) {
+            throw unprocessable("note is required and must not be blank.");
+        }
+        if (note.length() > MAX_NOTE_LENGTH) {
+            throw unprocessable("note must be at most %d characters.".formatted(MAX_NOTE_LENGTH));
+        }
+        if (notes.countByReviewId(review.getId()) >= MAX_FOLLOW_UP_NOTES) {
+            throw new SubmissionConflictException(FOLLOW_UP_LIMIT);
+        }
+
+        ReviewFollowUpNote saved = notes.saveAndFlush(
+                new ReviewFollowUpNote(review.getId(), note, authentication.getName()));
+        // Re-read the stored row so createdAt matches what PostgreSQL kept (microsecond precision).
+        entityManager.refresh(saved);
+        // Round and position only: no note text, decision or reviewer email (see ReviewAudit).
+        audit.followUpAdded(authentication.getName(), assignment);
+        return FollowUpNoteResponse.from(saved);
+    }
+
+    /** The caller's own follow-up notes in the latest round; empty until the review is submitted. */
+    @Transactional(readOnly = true)
+    @PreAuthorize(REVIEWER_ONLY)
+    public List<FollowUpNoteResponse> followUpNotes(UUID briefId, Authentication authentication) {
+        requireReviewer(authentication);
+        if (!submissions.existsById(briefId)) {
+            throw new SubmissionNotFoundException(briefId);
+        }
+        ReviewAssignment assignment = callerAssignment(briefId, authentication).assignment();
+        if (assignment.getStatus() != ReviewAssignmentStatus.SUBMITTED) {
+            return List.of();
+        }
+        return reviews.findByAssignmentId(assignment.getId())
+                .map(review -> notes.findByReviewIdOrderByCreatedAtAscIdAsc(review.getId()).stream()
+                        .map(FollowUpNoteResponse::from)
+                        .toList())
+                .orElse(List.of());
     }
 
     /**

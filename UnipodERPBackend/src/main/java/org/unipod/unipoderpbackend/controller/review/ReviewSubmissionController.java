@@ -1,5 +1,6 @@
 package org.unipod.unipoderpbackend.controller.review;
 
+import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -11,6 +12,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.unipod.unipoderpbackend.dto.review.AddFollowUpNoteRequest;
+import org.unipod.unipoderpbackend.dto.review.FollowUpNoteResponse;
 import org.unipod.unipoderpbackend.dto.review.MyReviewResponse;
 import org.unipod.unipoderpbackend.dto.review.ReviewSubmissionResponse;
 import org.unipod.unipoderpbackend.dto.review.SubmitReviewRequest;
@@ -43,5 +46,22 @@ public class ReviewSubmissionController {
     @PreAuthorize(REVIEWER_ONLY)
     public MyReviewResponse myReview(@PathVariable UUID id, Authentication authentication) {
         return submissions.myReview(id, authentication);
+    }
+
+    @PostMapping("/my-review/follow-up-notes")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize(REVIEWER_ONLY)
+    public FollowUpNoteResponse addFollowUpNote(
+            @PathVariable UUID id,
+            @RequestBody AddFollowUpNoteRequest request,
+            Authentication authentication
+    ) {
+        return submissions.addFollowUpNote(id, request, authentication);
+    }
+
+    @GetMapping("/my-review/follow-up-notes")
+    @PreAuthorize(REVIEWER_ONLY)
+    public List<FollowUpNoteResponse> followUpNotes(@PathVariable UUID id, Authentication authentication) {
+        return submissions.followUpNotes(id, authentication);
     }
 }
