@@ -1,29 +1,35 @@
 #!/usr/bin/env bash
-#
-# Smoke test for David's endpoints (D1 authorize, D3 audit log, D3 notifications).
-# Runs against any running backend: local or the hosted one on Render.
-#
-# Usage:
-#   BASE_URL=https://backend-unipod.onrender.com/api \
-#   ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD='...' \
-#   ./scripts/smoke-test.sh [--write]
-#
-# Without --write it only reads. With --write it also creates one throwaway
-# SUBMITTER account (smoke-<time>@example.com). That makes an audit line we can
-# look for, and gives us a second user to check the 403 refusal with.
-# Accounts can't be deleted yet, so only use --write on a test environment.
-#
-# Optional instead of --write: SUBMITTER_EMAIL and SUBMITTER_PASSWORD of an
-# existing submitter account, to check the 403 without creating anything.
-#
-# Needs: bash, curl, python3. Exit code is the number of failed checks.
-
 set -uo pipefail
 
 BASE_URL="${BASE_URL:-http://localhost:8080/api}"
 BASE_URL="${BASE_URL%/}"
 WRITE=false
-[[ "${1:-}" == "--write" ]] && WRITE=true
+
+usage() {
+    cat <<'TEXT'
+Smoke test for David's endpoints: D1 authorize, D3 audit log and D3 notifications.
+
+Usage:
+  BASE_URL=https://backend-unipod.onrender.com/api \
+  ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD='...' \
+  ./scripts/smoke-test.sh [--write]
+
+--write   also creates one throwaway SUBMITTER account to check the audit line
+          and the 403 refusal. Accounts cannot be deleted yet, so only use it
+          on a test environment.
+
+Instead of --write you can set SUBMITTER_EMAIL and SUBMITTER_PASSWORD of an
+existing submitter. Needs bash, curl and python3. The exit code is the number
+of failed checks.
+TEXT
+}
+
+case "${1:-}" in
+    --write) WRITE=true ;;
+    -h|--help) usage; exit 0 ;;
+    "") ;;
+    *) usage; exit 1 ;;
+esac
 
 : "${ADMIN_EMAIL:?Set ADMIN_EMAIL}"
 : "${ADMIN_PASSWORD:?Set ADMIN_PASSWORD}"
@@ -38,7 +44,6 @@ red()   { printf '\033[31m%s\033[0m\n' "$1"; }
 pass()  { PASSED=$((PASSED + 1)); green "  PASS  $1"; }
 fail()  { FAILED=$((FAILED + 1)); red   "  FAIL  $1"; [[ -s "$BODY_FILE" ]] && echo "        body: $(head -c 400 "$BODY_FILE")"; }
 
-# call METHOD PATH [TOKEN] [JSON_BODY] -> sets STATUS, body in $BODY_FILE
 call() {
     local method="$1" path="$2" token="${3:-}" data="${4:-}"
     local args=(-s -o "$BODY_FILE" -w '%{http_code}' --max-time 90 -X "$method"
@@ -48,7 +53,6 @@ call() {
     STATUS="$(curl "${args[@]}" "$BASE_URL$path")"
 }
 
-# json EXPRESSION -> evaluates a python expression against the last body as `j`
 json() {
     python3 -c "import json,sys; j=json.load(open(sys.argv[1])); print($1)" "$BODY_FILE" 2>/dev/null
 }

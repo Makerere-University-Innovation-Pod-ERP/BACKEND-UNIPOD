@@ -5,18 +5,6 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 import org.unipod.unipoderpbackend.model.authorization.Actor;
 
-/**
- * What a module hands to {@code AuditService.log(...)}. Not stored itself;
- * the service turns it into an {@link AuditEntry}.
- *
- * @param actor        who did it
- * @param action       what happened, lower case with dots, e.g. "user.created", "submission.forwarded"
- * @param entityType   what kind of record, e.g. "user", "submission"
- * @param entityId     which record (null if not about one record)
- * @param before       the record before the change (null on create); any object Jackson can write
- * @param after        the record after the change (null on delete)
- * @param departmentId the department the record belongs to, if any
- */
 public record AuditEvent(
         Actor actor,
         String action,

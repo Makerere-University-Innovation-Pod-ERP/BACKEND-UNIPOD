@@ -21,18 +21,18 @@ import org.unipod.unipoderpbackend.service.audit.AuditService;
 @RestController
 @Validated
 public class ActivityController {
-    // Same roles as GET /cases/{id} in CaseFileController: if you can open the brief, you can see its history.
     private static final String CASE_READ_ROLES =
             "hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'FACT_FINDING_OFFICER', "
                     + "'REVIEWER', 'SECTOR_OFFICER', 'IP_LIAISON', 'SUBMITTER', 'OBSERVER')";
 
     private final AuditService audit;
+    private final CurrentActor currentActor;
 
-    public ActivityController(AuditService audit) {
+    public ActivityController(AuditService audit, CurrentActor currentActor) {
         this.audit = audit;
+        this.currentActor = currentActor;
     }
 
-    /** AD2 audit log. No @PreAuthorize on purpose: authorize() decides, and a refusal comes back with a code. */
     @GetMapping("/activity")
     public PageResponse<AuditEntryResponse> activity(
             @RequestParam(defaultValue = "0") @Min(0) int page,
@@ -46,7 +46,7 @@ public class ActivityController {
             Authentication authentication
     ) {
         return audit.search(
-                CurrentActor.from(authentication),
+                currentActor.from(authentication),
                 new ActivityFilter(actor, action, entityType, entityId, from, to),
                 page,
                 size
