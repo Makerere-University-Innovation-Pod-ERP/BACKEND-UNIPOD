@@ -34,10 +34,6 @@ import org.unipod.unipoderpbackend.service.submission.SubmissionVisibility;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-/**
- * audit.log() from the doc (section 5): an append-only "who did what, when" line,
- * plus the two read views (the AD2 audit log and the history panel on a brief).
- */
 @Service
 public class AuditService {
     static final String SUBMISSION = "submission";
@@ -67,13 +63,6 @@ public class AuditService {
         this.clock = clock;
     }
 
-    /**
-     * Writes one audit line inside the caller's transaction.
-     *
-     * <p>MANDATORY means: if there is no transaction already running, fail. So the
-     * audit line and the change it describes are saved together or not at all.
-     * There can never be a change without its audit line.</p>
-     */
     @Transactional(propagation = Propagation.MANDATORY)
     public void log(AuditEvent event) {
         entries.save(new AuditEntry(
@@ -91,7 +80,6 @@ public class AuditService {
         ));
     }
 
-    /** GET /activity: the whole audit log, filtered. Only roles with AUDIT_VIEW may read it. */
     @Transactional(readOnly = true)
     public PageResponse<AuditEntryResponse> search(
             Actor actor,
@@ -117,11 +105,6 @@ public class AuditService {
         ).map(this::toResponse));
     }
 
-    /**
-     * GET /cases/{id}/activity: the history panel on a brief.
-     * If you can open the brief you can see its history, so we reuse the brief's own
-     * visibility rules. A brief you cannot see is a 404, so its existence is not leaked.
-     */
     @Transactional(readOnly = true)
     public PageResponse<AuditEntryResponse> caseActivity(
             UUID caseId,
