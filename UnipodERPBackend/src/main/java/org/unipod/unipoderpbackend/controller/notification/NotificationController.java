@@ -18,18 +18,16 @@ import org.unipod.unipoderpbackend.dto.notification.UnreadCountResponse;
 import org.unipod.unipoderpbackend.security.CurrentActor;
 import org.unipod.unipoderpbackend.service.notification.NotificationService;
 
-/**
- * The bell (NT1). Every signed-in role has a bell, so there is no role check:
- * the recipient is always the signed-in person, taken from the token, never from the request.
- */
 @RestController
 @Validated
 @RequestMapping("/notifications")
 public class NotificationController {
     private final NotificationService notifications;
+    private final CurrentActor currentActor;
 
-    public NotificationController(NotificationService notifications) {
+    public NotificationController(NotificationService notifications, CurrentActor currentActor) {
         this.notifications = notifications;
+        this.currentActor = currentActor;
     }
 
     @GetMapping
@@ -57,7 +55,7 @@ public class NotificationController {
         return new ReadAllResponse(notifications.markAllRead(me(authentication)));
     }
 
-    private static String me(Authentication authentication) {
-        return CurrentActor.from(authentication).email();
+    private String me(Authentication authentication) {
+        return currentActor.from(authentication).email();
     }
 }
