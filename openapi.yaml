@@ -100,6 +100,8 @@ tags:
     description: Reception work queue
   - name: Dashboard
     description: Pipeline overview metrics
+  - name: Training
+    description: Training sessions, registrations, attendance and mentorship follow-ups (Operations)
   - name: Sectors
     description: Sector catalog and routing
   - name: Case Files
@@ -1992,6 +1994,369 @@ paths:
           $ref: '#/components/responses/NotFound'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /operations/training/overview:
+    get:
+      tags: [Training]
+      operationId: getTrainingOverview
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER]
+      summary: Training screen data
+      description: |
+        One call for the whole Training and Mentorship screen: the KPI numbers, every session
+        (newest start first) with its seat holders, and every mentorship follow-up (soonest first).
+        KPIs are computed from the data. `seatsFilled` and `totalSeats` cover sessions that are
+        UPCOMING or IN_PROGRESS; a seat is held by a PENDING_PAYMENT or CONFIRMED registration.
+        `departmentId` filters the sessions only; follow-ups are not department-owned.
+      parameters:
+        - name: departmentId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Training overview
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingOverview'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /operations/training/sessions:
+    post:
+      tags: [Training]
+      operationId: createTrainingSession
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Create a training session
+      description: |
+        The session belongs to an active department (see `departments` in `GET /config`).
+        `endsAt` defaults to two hours after `date`. `publish` defaults to true; an unpublished
+        session is a DRAFT. A fee above zero makes registrations wait for payment confirmation.
+        The action is recorded in the audit log.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTrainingSessionRequest'
+      responses:
+        '201':
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingSession'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /operations/training/sessions/{id}:
+    get:
+      tags: [Training]
+      operationId: getTrainingSession
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER]
+      summary: One training session with its seat holders
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingSession'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /operations/training/sessions/{id}/participants:
+    post:
+      tags: [Training]
+      operationId: registerTrainingParticipant
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Register a participant
+      description: |
+        Coordinators register people by name and registration number. The seat is taken under a
+        lock on the session, so two requests can never take the last seat. A free session confirms
+        the registration at once; a paid one is PENDING_PAYMENT until
+        `POST .../participants/{participantId}/confirm-payment`. Both states hold a seat.
+        Answers 409 when the session is full ("This session is full."), when the registration
+        number is already registered for the session, and once the session has ended.
+        The action is recorded in the audit log without the participant's personal details.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterTrainingParticipantRequest'
+      responses:
+        '201':
+          description: The updated session, including the new participant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingSession'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /operations/training/sessions/{id}/participants/{participantId}:
+    delete:
+      tags: [Training]
+      operationId: removeTrainingParticipant
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Remove a participant
+      description: |
+        Cancels the registration, which frees the seat and the registration number. The record is
+        kept for history but is no longer listed. A participant who has passed cannot be removed
+        (409). A participant of another session, or one already removed, is 404.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: participantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Participant removed
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /operations/training/sessions/{id}/attendance:
+    patch:
+      tags: [Training]
+      operationId: recordTrainingAttendance
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Record attendance
+      description: |
+        Only for a CONFIRMED participant of this session (409 while payment is pending). A
+        participant who has passed must stay PRESENT. A participant of another session is 404.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordTrainingAttendanceRequest'
+      responses:
+        '200':
+          description: The updated session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingSession'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /operations/training/sessions/{id}/participants/{participantId}/confirm-payment:
+    post:
+      tags: [Training]
+      operationId: confirmTrainingPayment
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Confirm a participant's payment
+      description: |
+        Moves a PENDING_PAYMENT registration to CONFIRMED. Until invoices exist in the finance
+        module, a coordinator confirms payment by hand. 409 when the registration is not waiting
+        for payment.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: participantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The updated session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingSession'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /operations/training/sessions/{id}/participants/{participantId}/pass:
+    post:
+      tags: [Training]
+      operationId: markTrainingParticipantPassed
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Record a safety-course pass
+      description: |
+        Safety courses only, and only for a participant marked PRESENT. 409 otherwise, or when
+        the participant has already passed.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: participantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The updated session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingSession'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /operations/training/mentorship:
+    post:
+      tags: [Training]
+      operationId: createMentorshipFollowUp
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Create a mentorship follow-up
+      description: A new follow-up starts as PENDING_FOLLOW_UP. `priority` defaults to NORMAL and `notes` to empty text.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMentorshipFollowUpRequest'
+      responses:
+        '201':
+          description: Follow-up created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MentorshipFollowUp'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /operations/training/mentorship/{id}:
+    patch:
+      tags: [Training]
+      operationId: updateMentorshipFollowUp
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Update a mentorship follow-up
+      description: |
+        Changes the status and optionally the notes. Omitted notes are kept; blank notes clear them.
+        COMPLETED is final: any later change is 409. A `version` that is no longer current is also 409.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMentorshipFollowUpRequest'
+      responses:
+        '200':
+          description: The updated follow-up
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MentorshipFollowUp'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /notifications:
     get:
       tags: [Notifications]
@@ -2295,6 +2660,259 @@ components:
         type: string
         format: uuid
   schemas:
+    TrainingOverview:
+      type: object
+      required: [upcomingSessions, seatsFilled, totalSeats, mentorshipFollowUps, sessions, followUps]
+      properties:
+        upcomingSessions:
+          type: integer
+          format: int64
+          description: Sessions that are UPCOMING
+        seatsFilled:
+          type: integer
+          format: int64
+          description: Seats held across UPCOMING and IN_PROGRESS sessions
+        totalSeats:
+          type: integer
+          format: int64
+          description: Capacity across UPCOMING and IN_PROGRESS sessions
+        mentorshipFollowUps:
+          type: integer
+          format: int64
+          description: Follow-ups that are not COMPLETED
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrainingSession'
+        followUps:
+          type: array
+          items:
+            $ref: '#/components/schemas/MentorshipFollowUp'
+    TrainingSession:
+      type: object
+      required: [id, title, facilitator, date, enrolledCount, capacity, venue, status, description, participants, departmentId, endsAt, fee, safetyCourse, published]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        facilitator:
+          type: string
+        date:
+          type: string
+          format: date-time
+          description: Start time, ISO-8601 with the Kampala offset, for example 2026-10-29T09:00:00+03:00
+        enrolledCount:
+          type: integer
+          description: Participants holding a seat (PENDING_PAYMENT or CONFIRMED)
+        capacity:
+          type: integer
+        venue:
+          type: string
+        status:
+          $ref: '#/components/schemas/TrainingSessionStatus'
+        description:
+          type: string
+        participants:
+          type: array
+          description: Participants holding a seat, in registration order; removed registrations are not listed
+          items:
+            $ref: '#/components/schemas/TrainingParticipant'
+        departmentId:
+          type: string
+          format: uuid
+        endsAt:
+          type: string
+          format: date-time
+        fee:
+          type: integer
+          description: Whole UGX; 0 for a free session
+        safetyCourse:
+          type: boolean
+        published:
+          type: boolean
+    TrainingSessionStatus:
+      type: string
+      description: DRAFT when not published; otherwise UPCOMING before the start, IN_PROGRESS until the end, then COMPLETED
+      enum: [DRAFT, UPCOMING, IN_PROGRESS, COMPLETED]
+    TrainingParticipant:
+      type: object
+      required: [id, name, regNumber, department, contactEmail, status, attendance, passed, registeredAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        regNumber:
+          type: string
+        department:
+          type: string
+          description: The participant's own department as free text
+        contactEmail:
+          type: [string, 'null']
+        status:
+          type: string
+          enum: [PENDING_PAYMENT, CONFIRMED, CANCELLED]
+        attendance:
+          type: string
+          enum: [PRESENT, ABSENT, EXCUSED, UNMARKED]
+        passed:
+          type: boolean
+          description: Set only for safety courses
+        registeredAt:
+          type: string
+          format: date-time
+    CreateTrainingSessionRequest:
+      type: object
+      required: [title, facilitator, date, capacity, venue, departmentId]
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          maxLength: 200
+        facilitator:
+          type: string
+          maxLength: 200
+        date:
+          type: string
+          format: date-time
+          description: Start time with an offset, for example 2026-10-29T09:00:00+03:00
+        endsAt:
+          type: string
+          format: date-time
+          description: Defaults to two hours after `date`; must be later than `date`
+        capacity:
+          type: integer
+          minimum: 1
+        venue:
+          type: string
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 2000
+        departmentId:
+          type: string
+          format: uuid
+          description: An active department; the list is in `GET /config`
+        fee:
+          type: integer
+          minimum: 0
+          description: Whole UGX; defaults to 0 (free)
+        safetyCourse:
+          type: boolean
+          description: Defaults to false
+        publish:
+          type: boolean
+          description: Defaults to true; false creates a DRAFT
+    RegisterTrainingParticipantRequest:
+      type: object
+      required: [name, regNumber, department]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          maxLength: 200
+        regNumber:
+          type: string
+          maxLength: 50
+          description: Unique per session among registrations that are not removed, ignoring case
+        department:
+          type: string
+          maxLength: 200
+        contactEmail:
+          type: string
+          format: email
+          maxLength: 254
+    RecordTrainingAttendanceRequest:
+      type: object
+      required: [participantId, attendance]
+      additionalProperties: false
+      properties:
+        participantId:
+          type: string
+          format: uuid
+        attendance:
+          type: string
+          enum: [PRESENT, ABSENT, EXCUSED, UNMARKED]
+    MentorshipFollowUp:
+      type: object
+      required: [id, title, mentee, mentor, scheduledDate, focus, status, notes, priority, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        mentee:
+          type: string
+        mentor:
+          type: string
+        scheduledDate:
+          type: string
+          format: date
+        focus:
+          type: string
+        status:
+          $ref: '#/components/schemas/MentorshipFollowUpStatus'
+        notes:
+          type: string
+        priority:
+          type: string
+          enum: [NORMAL, HIGH, URGENT]
+        version:
+          type: integer
+          format: int64
+          description: Send it back on the next update to be told if someone else changed the follow-up first
+    MentorshipFollowUpStatus:
+      type: string
+      enum: [PENDING_FOLLOW_UP, ACTION_REQUIRED, SCHEDULED, COMPLETED]
+    CreateMentorshipFollowUpRequest:
+      type: object
+      required: [title, mentee, mentor, scheduledDate, focus]
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          maxLength: 200
+        mentee:
+          type: string
+          maxLength: 200
+        mentor:
+          type: string
+          maxLength: 200
+        scheduledDate:
+          type: string
+          format: date
+        focus:
+          type: string
+          maxLength: 500
+        priority:
+          type: string
+          enum: [NORMAL, HIGH, URGENT]
+          description: Defaults to NORMAL
+        notes:
+          type: string
+          maxLength: 2000
+    UpdateMentorshipFollowUpRequest:
+      type: object
+      required: [status]
+      additionalProperties: false
+      properties:
+        status:
+          $ref: '#/components/schemas/MentorshipFollowUpStatus'
+        notes:
+          type: string
+          maxLength: 2000
+          description: Omit to keep the current notes; blank text clears them
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+          description: |
+            The `version` read with the follow-up. Optional; when sent and no longer current, the update is
+            refused with 409 and nothing changes.
     LoginRequest:
       type: object
       required: [email, password]
