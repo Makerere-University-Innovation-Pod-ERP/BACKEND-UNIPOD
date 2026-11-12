@@ -2176,6 +2176,9 @@ components:
         reference:
           type: string
           description: Support reference included for unexpected server errors.
+        code:
+          type: string
+          description: Machine-readable reason on 403 responses from authorize(), e.g. NOT_OWNER, NOT_ASSIGNED, OUTSIDE_DEPARTMENT, ROLE_NOT_PERMITTED.
   responses:
     BadRequest:
       description: Request validation failed
