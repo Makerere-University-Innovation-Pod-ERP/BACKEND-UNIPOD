@@ -528,6 +528,28 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /me:
+    get:
+      tags: [Authentication]
+      operationId: getMe
+      x-required-roles: []
+      summary: The signed-in user, role, home screen, departments, profile and capabilities
+      description: |
+        Call after login to decide which home screen to open (`MY_SUBMISSIONS` for
+        submitters, `STAFF_HOME` for staff) and which actions to show. `capabilities`
+        lists each action the role may take with its scope (OWN, ASSIGNED, DEPARTMENT
+        or ALL). `profile` is null for staff accounts created by an administrator.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /me/submissions:
     get:
       tags: [Submissions]
@@ -3003,6 +3025,72 @@ components:
     AccountKind:
       type: string
       enum: [STUDENT, PUBLIC, ORGANISATION]
+    Me:
+      type: object
+      required: [id, email, role, mustChangePassword, homeScreen, departmentIds, capabilities]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        role:
+          $ref: '#/components/schemas/ApiUserRole'
+        mustChangePassword:
+          type: boolean
+        homeScreen:
+          type: string
+          enum: [MY_SUBMISSIONS, STAFF_HOME]
+        departmentIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        profile:
+          oneOf:
+            - $ref: '#/components/schemas/UserProfile'
+            - type: 'null'
+        capabilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/Capability'
+    UserProfile:
+      type: object
+      required: [accountKind, fullName, phone, rulesVersion]
+      properties:
+        accountKind:
+          $ref: '#/components/schemas/AccountKind'
+        fullName:
+          type: string
+        displayFirstName:
+          type: [string, 'null']
+        phone:
+          type: string
+        studentNumber:
+          type: [string, 'null']
+        course:
+          type: [string, 'null']
+        universityEmail:
+          type: [string, 'null']
+        organisationName:
+          type: [string, 'null']
+        contactPerson:
+          type: [string, 'null']
+        mouReference:
+          type: [string, 'null']
+        rulesVersion:
+          type: string
+    Capability:
+      type: object
+      required: [action, scope]
+      properties:
+        action:
+          type: string
+          enum: [CASE_VIEW, CASE_EDIT, CASE_FORWARD, CASE_ASSIGN_REVIEWER, CASE_REVIEW, CASE_DECIDE, AUDIT_VIEW, USER_MANAGE]
+        scope:
+          type: string
+          enum: [OWN, ASSIGNED, DEPARTMENT, ALL]
     SignupRequest:
       type: object
       required: [accountKind, fullName, phone, email, password, rulesAccepted, rulesVersion]
