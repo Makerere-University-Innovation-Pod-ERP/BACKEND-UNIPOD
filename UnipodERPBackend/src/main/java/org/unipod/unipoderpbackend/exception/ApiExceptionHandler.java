@@ -28,6 +28,7 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.unipod.unipoderpbackend.exception.authorization.AccessDeniedWithReasonException;
+import org.unipod.unipoderpbackend.exception.notification.NotificationNotFoundException;
 import org.unipod.unipoderpbackend.exception.sector.SectorConflictException;
 import org.unipod.unipoderpbackend.exception.sector.SectorNotFoundException;
 import org.unipod.unipoderpbackend.exception.storage.StorageObjectNotFoundException;
@@ -84,6 +85,11 @@ public class ApiExceptionHandler {
     @ExceptionHandler(SectorNotFoundException.class)
     ResponseEntity<ProblemDetail> handleSectorNotFound(SectorNotFoundException exception) {
         return problem(HttpStatus.NOT_FOUND, "Sector not found", "The requested sector was not found or is inactive.");
+    }
+
+    @ExceptionHandler(NotificationNotFoundException.class)
+    ResponseEntity<ProblemDetail> handleNotificationNotFound(NotificationNotFoundException exception) {
+        return problem(HttpStatus.NOT_FOUND, "Notification not found", "The requested notification was not found.");
     }
 
     @ExceptionHandler(StorageObjectNotFoundException.class)
