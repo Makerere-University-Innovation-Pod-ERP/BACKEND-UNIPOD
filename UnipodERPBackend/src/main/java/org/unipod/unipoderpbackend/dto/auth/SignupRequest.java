@@ -21,7 +21,7 @@ public record SignupRequest(
         @Size(max = 200) String organisationName,
         @Size(max = 200) String contactPerson,
         @Size(max = 100) String mouReference,
-        @AssertTrue(message = "must be accepted") boolean rulesAccepted,
+        @NotNull @AssertTrue(message = "must be accepted") Boolean rulesAccepted,
         @NotBlank @Size(max = 40) String rulesVersion
 ) {
 }
