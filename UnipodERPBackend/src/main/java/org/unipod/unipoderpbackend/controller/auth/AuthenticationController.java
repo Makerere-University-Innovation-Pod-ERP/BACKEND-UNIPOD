@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.unipod.unipoderpbackend.dto.auth.ChangePasswordRequest;
+import org.unipod.unipoderpbackend.dto.auth.ForgotPasswordRequest;
 import org.unipod.unipoderpbackend.dto.auth.LoginRequest;
 import org.unipod.unipoderpbackend.dto.auth.LoginResponse;
 import org.unipod.unipoderpbackend.dto.auth.SetPasswordRequest;
@@ -44,5 +45,11 @@ public class AuthenticationController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void setPassword(@Valid @RequestBody SetPasswordRequest request) {
         authentication.setPassword(request);
+    }
+
+    @PostMapping("/forgot-password")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public void forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        authentication.requestPasswordReset(request.email());
     }
 }

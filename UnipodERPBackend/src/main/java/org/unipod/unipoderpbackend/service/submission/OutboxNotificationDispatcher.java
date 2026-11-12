@@ -42,7 +42,8 @@ public class OutboxNotificationDispatcher {
                     'submission.forwarded_copy',
                     'submission.confirmed_as_project',
                     'submission.rejected',
-                    'auth.password_setup'
+                    'auth.password_setup',
+                    'auth.password_reset'
                 )
                     AND published_at IS NULL
                     AND (locked_until IS NULL OR locked_until <= CURRENT_TIMESTAMP)
@@ -130,6 +131,17 @@ public class OutboxNotificationDispatcher {
                         %s
 
                         If you did not expect this email, you can ignore it.
+                        """.formatted(setPasswordUrl));
+            } else if ("auth.password_reset".equals(event.eventType())) {
+                String setPasswordUrl = required(payload, "setPasswordUrl");
+                message.setSubject("Reset your UNIPOD account password");
+                message.setText("""
+                        Someone asked to reset the password for your UNIPOD account.
+
+                        Choose a new password using this one-time link. It expires in one hour:
+                        %s
+
+                        If you did not ask for this, you can ignore this email. Your password has not changed.
                         """.formatted(setPasswordUrl));
             } else if (isSubmitterLifecycleEvent(event.eventType())) {
                 String caseCode = required(payload, "caseCode");
