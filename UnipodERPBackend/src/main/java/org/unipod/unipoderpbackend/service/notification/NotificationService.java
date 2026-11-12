@@ -14,10 +14,6 @@ import org.unipod.unipoderpbackend.model.notification.Notification;
 import org.unipod.unipoderpbackend.model.notification.NotificationEvent;
 import org.unipod.unipoderpbackend.repository.notification.NotificationRepository;
 
-/**
- * notify.publish() from the doc (section 5), plus the bell endpoints.
- * Every read and write is limited to the signed-in person's own notifications.
- */
 @Service
 public class NotificationService {
     private final NotificationRepository notifications;
@@ -28,12 +24,6 @@ public class NotificationService {
         this.clock = clock;
     }
 
-    /**
-     * Saves one bell notification per recipient, inside the caller's transaction.
-     *
-     * <p>MANDATORY for the same reason as audit.log(): if the action rolls back,
-     * its notifications roll back too, so nobody is told about something that never happened.</p>
-     */
     @Transactional(propagation = Propagation.MANDATORY)
     public void publish(NotificationEvent event) {
         List<Notification> rows = event.recipients().stream()
@@ -65,7 +55,6 @@ public class NotificationService {
         return notifications.countByRecipientAndReadAtIsNull(recipient);
     }
 
-    /** Someone else's notification is a 404, not a 403, so ids cannot be probed. */
     @Transactional
     public NotificationResponse markRead(String recipient, UUID id) {
         Notification notification = notifications.findByIdAndRecipient(id, recipient)
