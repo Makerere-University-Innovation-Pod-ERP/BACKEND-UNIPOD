@@ -66,6 +66,7 @@ class MentorshipCreateApiIntegrationTest {
                 .andExpect(jsonPath("$.status").value("PENDING_FOLLOW_UP"))
                 .andExpect(jsonPath("$.notes").value("Bring the demo"))
                 .andExpect(jsonPath("$.priority").value("HIGH"))
+                .andExpect(jsonPath("$.version").value(0))
                 .andReturn().getResponse().getContentAsString();
         UUID id = UUID.fromString(objectMapper.readTree(response).get("id").asString());
 

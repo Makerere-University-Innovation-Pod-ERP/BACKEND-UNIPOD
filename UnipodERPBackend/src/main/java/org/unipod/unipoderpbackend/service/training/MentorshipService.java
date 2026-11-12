@@ -62,13 +62,16 @@ public class MentorshipService {
     @Transactional
     public FollowUpResponse update(UUID id, UpdateFollowUpRequest request, Actor actor) {
         MentorshipFollowUp followUp = followUps.findById(id).orElseThrow(TrainingNotFoundException::followUp);
+        if (request.version() != null && request.version() != followUp.getVersion()) {
+            throw staleFollowUp();
+        }
         String before = followUp.getStatus().name();
         boolean notesChanged = request.notes() != null && !request.notes().strip().equals(followUp.getNotes());
         followUp.update(request.status(), request.notes(), clock.instant());
         try {
             followUps.saveAndFlush(followUp);
         } catch (ObjectOptimisticLockingFailureException concurrentEdit) {
-            throw new TrainingConflictException("This follow-up was changed by someone else. Reload it and try again.");
+            throw staleFollowUp();
         }
         audit.log(AuditEvent.changed(
                 actor,
@@ -78,5 +81,9 @@ public class MentorshipService {
                 Map.of("status", before),
                 Map.of("status", followUp.getStatus().name(), "notesChanged", notesChanged)));
         return FollowUpResponse.from(followUp);
+    }
+
+    private static TrainingConflictException staleFollowUp() {
+        return new TrainingConflictException("This follow-up was changed by someone else. Reload it and try again.");
     }
 }

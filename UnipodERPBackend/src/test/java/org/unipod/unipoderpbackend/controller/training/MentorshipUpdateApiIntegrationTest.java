@@ -131,6 +131,50 @@ class MentorshipUpdateApiIntegrationTest {
     }
 
     @Test
+    void aMatchingVersionIsAcceptedAndTheResponseCarriesTheNextOne() throws Exception {
+        MentorshipFollowUp followUp = saved("Open");
+
+        mockMvc.perform(update(followUp.getId(), "{\"status\": \"SCHEDULED\", \"version\": 0}")
+                        .with(administrator("mentor-admin@test.local")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(1));
+        mockMvc.perform(update(followUp.getId(), "{\"status\": \"ACTION_REQUIRED\", \"version\": 1}")
+                        .with(administrator("mentor-admin@test.local")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(2));
+    }
+
+    @Test
+    void anEditSentWithAnOlderVersionIsRefusedBeforeAnythingChanges() throws Exception {
+        MentorshipFollowUp followUp = saved("Original notes");
+        mockMvc.perform(update(followUp.getId(), "{\"status\": \"SCHEDULED\", \"notes\": \"First editor\", \"version\": 0}")
+                        .with(administrator("mentor-admin@test.local")))
+                .andExpect(status().isOk());
+
+        // The second editor still holds version 0, which the first edit has already replaced.
+        mockMvc.perform(update(followUp.getId(), "{\"status\": \"ACTION_REQUIRED\", \"notes\": \"Second editor\", \"version\": 0}")
+                        .with(administrator("mentor-admin@test.local")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail")
+                        .value("This follow-up was changed by someone else. Reload it and try again."));
+
+        assertEquals(1, TrainingFixtures.auditLines(entityManager, jdbcTemplate, followUp.getId()).size());
+        entityManager.clear();
+        MentorshipFollowUp reloaded = followUps.findById(followUp.getId()).orElseThrow();
+        assertEquals(FollowUpStatus.SCHEDULED, reloaded.getStatus());
+        assertEquals("First editor", reloaded.getNotes());
+    }
+
+    @Test
+    void aNegativeVersionIsAValidationError() throws Exception {
+        MentorshipFollowUp followUp = saved("Open");
+
+        mockMvc.perform(update(followUp.getId(), "{\"status\": \"SCHEDULED\", \"version\": -1}")
+                        .with(administrator("mentor-admin@test.local")))
+                .andExpect(status().isUnprocessableContent());
+    }
+
+    @Test
     void anEditBasedOnAStaleVersionIsAConflictAndWritesNothing() throws Exception {
         MentorshipFollowUp followUp = saved("Open");
         // Someone else saves first: the row's version moves on while this request still holds the old one.

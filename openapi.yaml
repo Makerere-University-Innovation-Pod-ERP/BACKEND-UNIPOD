@@ -2316,7 +2316,7 @@ paths:
       summary: Update a mentorship follow-up
       description: |
         Changes the status and optionally the notes. Omitted notes are kept; blank notes clear them.
-        COMPLETED is final: any later change is 409.
+        COMPLETED is final: any later change is 409. A `version` that is no longer current is also 409.
       parameters:
         - name: id
           in: path
@@ -2663,7 +2663,7 @@ components:
           enum: [PRESENT, ABSENT, EXCUSED, UNMARKED]
     MentorshipFollowUp:
       type: object
-      required: [id, title, mentee, mentor, scheduledDate, focus, status, notes, priority]
+      required: [id, title, mentee, mentor, scheduledDate, focus, status, notes, priority, version]
       properties:
         id:
           type: string
@@ -2686,6 +2686,10 @@ components:
         priority:
           type: string
           enum: [NORMAL, HIGH, URGENT]
+        version:
+          type: integer
+          format: int64
+          description: Send it back on the next update to be told if someone else changed the follow-up first
     MentorshipFollowUpStatus:
       type: string
       enum: [PENDING_FOLLOW_UP, ACTION_REQUIRED, SCHEDULED, COMPLETED]
@@ -2727,6 +2731,13 @@ components:
           type: string
           maxLength: 2000
           description: Omit to keep the current notes; blank text clears them
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+          description: |
+            The `version` read with the follow-up. Optional; when sent and no longer current, the update is
+            refused with 409 and nothing changes.
     LoginRequest:
       type: object
       required: [email, password]

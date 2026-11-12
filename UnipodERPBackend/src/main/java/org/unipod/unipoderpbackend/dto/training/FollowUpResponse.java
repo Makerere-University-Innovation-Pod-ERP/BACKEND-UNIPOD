@@ -15,7 +15,8 @@ public record FollowUpResponse(
         String focus,
         FollowUpStatus status,
         String notes,
-        FollowUpPriority priority) {
+        FollowUpPriority priority,
+        long version) {
 
     public static FollowUpResponse from(MentorshipFollowUp followUp) {
         return new FollowUpResponse(
@@ -27,6 +28,7 @@ public record FollowUpResponse(
                 followUp.getFocus(),
                 followUp.getStatus(),
                 followUp.getNotes(),
-                followUp.getPriority());
+                followUp.getPriority(),
+                followUp.getVersion());
     }
 }
