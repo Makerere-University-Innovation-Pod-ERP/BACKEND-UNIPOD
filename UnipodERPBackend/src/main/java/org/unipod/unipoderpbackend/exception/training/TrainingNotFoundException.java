@@ -11,4 +11,12 @@ public class TrainingNotFoundException extends ResponseStatusException {
     public static TrainingNotFoundException session() {
         return new TrainingNotFoundException("Training session not found.");
     }
+
+    public static TrainingNotFoundException participant() {
+        return new TrainingNotFoundException("Participant not found in this session.");
+    }
+
+    public static TrainingNotFoundException followUp() {
+        return new TrainingNotFoundException("Mentorship follow-up not found.");
+    }
 }

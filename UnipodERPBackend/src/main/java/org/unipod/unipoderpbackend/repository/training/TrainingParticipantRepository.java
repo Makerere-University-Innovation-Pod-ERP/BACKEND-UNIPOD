@@ -2,6 +2,7 @@ package org.unipod.unipoderpbackend.repository.training;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -17,6 +18,16 @@ public interface TrainingParticipantRepository extends JpaRepository<TrainingPar
             order by p.sessionId asc, p.registeredAt asc, p.id asc
             """)
     List<TrainingParticipant> findActiveBySessionIds(@Param("sessionIds") Collection<UUID> sessionIds);
+
+    // A cancelled registration counts as gone, so it is never found here (D-023).
+    @Query("""
+            select p from TrainingParticipant p
+            where p.id = :participantId
+              and p.sessionId = :sessionId
+              and p.status <> org.unipod.unipoderpbackend.model.training.RegistrationStatus.CANCELLED
+            """)
+    Optional<TrainingParticipant> findActive(
+            @Param("sessionId") UUID sessionId, @Param("participantId") UUID participantId);
 
     // Seats are held by PENDING_PAYMENT and CONFIRMED registrations (D-022).
     @Query("""

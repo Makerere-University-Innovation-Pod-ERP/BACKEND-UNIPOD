@@ -6,7 +6,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -14,11 +16,17 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.unipod.unipoderpbackend.dto.training.AttendanceRequest;
+import org.unipod.unipoderpbackend.dto.training.CreateFollowUpRequest;
 import org.unipod.unipoderpbackend.dto.training.CreateSessionRequest;
+import org.unipod.unipoderpbackend.dto.training.FollowUpResponse;
 import org.unipod.unipoderpbackend.dto.training.RegisterParticipantRequest;
 import org.unipod.unipoderpbackend.dto.training.SessionResponse;
 import org.unipod.unipoderpbackend.dto.training.TrainingOverviewResponse;
+import org.unipod.unipoderpbackend.dto.training.UpdateFollowUpRequest;
 import org.unipod.unipoderpbackend.security.CurrentActor;
+import org.unipod.unipoderpbackend.service.training.MentorshipService;
+import org.unipod.unipoderpbackend.service.training.TrainingParticipantService;
 import org.unipod.unipoderpbackend.service.training.TrainingQueryService;
 import org.unipod.unipoderpbackend.service.training.TrainingSessionService;
 
@@ -34,14 +42,20 @@ public class TrainingController {
 
     private final TrainingQueryService queries;
     private final TrainingSessionService sessions;
+    private final TrainingParticipantService participants;
+    private final MentorshipService mentorship;
     private final CurrentActor currentActor;
 
     public TrainingController(
             TrainingQueryService queries,
             TrainingSessionService sessions,
+            TrainingParticipantService participants,
+            MentorshipService mentorship,
             CurrentActor currentActor) {
         this.queries = queries;
         this.sessions = sessions;
+        this.participants = participants;
+        this.mentorship = mentorship;
         this.currentActor = currentActor;
     }
 
@@ -73,5 +87,49 @@ public class TrainingController {
             @Valid @RequestBody RegisterParticipantRequest request,
             Authentication authentication) {
         return sessions.registerParticipant(id, request, currentActor.from(authentication));
+    }
+
+    @DeleteMapping("/sessions/{id}/participants/{participantId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize(MANAGE_ROLES)
+    public void removeParticipant(
+            @PathVariable UUID id, @PathVariable UUID participantId, Authentication authentication) {
+        participants.remove(id, participantId, currentActor.from(authentication));
+    }
+
+    @PatchMapping("/sessions/{id}/attendance")
+    @PreAuthorize(MANAGE_ROLES)
+    public SessionResponse recordAttendance(
+            @PathVariable UUID id, @Valid @RequestBody AttendanceRequest request, Authentication authentication) {
+        return participants.recordAttendance(id, request, currentActor.from(authentication));
+    }
+
+    @PostMapping("/sessions/{id}/participants/{participantId}/confirm-payment")
+    @PreAuthorize(MANAGE_ROLES)
+    public SessionResponse confirmPayment(
+            @PathVariable UUID id, @PathVariable UUID participantId, Authentication authentication) {
+        return participants.confirmPayment(id, participantId, currentActor.from(authentication));
+    }
+
+    @PostMapping("/sessions/{id}/participants/{participantId}/pass")
+    @PreAuthorize(MANAGE_ROLES)
+    public SessionResponse markPassed(
+            @PathVariable UUID id, @PathVariable UUID participantId, Authentication authentication) {
+        return participants.markPassed(id, participantId, currentActor.from(authentication));
+    }
+
+    @PostMapping("/mentorship")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize(MANAGE_ROLES)
+    public FollowUpResponse createFollowUp(
+            @Valid @RequestBody CreateFollowUpRequest request, Authentication authentication) {
+        return mentorship.create(request, currentActor.from(authentication));
+    }
+
+    @PatchMapping("/mentorship/{id}")
+    @PreAuthorize(MANAGE_ROLES)
+    public FollowUpResponse updateFollowUp(
+            @PathVariable UUID id, @Valid @RequestBody UpdateFollowUpRequest request, Authentication authentication) {
+        return mentorship.update(id, request, currentActor.from(authentication));
     }
 }

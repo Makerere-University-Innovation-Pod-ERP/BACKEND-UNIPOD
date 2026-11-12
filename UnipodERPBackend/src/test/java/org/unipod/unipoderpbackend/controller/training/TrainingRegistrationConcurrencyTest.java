@@ -26,7 +26,10 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.unipod.unipoderpbackend.model.training.TrainingParticipant;
 import org.unipod.unipoderpbackend.model.training.TrainingSession;
+import org.unipod.unipoderpbackend.repository.training.TrainingParticipantRepository;
 import org.unipod.unipoderpbackend.repository.training.TrainingSessionRepository;
 
 /**
@@ -46,6 +49,9 @@ class TrainingRegistrationConcurrencyTest {
 
     @Autowired
     private TrainingSessionRepository sessions;
+
+    @Autowired
+    private TrainingParticipantRepository participants;
 
     @Autowired
     private Clock clock;
@@ -91,24 +97,47 @@ class TrainingRegistrationConcurrencyTest {
         assertEquals(1, seatsHeld());
     }
 
+    @Test
+    void confirmingTheSamePaymentAtOnceSucceedsOnlyOnce() throws Exception {
+        TrainingSession paid = sessions.saveAndFlush(TrainingFixtures.session(
+                departmentId, clock.instant().plus(Duration.ofDays(3)), null, 5, 50_000, true));
+        sessionId = paid.getId();
+        TrainingParticipant participant = participants.saveAndFlush(
+                TrainingFixtures.participant(sessionId, "R-PAY", 50_000));
+
+        List<Integer> statuses = race(index -> post(
+                "/operations/training/sessions/{id}/participants/{pid}/confirm-payment", sessionId, participant.getId()));
+
+        assertEquals(1, statuses.stream().filter(code -> code == 200).count());
+        assertEquals(ATTEMPTS - 1, statuses.stream().filter(code -> code == 409).count());
+        Integer audited = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM audit_log WHERE entity_id = ? AND action = 'training.participant.payment_confirmed'",
+                Integer.class, participant.getId());
+        assertEquals(1, audited, "only the request that won may leave an audit line");
+    }
+
     private List<Integer> raceRegistrations(IntFunction<String> regNumberFor) throws Exception {
+        return race(index -> post("/operations/training/sessions/{id}/participants", sessionId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"name": "Racer", "regNumber": "%s", "department": "Engineering"}
+                        """.formatted(regNumberFor.apply(index))));
+    }
+
+    /** Fires {@code ATTEMPTS} requests at the same instant, each as its own administrator, and returns their statuses. */
+    private List<Integer> race(IntFunction<MockHttpServletRequestBuilder> requestFor) throws Exception {
         ExecutorService pool = Executors.newFixedThreadPool(ATTEMPTS);
         CountDownLatch ready = new CountDownLatch(ATTEMPTS);
         CountDownLatch go = new CountDownLatch(1);
         List<Future<Integer>> results = new ArrayList<>();
         try {
             for (int index = 0; index < ATTEMPTS; index++) {
-                String regNumber = regNumberFor.apply(index);
+                MockHttpServletRequestBuilder request = requestFor.apply(index)
+                        .with(user("racer-" + UUID.randomUUID() + "@test.local").roles("ADMINISTRATOR"));
                 Callable<Integer> attempt = () -> {
                     ready.countDown();
                     go.await();
-                    return mockMvc.perform(post("/operations/training/sessions/{id}/participants", sessionId)
-                                    .with(user("racer-" + UUID.randomUUID() + "@test.local").roles("ADMINISTRATOR"))
-                                    .contentType(MediaType.APPLICATION_JSON)
-                                    .content("""
-                                            {"name": "Racer", "regNumber": "%s", "department": "Engineering"}
-                                            """.formatted(regNumber)))
-                            .andReturn().getResponse().getStatus();
+                    return mockMvc.perform(request).andReturn().getResponse().getStatus();
                 };
                 results.add(pool.submit(attempt));
             }
