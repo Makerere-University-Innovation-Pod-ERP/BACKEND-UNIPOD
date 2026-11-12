@@ -10,10 +10,6 @@ import org.unipod.unipoderpbackend.model.authorization.AuthorizationResource;
 import org.unipod.unipoderpbackend.model.authorization.DenialCode;
 import org.unipod.unipoderpbackend.model.authorization.Scope;
 
-/**
- * The one place that answers "is this person allowed to do this to this record?".
- * Every endpoint should call {@link #authorize} before doing any work.
- */
 @Service
 public class AuthorizationService {
     private final AuthorizationPolicy policy;
@@ -22,7 +18,6 @@ public class AuthorizationService {
         this.policy = policy;
     }
 
-    /** Returns the decision without throwing. Use it to build capability lists (which buttons to show). */
     public AuthorizationDecision check(Actor actor, AuthorizationAction action, AuthorizationResource resource) {
         Optional<Scope> scope = policy.scopeFor(actor.role(), action);
         if (scope.isEmpty()) {
@@ -43,7 +38,6 @@ public class AuthorizationService {
         };
     }
 
-    /** Throws {@link AccessDeniedWithReasonException} (HTTP 403 with code and reason) when not allowed. */
     public void authorize(Actor actor, AuthorizationAction action, AuthorizationResource resource) {
         AuthorizationDecision decision = check(actor, action, resource);
         if (!decision.allowed()) {
