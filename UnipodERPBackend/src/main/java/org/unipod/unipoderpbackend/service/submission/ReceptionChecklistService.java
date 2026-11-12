@@ -22,20 +22,24 @@ import org.unipod.unipoderpbackend.model.submission.Submission;
 import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
 import org.unipod.unipoderpbackend.repository.submission.ReceptionCheckRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
+import org.unipod.unipoderpbackend.service.audit.AuditTrail;
 
 @Service
 public class ReceptionChecklistService {
     private final SubmissionRepository submissions;
     private final ReceptionCheckRepository checks;
+    private final AuditTrail auditTrail;
     private final Clock clock;
 
     public ReceptionChecklistService(
             SubmissionRepository submissions,
             ReceptionCheckRepository checks,
+            AuditTrail auditTrail,
             Clock clock
     ) {
         this.submissions = submissions;
         this.checks = checks;
+        this.auditTrail = auditTrail;
         this.clock = clock;
     }
 
@@ -79,7 +83,12 @@ public class ReceptionChecklistService {
         }
         submission.touch(now);
         checks.flush();
-        return response(submission, existing);
+        ReceptionCheckResponse response = response(submission, existing);
+        auditTrail.record(actor, "submission.checklist_updated", submissionId, null, AuditTrail.details(
+                "items", request.items().size(),
+                "complete", response.complete()
+        ));
+        return response;
     }
 
     /**

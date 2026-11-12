@@ -64,6 +64,7 @@ spring:
 server:
   address: ${SERVER_ADDRESS:0.0.0.0}
   port: ${PORT:${SERVER_PORT:8080}}
+  forward-headers-strategy: ${FORWARD_HEADERS_STRATEGY:framework}
   servlet:
     context-path: /api
   error:

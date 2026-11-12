@@ -25,6 +25,7 @@ import org.unipod.unipoderpbackend.model.submission.SubmissionCategory;
 import org.unipod.unipoderpbackend.repository.submission.MissingItemRepository;
 import org.unipod.unipoderpbackend.repository.submission.NotificationOutbox;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
+import org.unipod.unipoderpbackend.service.audit.AuditTrail;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -42,13 +43,14 @@ class MissingItemServiceTest {
     private final SubmissionRepository submissions = mock(SubmissionRepository.class);
     private final MissingItemRepository items = mock(MissingItemRepository.class);
     private final NotificationOutbox notificationOutbox = mock(NotificationOutbox.class);
+    private final AuditTrail audit = mock(AuditTrail.class);
     private final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
 
     private MissingItemService service;
 
     @BeforeEach
     void setUp() {
-        service = new MissingItemService(submissions, items, notificationOutbox, clock);
+        service = new MissingItemService(submissions, items, notificationOutbox, audit, clock);
     }
 
     @Test

@@ -26,6 +26,7 @@ import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
 import org.unipod.unipoderpbackend.repository.submission.MissingItemRepository;
 import org.unipod.unipoderpbackend.repository.submission.NotificationOutbox;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
+import org.unipod.unipoderpbackend.service.audit.AuditTrail;
 
 @Service
 public class MissingItemService {
@@ -34,17 +35,20 @@ public class MissingItemService {
     private final SubmissionRepository submissions;
     private final MissingItemRepository items;
     private final NotificationOutbox notificationOutbox;
+    private final AuditTrail auditTrail;
     private final Clock clock;
 
     public MissingItemService(
             SubmissionRepository submissions,
             MissingItemRepository items,
             NotificationOutbox notificationOutbox,
+            AuditTrail auditTrail,
             Clock clock
     ) {
         this.submissions = submissions;
         this.items = items;
         this.notificationOutbox = notificationOutbox;
+        this.auditTrail = auditTrail;
         this.clock = clock;
     }
 
@@ -98,6 +102,10 @@ public class MissingItemService {
         }
         submission.touch(now);
         items.flush();
+        auditTrail.record(actor, "submission.missing_items_recorded", submissionId, null, AuditTrail.details(
+                "items", request.items().size(),
+                "documentOnly", requireDocumentType
+        ));
         return response(submissionId, items.findAllBySubmissionIdOrderByRequestedAtAscIdAsc(submissionId));
     }
 
@@ -156,6 +164,11 @@ public class MissingItemService {
         item.resolve(actor, clean(request.note()), now);
         submission.touch(now);
         items.flush();
+        auditTrail.record(actor, "submission.missing_item_resolved", submissionId, null, AuditTrail.details(
+                "itemId", itemId,
+                "label", item.getLabel(),
+                "kind", item.getKind().name()
+        ));
         return MissingItemResponse.from(item);
     }
 
@@ -197,6 +210,9 @@ public class MissingItemService {
                 actor,
                 now
         );
+        auditTrail.record(actor, "submission.reminder_sent", submissionId, null, AuditTrail.details(
+                "openItems", openItems.size()
+        ));
         return response(submissionId, items.findAllBySubmissionIdOrderByRequestedAtAscIdAsc(submissionId));
     }
 
