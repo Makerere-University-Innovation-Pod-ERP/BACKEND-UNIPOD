@@ -9,5 +9,7 @@ public enum ApiUserRole {
     SECTOR_OFFICER,
     IP_LIAISON,
     SUBMITTER,
-    OBSERVER
+    OBSERVER,
+    FINANCE_OFFICER,
+    DEPARTMENT_HEAD
 }
