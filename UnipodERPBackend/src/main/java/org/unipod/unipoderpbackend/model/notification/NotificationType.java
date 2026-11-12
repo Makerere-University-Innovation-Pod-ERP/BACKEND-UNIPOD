@@ -1,0 +1,21 @@
+package org.unipod.unipoderpbackend.model.notification;
+
+/** The NT1 event list from the assignment doc (section 5). */
+public enum NotificationType {
+    BRIEF_SUBMITTED,
+    DOCUMENT_REQUESTED,
+    BRIEF_FORWARDED,
+    REVIEWER_ASSIGNED,
+    REVIEW_SUBMITTED,
+    IMPROVEMENT_REQUESTED,
+    NEW_VERSION_RECEIVED,
+    PROJECT_CONFIRMED,
+    PAYMENT_PROOF_UPLOADED,
+    PAYMENT_CONFIRMED,
+    PAYMENT_REJECTED,
+    BOOKING_APPROVED,
+    EQUIPMENT_APPROVAL_REQUESTED,
+    FAULT_REPORTED,
+    LOW_STOCK,
+    AGREEMENT_EXPIRING
+}
