@@ -26,6 +26,8 @@ import tools.jackson.databind.ObjectMapper;
 
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasItems;
+import static org.hamcrest.Matchers.startsWith;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -136,6 +138,73 @@ class AuditLogIntegrationTest {
 
         assertThrows(IllegalTransactionStateException.class,
                 () -> auditService.log(AuditEvent.created(admin, "user.created", "user", null, null)));
+    }
+
+    @Test
+    void submissionLifecycleIsAuditedAndShowsUpInCaseHistory() throws Exception {
+        String submitter = createUser("audit-submitter2@example.test", ApiUserRole.SUBMITTER);
+        String submitterToken = login(submitter);
+        String admin = createUser("audit-admin3@example.test", ApiUserRole.ADMINISTRATOR);
+        String adminToken = login(admin);
+
+        String created = mockMvc.perform(post("/submissions")
+                        .header("Authorization", "Bearer " + submitterToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "category", "GENERAL",
+                                "title", "Audited brief",
+                                "purpose", "Purpose",
+                                "problemAddressed", "Problem"
+                        ))))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String caseId = objectMapper.readTree(created).get("id").asText();
+
+        mockMvc.perform(post("/submissions/{id}/submit", caseId)
+                        .header("Authorization", "Bearer " + submitterToken))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/cases/{id}/activity", caseId)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(2))
+                .andExpect(jsonPath("$.items[*].action",
+                        hasItems("submission.created", "submission.submitted")))
+                .andExpect(jsonPath("$.items[*].actor", hasItems(submitter)))
+                .andExpect(jsonPath("$.items[*].actorRole", hasItems("SUBMITTER")))
+                .andExpect(jsonPath("$.items[*].entityId", hasItems(caseId)));
+
+        mockMvc.perform(get("/activity")
+                        .param("entityType", "submission")
+                        .param("entityId", caseId)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(2));
+    }
+
+    @Test
+    void assistedSubmissionSucceedsWithoutAConfiguredPublicBaseUrl() throws Exception {
+        String admin = createUser("audit-admin4@example.test", ApiUserRole.ADMINISTRATOR);
+        String token = login(admin);
+
+        mockMvc.perform(post("/submissions/assisted")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "submitterEmail", "walkin-audit@example.test",
+                                "category", "GENERAL",
+                                "title", "Walk-in brief",
+                                "purpose", "Purpose",
+                                "problemAddressed", "Problem"
+                        ))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.account.created").value(true))
+                .andExpect(jsonPath("$.account.setPasswordToken").isNotEmpty())
+                .andExpect(jsonPath("$.account.setPasswordUrl",
+                        containsString("/set-password?token=")))
+                .andExpect(jsonPath("$.account.setPasswordUrl", startsWith("http")));
     }
 
     private UUID insertAuditLine() {

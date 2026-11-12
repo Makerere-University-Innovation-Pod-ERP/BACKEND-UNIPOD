@@ -54,6 +54,7 @@ import org.unipod.unipoderpbackend.repository.submission.MissingItemRepository;
 import org.unipod.unipoderpbackend.repository.submission.NotificationOutbox;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionDocumentRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
+import org.unipod.unipoderpbackend.service.audit.AuditTrail;
 import org.unipod.unipoderpbackend.service.sector.SectorService;
 import org.unipod.unipoderpbackend.util.CaseCodeGenerator;
 
@@ -71,6 +72,7 @@ public class SubmissionService {
     private final PipelineMetricsRepository metrics;
     private final SectorService sectorsCatalog;
     private final ReceptionChecklistService receptionChecklists;
+    private final AuditTrail auditTrail;
     private final String receptionEmail;
     private final Clock clock;
 
@@ -85,6 +87,7 @@ public class SubmissionService {
             PipelineMetricsRepository metrics,
             SectorService sectorsCatalog,
             ReceptionChecklistService receptionChecklists,
+            AuditTrail auditTrail,
             @Value("${notifications.reception.email:}")
             String receptionEmail,
             Clock clock
@@ -98,6 +101,7 @@ public class SubmissionService {
         this.metrics = metrics;
         this.sectorsCatalog = sectorsCatalog;
         this.receptionChecklists = receptionChecklists;
+        this.auditTrail = auditTrail;
         this.receptionEmail = receptionEmail;
         this.clock = clock;
     }
@@ -151,6 +155,11 @@ public class SubmissionService {
                 actor,
                 now
         ));
+        auditTrail.record(actor, "submission.created", submission.getId(), null, AuditTrail.details(
+                "stage", submission.getStage().name(),
+                "category", submission.getCategory().name(),
+                "code", submission.getCode()
+        ));
         return SubmissionResponse.from(submission);
     }
 
@@ -186,6 +195,10 @@ public class SubmissionService {
             }
         }
         submissions.flush();
+        auditTrail.record(actor, "submission.updated", submission.getId(), null, AuditTrail.details(
+                "stage", submission.getStage().name(),
+                "title", submission.getTitle()
+        ));
         return SubmissionResponse.from(submission);
     }
 
@@ -212,6 +225,9 @@ public class SubmissionService {
                 actor,
                 receivedAt
         ));
+        auditTrail.record(actor, "submission.registered", submission.getId(),
+                AuditTrail.details("stage", previousStage.name()),
+                AuditTrail.details("stage", SubmissionStage.RECEIVED.name(), "code", submission.getCode()));
         submissions.flush();
         return SubmissionResponse.from(submission);
     }
@@ -256,6 +272,9 @@ public class SubmissionService {
                 actor,
                 now
         );
+        auditTrail.record(actor, "submission.submitted", submission.getId(),
+                AuditTrail.details("stage", previousStage.name()),
+                AuditTrail.details("stage", SubmissionStage.SUBMITTED.name(), "code", submission.getCode()));
         submissions.flush();
         return SubmissionResponse.from(submission);
     }
@@ -314,6 +333,12 @@ public class SubmissionService {
                 actor,
                 now
         );
+        auditTrail.record(actor, "submission.replied", submission.getId(),
+                AuditTrail.details("stage", previousStage.name()),
+                AuditTrail.details(
+                        "stage", SubmissionStage.SUBMITTED.name(),
+                        "briefVersion", submission.getBriefVersion()
+                ));
         submissions.flush();
         return SubmissionResponse.from(submission);
     }
@@ -351,6 +376,12 @@ public class SubmissionService {
                 actor,
                 now
         );
+        auditTrail.record(actor, "submission.confirmed", submission.getId(),
+                AuditTrail.details("stage", previousStage.name()),
+                AuditTrail.details(
+                        "stage", SubmissionStage.CONFIRMED_AS_PROJECT.name(),
+                        "projectCode", projectCode
+                ));
         submissions.flush();
         return SubmissionResponse.from(submission);
     }
@@ -379,6 +410,12 @@ public class SubmissionService {
                 actor,
                 now
         );
+        auditTrail.record(actor, "submission.rejected", submission.getId(),
+                AuditTrail.details("stage", previousStage.name()),
+                AuditTrail.details(
+                        "stage", SubmissionStage.REJECTED.name(),
+                        "reason", clean(request.reason())
+                ));
         submissions.flush();
         return SubmissionResponse.from(submission);
     }
@@ -441,6 +478,13 @@ public class SubmissionService {
                 actor,
                 now
         );
+        auditTrail.record(actor, "submission.forwarded", submission.getId(),
+                AuditTrail.details("stage", previousStage.name()),
+                AuditTrail.details(
+                        "stage", SubmissionStage.FORWARDED.name(),
+                        "sectorId", sectorId,
+                        "sector", sector.getName()
+                ));
         submissions.flush();
         return SubmissionResponse.from(submission);
     }
@@ -501,6 +545,13 @@ public class SubmissionService {
                 actor,
                 now
         );
+        auditTrail.record(actor, "submission.information_requested", submission.getId(),
+                AuditTrail.details("stage", previousStage.name()),
+                AuditTrail.details(
+                        "stage", resultingStage.name(),
+                        "requestedItems", requestedItems.size(),
+                        "summary", summary
+                ));
         submissions.flush();
         return SubmissionResponse.from(submission);
     }
@@ -532,6 +583,9 @@ public class SubmissionService {
                 actor,
                 now
         ));
+        auditTrail.record(actor, "submission.transitioned", submission.getId(),
+                AuditTrail.details("stage", previousStage.name()),
+                AuditTrail.details("stage", targetStage.name()));
         submissions.flush();
         return SubmissionResponse.from(submission);
     }
@@ -579,6 +633,12 @@ public class SubmissionService {
         document.assignVersion(version);
         documents.save(document);
         resolveOpenDocumentItems(id, documentType, document.getName(), actor, now);
+        auditTrail.record(actor, "submission.document_added", submission.getId(), null, AuditTrail.details(
+                "name", document.getName(),
+                "documentType", documentType.name(),
+                "status", request.status().name(),
+                "version", version
+        ));
         documents.flush();
         return DocumentResponse.from(document);
     }

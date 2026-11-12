@@ -547,7 +547,7 @@ Configure the following environment variables in the deployment environment.
 | `BOOTSTRAP_ADMIN_EMAIL` | Email for the first Administrator account. |
 | `BOOTSTRAP_ADMIN_PASSWORD` | Initial Administrator password (minimum 12 characters). |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated list of exact browser origins allowed to call the API. |
-| `APP_PUBLIC_BASE_URL` | Public frontend base URL used in password-setup links. Required before creating assisted accounts; the request fails fast when it is unset. |
+| `APP_PUBLIC_BASE_URL` | Public frontend base URL used in password-setup links, for example `https://app.example.test`. When unset, assisted accounts fall back to the origin of the incoming API request and log a warning. |
 | `JWT_ROLES_CLAIM` | JWT claim containing role names. Defaults to `roles`. |
 | `JWT_SUBJECT_CLAIM` | JWT claim used as the authenticated user identifier. Defaults to `sub`. |
 | `NOTIFICATION_EMAIL_ENABLED` | Enables the scheduled SMTP outbox worker; defaults to `false`. |
@@ -565,7 +565,7 @@ Configure the following environment variables in the deployment environment.
 | `S3_PATH_STYLE_ACCESS` | Enables path-style bucket addressing (defaults to `true`). |
 | `S3_MAX_FILE_BYTES` | Maximum stored file size in bytes (defaults to `15728640`, 15 MB). |
 | `S3_MAX_REQUEST_BYTES` | Multipart request envelope limit in bytes (defaults to `16777216`, 16 MB). |
-| `APP_PUBLIC_BASE_URL` | Public frontend base URL used to build password-setup links. Required before creating assisted accounts; the request fails fast when it is unset. |
+| `APP_PUBLIC_BASE_URL` | Public frontend base URL used to build password-setup links. When unset, assisted accounts fall back to the origin of the incoming API request and log a warning. |
 
 Use the AWS SDK default credential provider chain for S3 credentials (for
 example, a workload IAM role or `AWS_ACCESS_KEY_ID` and

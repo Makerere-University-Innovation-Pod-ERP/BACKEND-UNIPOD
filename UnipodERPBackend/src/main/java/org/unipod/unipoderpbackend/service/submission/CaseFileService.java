@@ -38,6 +38,7 @@ import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
 import org.unipod.unipoderpbackend.repository.submission.CaseStageHistoryRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionDocumentRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
+import org.unipod.unipoderpbackend.service.audit.AuditTrail;
 import org.unipod.unipoderpbackend.service.factfinding.FactFindingGuard;
 
 @Service
@@ -63,6 +64,7 @@ public class CaseFileService {
     private final CaseStageHistoryRepository history;
     private final CaseFileEnrichmentProvider enrichment;
     private final FactFindingGuard factFindingGuard;
+    private final AuditTrail auditTrail;
     private final Clock clock;
 
     public CaseFileService(
@@ -71,6 +73,7 @@ public class CaseFileService {
             CaseStageHistoryRepository history,
             CaseFileEnrichmentProvider enrichment,
             FactFindingGuard factFindingGuard,
+            AuditTrail auditTrail,
             Clock clock
     ) {
         this.submissions = submissions;
@@ -78,6 +81,7 @@ public class CaseFileService {
         this.history = history;
         this.enrichment = enrichment;
         this.factFindingGuard = factFindingGuard;
+        this.auditTrail = auditTrail;
         this.clock = clock;
     }
 
@@ -128,6 +132,9 @@ public class CaseFileService {
                 clean(request.note()),
                 now
         ));
+        auditTrail.record(authentication.getName(), "submission.transitioned", id,
+                AuditTrail.details("stage", previousStage.name()),
+                AuditTrail.details("stage", nextStage.name(), "note", clean(request.note())));
         submissions.flush();
         return aggregate(submission, authentication);
     }
@@ -150,6 +157,10 @@ public class CaseFileService {
             throw new SubmissionConflictException(QUORUM_REQUIRED);
         }
         submission.saveOutcome(decision, note, authentication.getName(), clock.instant());
+        auditTrail.record(authentication.getName(), "submission.outcome_saved", id, null, AuditTrail.details(
+                "decision", decision,
+                "note", note
+        ));
         submissions.flush();
         return aggregate(submission, authentication);
     }
@@ -167,6 +178,11 @@ public class CaseFileService {
                 .orElseThrow(StorageObjectNotFoundException::new);
         submission.touch(clock.instant());
         document.updateStatus(request.status());
+        auditTrail.record(authentication.getName(), "submission.document_status_updated", id, null, AuditTrail.details(
+                "documentId", documentId,
+                "name", document.getName(),
+                "status", request.status().name()
+        ));
         submissions.flush();
         return aggregate(submission, authentication);
     }

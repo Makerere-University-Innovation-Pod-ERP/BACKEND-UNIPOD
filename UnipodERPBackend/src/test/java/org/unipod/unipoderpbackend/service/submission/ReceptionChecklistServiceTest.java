@@ -19,6 +19,7 @@ import org.unipod.unipoderpbackend.model.submission.SubmissionCategory;
 import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
 import org.unipod.unipoderpbackend.repository.submission.ReceptionCheckRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
+import org.unipod.unipoderpbackend.service.audit.AuditTrail;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -34,13 +35,14 @@ class ReceptionChecklistServiceTest {
 
     private final SubmissionRepository submissions = mock(SubmissionRepository.class);
     private final ReceptionCheckRepository checks = mock(ReceptionCheckRepository.class);
+    private final AuditTrail audit = mock(AuditTrail.class);
     private final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
 
     private ReceptionChecklistService service;
 
     @BeforeEach
     void setUp() {
-        service = new ReceptionChecklistService(submissions, checks, clock);
+        service = new ReceptionChecklistService(submissions, checks, audit, clock);
     }
 
     @Test
