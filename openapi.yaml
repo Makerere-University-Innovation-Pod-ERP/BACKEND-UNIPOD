@@ -2183,7 +2183,7 @@ paths:
         `notes`. `renewalDate` can be replaced but not cleared. A stale `version`, or a `name`
         already used by another partner, returns `409`. A PATCH that changes nothing audited does
         not write an audit entry. Recorded in the audit log as `partner.updated`; contact details
-        are never copied into it, only whether they changed.
+        and notes are never copied into it, only whether they changed.
       parameters:
         - $ref: '#/components/parameters/PartnerId'
       requestBody:
