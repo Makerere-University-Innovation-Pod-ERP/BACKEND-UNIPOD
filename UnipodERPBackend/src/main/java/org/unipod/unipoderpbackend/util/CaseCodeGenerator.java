@@ -14,7 +14,6 @@ public class CaseCodeGenerator {
             DO UPDATE SET last_value = code_sequences.last_value + 1
             RETURNING last_value
             """;
-
     private final JdbcTemplate jdbcTemplate;
 
     public CaseCodeGenerator(JdbcTemplate jdbcTemplate) {
@@ -22,11 +21,35 @@ public class CaseCodeGenerator {
     }
 
     public String next(SubmissionCategory category, int year) {
-        String prefix = category == SubmissionCategory.STUDENT ? "STU" : "GEN";
+        return format(prefixFor(category), year, nextSequence(prefixFor(category), year));
+    }
+
+    /**
+     * Allocates the reference used when an intake brief is confirmed as a
+     * project. Project references use the same student/general category prefix
+     * as the brief and the same yearly sequence table as case references.
+     */
+    public String nextProject(SubmissionCategory category, int year) {
+        return next(category, year);
+    }
+
+    private long nextSequence(String prefix, int year) {
         Long sequence = jdbcTemplate.queryForObject(NEXT_SEQUENCE_SQL, Long.class, prefix, year);
         if (sequence == null) {
             throw new IllegalStateException("The case-code sequence could not be allocated.");
         }
+        return sequence;
+    }
+
+    private static String prefixFor(SubmissionCategory category) {
+        return switch (category) {
+            case STUDENT -> "STU";
+            case SERVICE_REQUEST -> "SRV";
+            case GENERAL -> "GEN";
+        };
+    }
+
+    private static String format(String prefix, int year, long sequence) {
         return "%s-%d-%06d".formatted(prefix, year, sequence);
     }
 }

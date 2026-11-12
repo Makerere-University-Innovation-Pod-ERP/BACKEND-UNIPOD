@@ -51,6 +51,11 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
     );
 
     @EntityGraph(attributePaths = "responsibleSector")
+    Optional<Submission> findByIdAndSubmitterId(UUID id, String submitterId);
+
+    boolean existsByProjectCode(String projectCode);
+
+    @EntityGraph(attributePaths = "responsibleSector")
     Page<Submission> findAllByOrderByUpdatedAtDescIdAsc(Pageable pageable);
 
     @EntityGraph(attributePaths = "responsibleSector")
@@ -60,7 +65,24 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
     Page<Submission> findAllBySubmitterIdOrderByUpdatedAtDescIdAsc(String submitterId, Pageable pageable);
 
     @EntityGraph(attributePaths = "responsibleSector")
+    Page<Submission> findAllBySubmitterIdAndCategoryNotOrderByUpdatedAtDescIdAsc(
+            String submitterId,
+            SubmissionCategory category,
+            Pageable pageable
+    );
+
+    @EntityGraph(attributePaths = "responsibleSector")
+    Page<Submission> findAllBySubmitterIdAndCategoryOrderByUpdatedAtDescIdAsc(
+            String submitterId,
+            SubmissionCategory category,
+            Pageable pageable
+    );
+
+    @EntityGraph(attributePaths = "responsibleSector")
     Page<Submission> findAllByStageOrderByUpdatedAtDescIdAsc(SubmissionStage stage, Pageable pageable);
+
+    @EntityGraph(attributePaths = "responsibleSector")
+    Page<Submission> findAllByStageOrderBySubmittedAtDescIdAsc(SubmissionStage stage, Pageable pageable);
 
     @EntityGraph(attributePaths = "responsibleSector")
     @Query("""

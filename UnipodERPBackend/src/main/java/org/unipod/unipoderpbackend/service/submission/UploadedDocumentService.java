@@ -3,6 +3,9 @@ package org.unipod.unipoderpbackend.service.submission;
 import java.io.IOException;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,9 +22,13 @@ import org.unipod.unipoderpbackend.exception.submission.SubmissionConflictExcept
 import org.unipod.unipoderpbackend.exception.submission.SubmissionNotFoundException;
 import org.unipod.unipoderpbackend.model.submission.DocumentStatus;
 import org.unipod.unipoderpbackend.model.submission.DocumentType;
+import org.unipod.unipoderpbackend.model.submission.MissingItem;
+import org.unipod.unipoderpbackend.model.submission.MissingItemKind;
+import org.unipod.unipoderpbackend.model.submission.MissingItemStatus;
 import org.unipod.unipoderpbackend.model.submission.Submission;
 import org.unipod.unipoderpbackend.model.submission.SubmissionDocument;
 import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
+import org.unipod.unipoderpbackend.repository.submission.MissingItemRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionDocumentRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
 import org.unipod.unipoderpbackend.service.storage.DocumentStorage;
@@ -31,8 +38,53 @@ public class UploadedDocumentService {
     private static final Logger log = LoggerFactory.getLogger(UploadedDocumentService.class);
     private static final String DEFAULT_CONTENT_TYPE = "application/octet-stream";
 
+    /**
+     * Document types reception accepts. Anything outside this list is rejected
+     * rather than silently stored, because uploaded files are streamed back to
+     * reviewers. Design formats (DXF, DWG, STL, SVG) are included for design
+     * jobs; browsers often report them as {@code application/octet-stream}, so
+     * an extension fallback is applied for that content type.
+     */
+    private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
+            "application/pdf",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.ms-powerpoint",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "application/rtf",
+            "application/zip",
+            "text/plain",
+            "text/csv",
+            "text/rtf",
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp",
+            "image/tiff",
+            "image/svg+xml",
+            "application/acad",
+            "application/dxf",
+            "application/x-dxf",
+            "image/vnd.dxf",
+            "application/dwg",
+            "application/x-dwg",
+            "image/vnd.dwg",
+            "model/stl",
+            "application/sla",
+            "application/vnd.ms-pki.stl"
+    );
+
+    private static final Set<String> ALLOWED_EXTENSIONS = Set.of(
+            "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "rtf", "txt", "csv", "zip",
+            "jpg", "jpeg", "png", "gif", "webp", "tif", "tiff",
+            "svg", "dxf", "dwg", "stl"
+    );
+
     private final SubmissionRepository submissions;
     private final SubmissionDocumentRepository documents;
+    private final MissingItemRepository missingItems;
     private final DocumentStorage storage;
     private final Clock clock;
     private final long maxFileSize;
@@ -41,6 +93,7 @@ public class UploadedDocumentService {
     public UploadedDocumentService(
             SubmissionRepository submissions,
             SubmissionDocumentRepository documents,
+            MissingItemRepository missingItems,
             DocumentStorage storage,
             Clock clock,
             PlatformTransactionManager transactionManager,
@@ -51,6 +104,7 @@ public class UploadedDocumentService {
         }
         this.submissions = submissions;
         this.documents = documents;
+        this.missingItems = missingItems;
         this.storage = storage;
         this.clock = clock;
         this.maxFileSize = maxFileSize;
@@ -84,14 +138,12 @@ public class UploadedDocumentService {
             throw new InvalidSubmissionException("Document details are invalid.");
         }
         SubmissionService.requireSubmitterDocumentStatus(status, submitter);
+        String contentType = requireAllowedContentType(file.getContentType(), file.getOriginalFilename());
         String originalFilename = safeFilename(file.getOriginalFilename(), documentName);
         transaction.execute(statusTransaction -> {
             Submission submission = submissions.findByIdForUpdate(submissionId)
                     .orElseThrow(() -> new SubmissionNotFoundException(submissionId));
-            SubmissionService.requireSubmitterOwnership(submission, actor, submitter);
-            if (submission.getStage() == SubmissionStage.COMPLETED) {
-                throw new SubmissionConflictException("The submission cannot be changed in its current state.");
-            }
+            requireDocumentStage(submission, actor, submitter);
             return null;
         });
 
@@ -102,15 +154,15 @@ public class UploadedDocumentService {
             throw new DocumentStorageException(exception);
         }
 
-        String contentType = safeContentType(file.getContentType());
         try {
             SubmissionDocument document = transaction.execute(statusTransaction -> {
                 Submission submission = submissions.findByIdForUpdate(submissionId)
                         .orElseThrow(() -> new SubmissionNotFoundException(submissionId));
-                SubmissionService.requireSubmitterOwnership(submission, actor, submitter);
+                requireDocumentStage(submission, actor, submitter);
                 Instant now = clock.instant();
                 submission.touch(now);
-                return documents.saveAndFlush(new SubmissionDocument(
+                long version = documents.maxVersion(submissionId, documentType) + 1;
+                SubmissionDocument pending = new SubmissionDocument(
                         UUID.randomUUID(),
                         submissionId,
                         documentName,
@@ -122,7 +174,13 @@ public class UploadedDocumentService {
                         originalFilename,
                         actor,
                         now
-                ));
+                );
+                pending.assignVersion(version);
+                SubmissionDocument saved = documents.saveAndFlush(pending);
+                if (status == DocumentStatus.SUBMITTED || status == DocumentStatus.VERIFIED) {
+                    resolveMissingDocuments(submissionId, documentType, documentName, actor, now);
+                }
+                return saved;
             });
             return DocumentResponse.from(document);
         } catch (RuntimeException exception) {
@@ -138,6 +196,49 @@ public class UploadedDocumentService {
         return new DownloadedDocument(document, storage.download(document.getFileReference()));
     }
 
+    private static void requireDocumentStage(Submission submission, String actor, boolean submitter) {
+        if (submitter && !submission.getSubmitterId().equals(actor)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Submitters may only attach documents to their own submissions."
+            );
+        }
+        SubmissionStage stage = submission.getStage();
+        if (stage == SubmissionStage.COMPLETED || stage == SubmissionStage.REJECTED) {
+            throw new SubmissionConflictException("The submission cannot be changed in its current state.");
+        }
+        if (submitter
+                && stage != SubmissionStage.DRAFT
+                && stage != SubmissionStage.SUBMITTED
+                && stage != SubmissionStage.AWAITING_INFORMATION) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Submitters may only attach documents before the submission is forwarded."
+            );
+        }
+    }
+
+    private void resolveMissingDocuments(
+            UUID submissionId,
+            DocumentType documentType,
+            String documentName,
+            String actor,
+            Instant now
+    ) {
+        List<MissingItem> openItems = missingItems
+                .findAllBySubmissionIdAndKindAndDocumentTypeAndStatus(
+                        submissionId,
+                        MissingItemKind.DOCUMENT,
+                        documentType,
+                        MissingItemStatus.OPEN
+                );
+        if (openItems.isEmpty()) {
+            return;
+        }
+        for (MissingItem item : openItems) {
+            item.resolve(actor, "Document uploaded: " + documentName, now);
+        }
+        missingItems.saveAll(openItems);
+    }
+
     private void deleteAfterFailure(String reference, RuntimeException originalException) {
         try {
             storage.delete(reference);
@@ -147,12 +248,43 @@ public class UploadedDocumentService {
         }
     }
 
-    private static String safeContentType(String contentType) {
-        if (contentType == null || contentType.length() > 255
-                || !contentType.matches("[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+")) {
-            return DEFAULT_CONTENT_TYPE;
+    private static String requireAllowedContentType(String contentType, String originalFilename) {
+        if (contentType == null || contentType.isBlank()) {
+            return hasAllowedExtension(originalFilename)
+                    ? DEFAULT_CONTENT_TYPE
+                    : unsupportedFileType();
         }
-        return contentType;
+        String normalized = contentType.trim().toLowerCase(Locale.ROOT);
+        int parameters = normalized.indexOf(';');
+        if (parameters >= 0) {
+            normalized = normalized.substring(0, parameters).trim();
+        }
+        if (normalized.length() > 255
+                || !normalized.matches("[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+")) {
+            throw new InvalidSubmissionException("The uploaded file type is not supported.");
+        }
+        if (ALLOWED_CONTENT_TYPES.contains(normalized)) {
+            return normalized;
+        }
+        if (DEFAULT_CONTENT_TYPE.equals(normalized) && hasAllowedExtension(originalFilename)) {
+            return normalized;
+        }
+        return unsupportedFileType();
+    }
+
+    private static String unsupportedFileType() {
+        throw new InvalidSubmissionException("The uploaded file type is not supported.");
+    }
+
+    private static boolean hasAllowedExtension(String filename) {
+        if (filename == null) {
+            return false;
+        }
+        int dot = filename.lastIndexOf('.');
+        if (dot < 0 || dot == filename.length() - 1) {
+            return false;
+        }
+        return ALLOWED_EXTENSIONS.contains(filename.substring(dot + 1).trim().toLowerCase(Locale.ROOT));
     }
 
     private static String safeFilename(String originalFilename, String fallback) {

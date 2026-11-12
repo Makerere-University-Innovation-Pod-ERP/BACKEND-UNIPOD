@@ -34,8 +34,8 @@ spring:
 
   servlet:
     multipart:
-      max-file-size: ${S3_MAX_FILE_BYTES:10485760}
-      max-request-size: ${S3_MAX_REQUEST_BYTES:11534336}
+      max-file-size: ${S3_MAX_FILE_BYTES:15728640}
+      max-request-size: ${S3_MAX_REQUEST_BYTES:16777216}
 
   mail:
     host: ${SMTP_HOST:}
@@ -62,7 +62,9 @@ spring:
     out-of-order: false
 
 server:
+  address: ${SERVER_ADDRESS:0.0.0.0}
   port: ${PORT:${SERVER_PORT:8080}}
+  forward-headers-strategy: ${FORWARD_HEADERS_STRATEGY:framework}
   servlet:
     context-path: /api
   error:
@@ -82,6 +84,10 @@ auth:
     email: ${BOOTSTRAP_ADMIN_EMAIL:}
     password: ${BOOTSTRAP_ADMIN_PASSWORD:}
 
+# Public links (password setup, submitter portal)
+app:
+  public-base-url: ${APP_PUBLIC_BASE_URL:}
+
 # CORS Configuration (Allowing your frontend app origins)
 cors:
   allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000}
@@ -90,6 +96,14 @@ notifications:
   email:
     enabled: ${NOTIFICATION_EMAIL_ENABLED:false}
     from: ${NOTIFICATION_EMAIL_FROM:}
+    provider: ${NOTIFICATION_EMAIL_PROVIDER:smtp}
+    emailjs:
+      service-id: ${EMAILJS_SERVICE_ID:}
+      template-id: ${EMAILJS_TEMPLATE_ID:}
+      public-key: ${EMAILJS_PUBLIC_KEY:}
+      private-key: ${EMAILJS_PRIVATE_KEY:}
+  reception:
+    email: ${NOTIFICATIONS_RECEPTION_EMAIL:}
   outbox:
     poll-interval: ${NOTIFICATION_OUTBOX_POLL_INTERVAL:PT15S}
 
@@ -100,7 +114,7 @@ storage:
     region: ${AWS_REGION:us-east-1}
     endpoint: ${S3_ENDPOINT:}
     path-style-access: ${S3_PATH_STYLE_ACCESS:true}
-    max-file-size: ${S3_MAX_FILE_BYTES:10485760}
+    max-file-size: ${S3_MAX_FILE_BYTES:15728640}
 
 # Spring Boot Actuator (Health and monitoring endpoints)
 management:

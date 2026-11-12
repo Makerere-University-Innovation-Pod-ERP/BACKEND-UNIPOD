@@ -165,6 +165,55 @@ class SubmissionTest {
     }
 
     @Test
+    void submitRequiresPhoneOrEmail() {
+        Instant createdAt = Instant.parse("2026-11-04T00:00:00Z");
+        Submission submission = new Submission(
+                UUID.randomUUID(),
+                SubmissionCategory.GENERAL,
+                "Public idea",
+                "Improve access",
+                "Current access is limited",
+                "staff-1",
+                "staff-1",
+                null,
+                null,
+                null,
+                null,
+                createdAt
+        );
+
+        assertThrows(
+                InvalidSubmissionException.class,
+                () -> submission.submit("GEN-2026-000001", createdAt.plusSeconds(60))
+        );
+        assertEquals(SubmissionStage.DRAFT, submission.getStage());
+    }
+
+    @Test
+    void submitAcceptsPhoneWithoutEmail() {
+        Instant createdAt = Instant.parse("2026-11-04T00:00:00Z");
+        Submission submission = new Submission(
+                UUID.randomUUID(),
+                SubmissionCategory.GENERAL,
+                "Public idea",
+                "Improve access",
+                "Current access is limited",
+                "staff-1",
+                "staff-1",
+                null,
+                null,
+                null,
+                null,
+                createdAt
+        );
+        submission.applyIntakeDetails("+256700000000", null, null, null, null, null);
+
+        submission.submit("GEN-2026-000001", createdAt.plusSeconds(60));
+
+        assertEquals(SubmissionStage.SUBMITTED, submission.getStage());
+    }
+
+    @Test
     void caseCodeYearUsesUgandaLocalDate() {
         Instant receivedAt = Instant.parse("2026-12-31T21:30:00Z");
 

@@ -2,6 +2,8 @@ package org.unipod.unipoderpbackend.service.submission;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -22,6 +24,7 @@ import org.unipod.unipoderpbackend.dto.submission.CaseFileAggregateResponse.Step
 import org.unipod.unipoderpbackend.dto.submission.CaseFileAggregateResponse.TransitionOptions;
 import org.unipod.unipoderpbackend.dto.submission.CaseStageHistoryResponse;
 import org.unipod.unipoderpbackend.dto.submission.DocumentStatusUpdateRequest;
+import org.unipod.unipoderpbackend.dto.submission.MissingItemResponse;
 import org.unipod.unipoderpbackend.dto.submission.OutcomeUpdateRequest;
 import org.unipod.unipoderpbackend.dto.submission.SubmissionResponse;
 import org.unipod.unipoderpbackend.dto.submission.CaseTransitionRequest;
@@ -30,18 +33,27 @@ import org.unipod.unipoderpbackend.exception.submission.InvalidSubmissionExcepti
 import org.unipod.unipoderpbackend.exception.submission.SubmissionConflictException;
 import org.unipod.unipoderpbackend.exception.submission.SubmissionNotFoundException;
 import org.unipod.unipoderpbackend.exception.storage.StorageObjectNotFoundException;
+import org.unipod.unipoderpbackend.model.sector.Sector;
 import org.unipod.unipoderpbackend.model.submission.CaseStage;
 import org.unipod.unipoderpbackend.model.submission.CaseStageHistory;
+import org.unipod.unipoderpbackend.model.submission.MissingItemStatus;
+import org.unipod.unipoderpbackend.model.submission.OutcomeDecision;
 import org.unipod.unipoderpbackend.model.submission.Submission;
 import org.unipod.unipoderpbackend.model.submission.SubmissionDocument;
 import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
 import org.unipod.unipoderpbackend.repository.submission.CaseStageHistoryRepository;
+import org.unipod.unipoderpbackend.repository.submission.MissingItemRepository;
+import org.unipod.unipoderpbackend.repository.submission.NotificationOutbox;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionDocumentRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
+import org.unipod.unipoderpbackend.service.audit.AuditTrail;
 import org.unipod.unipoderpbackend.service.factfinding.FactFindingGuard;
+import org.unipod.unipoderpbackend.service.sector.SectorService;
+import org.unipod.unipoderpbackend.util.CaseCodeGenerator;
 
 @Service
 public class CaseFileService {
+    private static final ZoneId CASE_CODE_ZONE = ZoneId.of("Africa/Kampala");
     private static final List<CaseStage> STEPPER_STAGES = List.of(
             CaseStage.RECEIVED,
             CaseStage.REGISTERED,
@@ -61,23 +73,38 @@ public class CaseFileService {
     private final SubmissionRepository submissions;
     private final SubmissionDocumentRepository documents;
     private final CaseStageHistoryRepository history;
+    private final MissingItemRepository missingItems;
     private final CaseFileEnrichmentProvider enrichment;
     private final FactFindingGuard factFindingGuard;
+    private final NotificationOutbox notificationOutbox;
+    private final SectorService sectorsCatalog;
+    private final CaseCodeGenerator caseCodeGenerator;
+    private final AuditTrail auditTrail;
     private final Clock clock;
 
     public CaseFileService(
             SubmissionRepository submissions,
             SubmissionDocumentRepository documents,
             CaseStageHistoryRepository history,
+            MissingItemRepository missingItems,
             CaseFileEnrichmentProvider enrichment,
             FactFindingGuard factFindingGuard,
+            NotificationOutbox notificationOutbox,
+            SectorService sectorsCatalog,
+            CaseCodeGenerator caseCodeGenerator,
+            AuditTrail auditTrail,
             Clock clock
     ) {
         this.submissions = submissions;
         this.documents = documents;
         this.history = history;
+        this.missingItems = missingItems;
         this.enrichment = enrichment;
         this.factFindingGuard = factFindingGuard;
+        this.notificationOutbox = notificationOutbox;
+        this.sectorsCatalog = sectorsCatalog;
+        this.caseCodeGenerator = caseCodeGenerator;
+        this.auditTrail = auditTrail;
         this.clock = clock;
     }
 
@@ -128,6 +155,9 @@ public class CaseFileService {
                 clean(request.note()),
                 now
         ));
+        auditTrail.record(authentication.getName(), "submission.transitioned", id,
+                AuditTrail.details("stage", previousStage.name()),
+                AuditTrail.details("stage", nextStage.name(), "note", clean(request.note())));
         submissions.flush();
         return aggregate(submission, authentication);
     }
@@ -139,17 +169,110 @@ public class CaseFileService {
             Authentication authentication
     ) {
         requireOperator(authentication);
-        String decision = clean(request.decision());
+        OutcomeDecision decision = outcomeDecision(request.decision());
         String note = clean(request.note());
-        if (decision == null && note == null) {
-            throw new InvalidSubmissionException("Provide an outcome decision or note.");
+        if (note == null) {
+            throw new InvalidSubmissionException("An outcome note is required.");
         }
         Submission submission = mutableCase(id, request.version());
         CaseFileEnrichmentProvider.ReviewPanel reviewPanel = enrichment.reviewPanel(id);
         if (!reviewPanel.quorumAvailable() || !reviewPanel.quorumMet()) {
             throw new SubmissionConflictException(QUORUM_REQUIRED);
         }
-        submission.saveOutcome(decision, note, authentication.getName(), clock.instant());
+        Instant now = clock.instant();
+        String actor = authentication.getName();
+        SubmissionStage previousStage = submission.getStage();
+        SubmissionStage resultingStage;
+        Sector destination = null;
+        String projectCode = null;
+        switch (decision) {
+            case CONFIRMED_AS_PROJECT -> {
+                if (request.destinationDepartmentId() == null) {
+                    throw new InvalidSubmissionException(
+                            "A destination department is required to confirm a project."
+                    );
+                }
+                destination = sectorsCatalog.requireActive(request.destinationDepartmentId());
+                projectCode = caseCodeGenerator.nextProject(
+                        submission.getCategory(),
+                        caseYear(now)
+                );
+                submission.confirmOutcomeAsProject(
+                        decision.label(),
+                        note,
+                        actor,
+                        projectCode,
+                        destination,
+                        now
+                );
+                resultingStage = submission.getStage();
+            }
+            case NEEDS_MORE_IMPROVEMENT -> {
+                submission.requestOutcomeImprovement(decision.label(), note, actor, now);
+                resultingStage = submission.getStage();
+            }
+            case CLOSED_WITH_REASON -> {
+                submission.closeWithOutcome(decision.label(), note, actor, now);
+                resultingStage = submission.getStage();
+            }
+            default -> throw new IllegalStateException("Unhandled outcome decision.");
+        }
+        if (resultingStage != previousStage) {
+            history.save(new CaseStageHistory(
+                    UUID.randomUUID(),
+                    id,
+                    previousStage,
+                    resultingStage,
+                    actor,
+                    note,
+                    now
+            ));
+        }
+        if (decision == OutcomeDecision.CONFIRMED_AS_PROJECT) {
+            notificationOutbox.recordForwarded(new NotificationOutbox.ForwardedNotification(
+                    submission.getId(),
+                    destination.getId(),
+                    destination.getName(),
+                    destination.getNotificationEmail(),
+                    submission.getTitle(),
+                    submission.getCode(),
+                    actor,
+                    now
+            ));
+            notifySubmitter(
+                    submission,
+                    "submission.confirmed_as_project",
+                    "Submission " + submission.getCode() + " confirmed as a project",
+                    "Your brief has been confirmed as project " + projectCode
+                            + " and handed to " + destination.getName() + ".",
+                    actor,
+                    now
+            );
+        } else if (decision == OutcomeDecision.NEEDS_MORE_IMPROVEMENT) {
+            notifySubmitter(
+                    submission,
+                    "submission.refinement_requested",
+                    "More detail needed for submission " + submission.getCode(),
+                    "Your brief needs more improvement: " + note,
+                    actor,
+                    now
+            );
+        } else {
+            notifySubmitter(
+                    submission,
+                    "submission.closed_with_reason",
+                    "Submission " + submission.getCode() + " closed",
+                    "Your brief was closed. Reason: " + note,
+                    actor,
+                    now
+            );
+        }
+        auditTrail.record(actor, "submission.outcome_saved", id, null, AuditTrail.details(
+                "decision", decision.label(),
+                "note", note,
+                "projectCode", projectCode,
+                "destinationDepartmentId", destination == null ? null : destination.getId()
+        ));
         submissions.flush();
         return aggregate(submission, authentication);
     }
@@ -167,6 +290,11 @@ public class CaseFileService {
                 .orElseThrow(StorageObjectNotFoundException::new);
         submission.touch(clock.instant());
         document.updateStatus(request.status());
+        auditTrail.record(authentication.getName(), "submission.document_status_updated", id, null, AuditTrail.details(
+                "documentId", documentId,
+                "name", document.getName(),
+                "status", request.status().name()
+        ));
         submissions.flush();
         return aggregate(submission, authentication);
     }
@@ -199,6 +327,12 @@ public class CaseFileService {
                 SubmissionResponse.from(submission),
                 caseStage(submission.getStage()),
                 submission.getCode(),
+                missingItems.findAllBySubmissionIdAndStatusOrderByRequestedAtAscIdAsc(
+                                id,
+                                MissingItemStatus.OPEN
+                        ).stream()
+                        .map(MissingItemResponse::from)
+                        .toList(),
                 documents.findAllBySubmissionIdOrderByCreatedAtAscIdAsc(id)
                         .stream().map(DocumentResponse::from).toList(),
                 history.findAllBySubmissionIdOrderByChangedAtAsc(id)
@@ -208,6 +342,8 @@ public class CaseFileService {
                         submission.getOutcomeStatus(),
                         submission.getOutcomeDecision(),
                         submission.getOutcomeNote(),
+                        submission.getResponsibleSectorId(),
+                        submission.getResponsibleSectorName(),
                         submission.getOutcomeDecidedBy(),
                         submission.getOutcomeDecidedAt()
                 ),
@@ -216,7 +352,6 @@ public class CaseFileService {
                 new ReviewPanelResponse(
                         review.availability().name(),
                         review.reviewerTeam(),
-                        review.ipPanel(),
                         review.quorumAvailable(),
                         review.quorumMet()
                 ),
@@ -244,8 +379,11 @@ public class CaseFileService {
         String operatorReason = operator ? null : OPERATOR_REQUIRED;
         String quorumReason = review.quorumAvailable() && review.quorumMet() ? null : QUORUM_REQUIRED;
         boolean outcomeStageOpen = submission.getStage() != SubmissionStage.DRAFT
+                && submission.getStage() != SubmissionStage.REJECTED
+                && submission.getStage() != SubmissionStage.COMPLETED
+                && submission.getStage() != SubmissionStage.CONFIRMED_AS_PROJECT;
+        boolean documentsOpen = submission.getStage() != SubmissionStage.REJECTED
                 && submission.getStage() != SubmissionStage.COMPLETED;
-        boolean documentsOpen = submission.getStage() != SubmissionStage.COMPLETED;
         return new Capabilities(
                 capability(!allowed.isEmpty(), !allowed.isEmpty()
                         ? null
@@ -256,7 +394,7 @@ public class CaseFileService {
                                 : quorumReason),
                 capability(operator && documentsOpen,
                         !operator ? operatorReason
-                                : !documentsOpen ? "Completed cases cannot be changed." : null)
+                                : !documentsOpen ? "Closed cases cannot be changed." : null)
         );
     }
 
@@ -276,13 +414,13 @@ public class CaseFileService {
     private static CaseStage caseStage(SubmissionStage stage) {
         return switch (stage) {
             case DRAFT -> null;
-            case RECEIVED -> CaseStage.RECEIVED;
+            case SUBMITTED, AWAITING_INFORMATION, RECEIVED -> CaseStage.RECEIVED;
             case REGISTERED -> CaseStage.REGISTERED;
             case FACT_FINDING, FORWARDED -> CaseStage.FACT_FINDING;
             case UNDER_REVIEW, IN_PROGRESS -> CaseStage.UNDER_REVIEW;
             case REFINEMENT_REQUESTED -> CaseStage.REFINEMENT_REQUESTED;
-            case FURTHER_HANDLING -> CaseStage.FURTHER_HANDLING;
-            case COMPLETED -> CaseStage.COMPLETED;
+            case FURTHER_HANDLING, CONFIRMED_AS_PROJECT -> CaseStage.FURTHER_HANDLING;
+            case REJECTED, COMPLETED -> CaseStage.COMPLETED;
         };
     }
 
@@ -317,6 +455,45 @@ public class CaseFileService {
 
     private static Capability capability(boolean enabled, String reason) {
         return new Capability(enabled, reason);
+    }
+
+    private static OutcomeDecision outcomeDecision(String value) {
+        return OutcomeDecision.fromValue(value)
+                .orElseThrow(() -> new InvalidSubmissionException(
+                        "Choose Confirmed as project, Needs more improvement, or Closed with a reason."
+                ));
+    }
+
+    private void notifySubmitter(
+            Submission submission,
+            String eventType,
+            String subject,
+            String message,
+            String actor,
+            Instant occurredAt
+    ) {
+        String recipient = SubmissionService.isEmailAddress(submission.getSubmitterEmail())
+                ? submission.getSubmitterEmail()
+                : SubmissionService.isEmailAddress(submission.getSubmitterId())
+                        ? submission.getSubmitterId()
+                        : null;
+        if (recipient == null) {
+            return;
+        }
+        notificationOutbox.recordSubmitterNotification(
+                submission.getId(),
+                eventType,
+                submission.getCode(),
+                recipient,
+                subject,
+                message,
+                actor,
+                occurredAt
+        );
+    }
+
+    private static int caseYear(Instant now) {
+        return LocalDate.ofInstant(now, CASE_CODE_ZONE).getYear();
     }
 
     private static String clean(String value) {

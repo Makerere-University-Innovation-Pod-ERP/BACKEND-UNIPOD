@@ -13,11 +13,11 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.unipod.unipoderpbackend.service.notification.EmailSender;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -33,7 +33,20 @@ public class OutboxNotificationDispatcher {
             WITH candidate AS (
                 SELECT id
                 FROM notification_outbox
-                WHERE event_type IN ('submission.forwarded', 'submission.information_requested')
+                WHERE event_type IN (
+                    'submission.forwarded',
+                    'submission.information_requested',
+                    'submission.reminder_sent',
+                    'submission.submitted',
+                    'submission.reply_received',
+                    'submission.forwarded_copy',
+                    'submission.confirmed_as_project',
+                    'submission.refinement_requested',
+                    'submission.closed_with_reason',
+                    'submission.rejected',
+                    'auth.password_setup',
+                    'auth.password_reset'
+                )
                     AND published_at IS NULL
                     AND (locked_until IS NULL OR locked_until <= CURRENT_TIMESTAMP)
                     AND dead_lettered_at IS NULL
@@ -53,22 +66,21 @@ public class OutboxNotificationDispatcher {
             """;
 
     private final JdbcTemplate jdbcTemplate;
-    private final JavaMailSender mailSender;
+    private final EmailSender mailSender;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transaction;
     private final String fromAddress;
 
     public OutboxNotificationDispatcher(
             JdbcTemplate jdbcTemplate,
-            JavaMailSender mailSender,
+            EmailSender mailSender,
             ObjectMapper objectMapper,
             PlatformTransactionManager transactionManager,
-            @Value("${notifications.email.from}") String fromAddress,
-            @Value("${spring.mail.host}") String mailHost
+            @Value("${notifications.email.from}") String fromAddress
     ) {
-        if (fromAddress.isBlank() || mailHost.isBlank() || !isValidAddress(fromAddress)) {
+        if (fromAddress.isBlank() || !isValidAddress(fromAddress)) {
             throw new IllegalStateException(
-                    "NOTIFICATION_EMAIL_FROM and SMTP_HOST must be configured when email delivery is enabled."
+                    "NOTIFICATION_EMAIL_FROM must be configured when email delivery is enabled."
             );
         }
         this.jdbcTemplate = jdbcTemplate;
@@ -103,7 +115,6 @@ public class OutboxNotificationDispatcher {
         try {
             JsonNode payload = objectMapper.readTree(event.payload());
             String recipient = required(payload, "notificationEmail");
-            String caseCode = required(payload, "caseCode");
             if (!isValidAddress(recipient)) {
                 throw new IllegalArgumentException("Notification recipient is not a valid email address.");
             }
@@ -111,7 +122,40 @@ public class OutboxNotificationDispatcher {
             message = new SimpleMailMessage();
             message.setFrom(fromAddress);
             message.setTo(recipient);
-            if ("submission.forwarded".equals(event.eventType())) {
+            if ("auth.password_setup".equals(event.eventType())) {
+                String setPasswordUrl = required(payload, "setPasswordUrl");
+                message.setSubject("Set up your UNIPOD account password");
+                message.setText("""
+                        An account has been created for you on the UNIPOD innovation portal.
+
+                        Choose your password using this one-time link:
+                        %s
+
+                        If you did not expect this email, you can ignore it.
+                        """.formatted(setPasswordUrl));
+            } else if ("auth.password_reset".equals(event.eventType())) {
+                String setPasswordUrl = required(payload, "setPasswordUrl");
+                message.setSubject("Reset your UNIPOD account password");
+                message.setText("""
+                        Someone asked to reset the password for your UNIPOD account.
+
+                        Choose a new password using this one-time link. It expires in one hour:
+                        %s
+
+                        If you did not ask for this, you can ignore this email. Your password has not changed.
+                        """.formatted(setPasswordUrl));
+            } else if (isSubmitterLifecycleEvent(event.eventType())) {
+                String caseCode = required(payload, "caseCode");
+                String subject = required(payload, "subject");
+                String body = required(payload, "message");
+                message.setSubject(safeHeader(subject));
+                message.setText("""
+                        %s
+
+                        Case code: %s
+                        """.formatted(body, caseCode));
+            } else if ("submission.forwarded".equals(event.eventType())) {
+                String caseCode = required(payload, "caseCode");
                 String sectorName = required(payload, "sectorName");
                 String title = required(payload, "submissionTitle");
                 message.setSubject("Submission " + caseCode + " forwarded to " + safeHeader(sectorName));
@@ -122,6 +166,7 @@ public class OutboxNotificationDispatcher {
                         Title: %s
                         """.formatted(caseCode, title));
             } else if ("submission.information_requested".equals(event.eventType())) {
+                String caseCode = required(payload, "caseCode");
                 String note = required(payload, "note");
                 String requestedBy = required(payload, "requestedBy");
                 message.setSubject("More information needed for submission " + caseCode);
@@ -131,6 +176,18 @@ public class OutboxNotificationDispatcher {
                         Case code: %s
                         Requested by: %s
                         Details: %s
+                        """.formatted(caseCode, safeHeader(requestedBy), note));
+            } else if ("submission.reminder_sent".equals(event.eventType())) {
+                String caseCode = required(payload, "caseCode");
+                String note = required(payload, "note");
+                String requestedBy = required(payload, "requestedBy");
+                message.setSubject("Reminder: information still needed for submission " + caseCode);
+                message.setText("""
+                        This is a reminder that reception is still waiting for information about your submission.
+
+                        Case code: %s
+                        Requested by: %s
+                        Outstanding items: %s
                         """.formatted(caseCode, safeHeader(requestedBy), note));
             } else {
                 throw new IllegalArgumentException("Unsupported notification event type.");
@@ -195,8 +252,20 @@ public class OutboxNotificationDispatcher {
         );
     }
 
-    private static String required(JsonNode payload, String field) {
-        JsonNode value = payload.get(field);
+    private static boolean isSubmitterLifecycleEvent(String eventType) {
+        return switch (eventType) {
+            case "submission.submitted",
+                    "submission.reply_received",
+                    "submission.forwarded_copy",
+                    "submission.confirmed_as_project",
+                    "submission.refinement_requested",
+                    "submission.closed_with_reason",
+                    "submission.rejected" -> true;
+            default -> false;
+        };
+    }
+
+    private static String required(JsonNode payload, String field) {        JsonNode value = payload.get(field);
         if (value == null || value.isNull() || value.asText().isBlank()) {
             throw new IllegalArgumentException("Required notification field is missing.");
         }

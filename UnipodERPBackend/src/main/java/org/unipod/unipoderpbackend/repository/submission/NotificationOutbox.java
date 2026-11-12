@@ -87,6 +87,148 @@ public class NotificationOutbox {
         );
     }
 
+    public void recordReminderSent(
+            UUID submissionId,
+            String caseCode,
+            String submitterEmail,
+            String note,
+            String actor,
+            Instant occurredAt
+    ) {
+        jdbcTemplate.update("""
+                INSERT INTO notification_outbox (
+                    id, aggregate_id, event_type, payload, occurred_at, next_attempt_at
+                )
+                VALUES (
+                    ?, ?, 'submission.reminder_sent',
+                    jsonb_build_object(
+                        'submissionId', ?::text,
+                        'caseCode', ?::text,
+                        'notificationEmail', ?::text,
+                        'note', ?::text,
+                        'requestedBy', ?::text
+                    ),
+                    ?, ?
+                )
+                """,
+                UUID.randomUUID(),
+                submissionId,
+                submissionId.toString(),
+                caseCode,
+                submitterEmail,
+                note,
+                actor,
+                Timestamp.from(occurredAt),
+                Timestamp.from(occurredAt)
+        );
+    }
+
+    /**
+     * Records a submitter-facing lifecycle notification (submitted, reply
+     * received, forwarded copy, confirmed as project, rejected).
+     */
+    public void recordSubmitterNotification(
+            UUID submissionId,
+            String eventType,
+            String caseCode,
+            String recipient,
+            String subject,
+            String message,
+            String actor,
+            Instant occurredAt
+    ) {
+        jdbcTemplate.update("""
+                INSERT INTO notification_outbox (
+                    id, aggregate_id, event_type, payload, occurred_at, next_attempt_at
+                )
+                VALUES (
+                    ?, ?, ?,
+                    jsonb_build_object(
+                        'submissionId', ?::text,
+                        'caseCode', ?::text,
+                        'notificationEmail', ?::text,
+                        'subject', ?::text,
+                        'message', ?::text,
+                        'triggeredBy', ?::text
+                    ),
+                    ?, ?
+                )
+                """,
+                UUID.randomUUID(),
+                submissionId,
+                eventType,
+                submissionId.toString(),
+                caseCode,
+                recipient,
+                subject,
+                message,
+                actor,
+                Timestamp.from(occurredAt),
+                Timestamp.from(occurredAt)
+        );
+    }
+
+    /**
+     * Records the one-time password setup link created with an assisted
+     * submitter account. The link carries the raw token so the notifier can
+     * deliver it; only a hash of the same token is stored on the user record,
+     * and the token can be consumed once and expires after 72 hours.
+     */
+    public void recordPasswordSetup(
+            UUID userId,
+            String email,
+            String setPasswordUrl,
+            Instant expiresAt,
+            Instant occurredAt
+    ) {
+        recordPasswordLink("auth.password_setup", userId, email, setPasswordUrl, expiresAt, occurredAt);
+    }
+
+    public void recordPasswordReset(
+            UUID userId,
+            String email,
+            String setPasswordUrl,
+            Instant expiresAt,
+            Instant occurredAt
+    ) {
+        recordPasswordLink("auth.password_reset", userId, email, setPasswordUrl, expiresAt, occurredAt);
+    }
+
+    private void recordPasswordLink(
+            String eventType,
+            UUID userId,
+            String email,
+            String setPasswordUrl,
+            Instant expiresAt,
+            Instant occurredAt
+    ) {
+        jdbcTemplate.update("""
+                INSERT INTO notification_outbox (
+                    id, aggregate_id, event_type, payload, occurred_at, next_attempt_at
+                )
+                VALUES (
+                    ?, ?, ?,
+                    jsonb_build_object(
+                        'userId', ?::text,
+                        'notificationEmail', ?::text,
+                        'setPasswordUrl', ?::text,
+                        'expiresAt', ?::text
+                    ),
+                    ?, ?
+                )
+                """,
+                UUID.randomUUID(),
+                userId,
+                eventType,
+                userId.toString(),
+                email,
+                setPasswordUrl,
+                expiresAt.toString(),
+                Timestamp.from(occurredAt),
+                Timestamp.from(occurredAt)
+        );
+    }
+
     public record ForwardedNotification(
             UUID submissionId,
             UUID sectorId,

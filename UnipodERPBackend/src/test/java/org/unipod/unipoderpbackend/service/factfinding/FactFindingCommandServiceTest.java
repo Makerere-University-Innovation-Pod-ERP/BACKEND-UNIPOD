@@ -22,6 +22,7 @@ import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
 import org.unipod.unipoderpbackend.repository.factfinding.FactFindingRepository;
 import org.unipod.unipoderpbackend.repository.submission.CaseStageHistoryRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
+import org.unipod.unipoderpbackend.service.audit.AuditTrail;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -38,10 +39,12 @@ class FactFindingCommandServiceTest {
     private final SubmissionRepository submissions = mock(SubmissionRepository.class);
     private final FactFindingRepository checks = mock(FactFindingRepository.class);
     private final CaseStageHistoryRepository history = mock(CaseStageHistoryRepository.class);
+    private final AuditTrail audit = mock(AuditTrail.class);
     private final FactFindingCommandService service = new FactFindingCommandService(
             submissions,
             checks,
             history,
+            audit,
             Clock.fixed(Instant.parse("2026-11-11T10:00:00Z"), ZoneOffset.UTC)
     );
 
