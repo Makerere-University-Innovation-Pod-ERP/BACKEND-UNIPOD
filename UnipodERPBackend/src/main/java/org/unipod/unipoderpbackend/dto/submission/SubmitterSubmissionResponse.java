@@ -27,6 +27,9 @@ public record SubmitterSubmissionResponse(
         String projectCode,
         int briefVersion,
         SubmissionStage stage,
+        SubmitterPendingAction pendingAction,
+        String waitingForYou,
+        Instant waitingSince,
         Instant receivedAt,
         Instant submittedAt,
         Instant forwardedAt,
@@ -38,6 +41,15 @@ public record SubmitterSubmissionResponse(
         Instant updatedAt
 ) {
     public static SubmitterSubmissionResponse from(Submission submission) {
+        return from(submission, null, null, null);
+    }
+
+    public static SubmitterSubmissionResponse from(
+            Submission submission,
+            SubmitterPendingAction pendingAction,
+            String waitingForYou,
+            Instant waitingSince
+    ) {
         return new SubmitterSubmissionResponse(
                 submission.getId(),
                 submission.getCode(),
@@ -57,6 +69,9 @@ public record SubmitterSubmissionResponse(
                 submission.getProjectCode(),
                 submission.getBriefVersion(),
                 submission.getStage(),
+                pendingAction,
+                waitingForYou,
+                waitingSince,
                 submission.getReceivedAt(),
                 submission.getSubmittedAt(),
                 submission.getForwardedAt(),

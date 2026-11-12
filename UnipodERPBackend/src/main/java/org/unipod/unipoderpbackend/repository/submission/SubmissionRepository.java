@@ -65,6 +65,20 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
     Page<Submission> findAllBySubmitterIdOrderByUpdatedAtDescIdAsc(String submitterId, Pageable pageable);
 
     @EntityGraph(attributePaths = "responsibleSector")
+    Page<Submission> findAllBySubmitterIdAndCategoryNotOrderByUpdatedAtDescIdAsc(
+            String submitterId,
+            SubmissionCategory category,
+            Pageable pageable
+    );
+
+    @EntityGraph(attributePaths = "responsibleSector")
+    Page<Submission> findAllBySubmitterIdAndCategoryOrderByUpdatedAtDescIdAsc(
+            String submitterId,
+            SubmissionCategory category,
+            Pageable pageable
+    );
+
+    @EntityGraph(attributePaths = "responsibleSector")
     Page<Submission> findAllByStageOrderByUpdatedAtDescIdAsc(SubmissionStage stage, Pageable pageable);
 
     @EntityGraph(attributePaths = "responsibleSector")
