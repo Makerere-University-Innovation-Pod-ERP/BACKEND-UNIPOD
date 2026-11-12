@@ -1,0 +1,131 @@
+package org.unipod.unipoderpbackend.service.partner;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.Map;
+import java.util.Set;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
+import org.unipod.unipoderpbackend.model.partner.PartnerStatus;
+
+class PartnerStatusPolicyTest {
+    private static final ZoneId KAMPALA = ZoneId.of("Africa/Kampala");
+    private static final LocalDate TODAY = LocalDate.of(2026, 11, 11);
+
+    private final PartnerStatusPolicy policy = policyAt(Instant.parse("2026-11-11T09:00:00Z"));
+
+    @ParameterizedTest(name = "{0} days left is {1}")
+    @CsvSource({
+            "61, ACTIVE",
+            "60, RENEWAL_DUE",
+            "31, RENEWAL_DUE",
+            "30, EXPIRING_SOON",
+            "1, EXPIRING_SOON",
+            "0, EXPIRING_SOON",
+            "-1, EXPIRED",
+            "-400, EXPIRED"
+    })
+    void derivesStatusFromDaysUntilRenewal(long daysLeft, PartnerStatus expected) {
+        assertEquals(expected, policy.statusOf(TODAY.plusDays(daysLeft)));
+    }
+
+    @Test
+    void partnerWithoutRenewalDateIsActive() {
+        assertEquals(PartnerStatus.ACTIVE, policy.statusOf(null));
+    }
+
+    @Test
+    void usesTheKampalaCalendarDayNotUtc() {
+        // 22:00 UTC on 11 Nov is already 12 Nov in Kampala, so an MOU due on 11 Nov has expired.
+        PartnerStatusPolicy lateEvening = policyAt(Instant.parse("2026-11-11T22:00:00Z"));
+
+        assertEquals(PartnerStatus.EXPIRED, lateEvening.statusOf(LocalDate.of(2026, 11, 11)));
+        assertEquals(PartnerStatus.EXPIRING_SOON, lateEvening.statusOf(LocalDate.of(2026, 11, 12)));
+    }
+
+    @Test
+    void respectsConfiguredThresholds() {
+        PartnerStatusPolicy custom = new PartnerStatusPolicy(
+                new PartnerMouProperties(14, 7, Set.of(), Set.of()), Clock.fixed(Instant.parse("2026-11-11T09:00:00Z"), KAMPALA));
+
+        assertEquals(PartnerStatus.ACTIVE, custom.statusOf(TODAY.plusDays(15)));
+        assertEquals(PartnerStatus.RENEWAL_DUE, custom.statusOf(TODAY.plusDays(14)));
+        assertEquals(PartnerStatus.EXPIRING_SOON, custom.statusOf(TODAY.plusDays(7)));
+    }
+
+    @Test
+    void thresholdsDefaultToSixtyAndThirtyDays() {
+        PartnerMouProperties bound = new Binder(new MapConfigurationPropertySource(Map.of()))
+                .bindOrCreate("operations.partners", PartnerMouProperties.class);
+
+        assertEquals(60, bound.renewalDueDays());
+        assertEquals(30, bound.expiringSoonDays());
+    }
+
+    @Test
+    void thresholdsBindFromConfiguration() {
+        PartnerMouProperties bound = new Binder(new MapConfigurationPropertySource(Map.of(
+                "operations.partners.renewal-due-days", "90",
+                "operations.partners.expiring-soon-days", "45")))
+                .bindOrCreate("operations.partners", PartnerMouProperties.class);
+
+        assertEquals(90, bound.renewalDueDays());
+        assertEquals(45, bound.expiringSoonDays());
+    }
+
+    @Test
+    void alertSettingsDefaultToAdministratorAndCoordinatorRoles() {
+        PartnerMouProperties bound = new Binder(new MapConfigurationPropertySource(Map.of()))
+                .bindOrCreate("operations.partners", PartnerMouProperties.class);
+
+        assertEquals(Set.of("ADMINISTRATOR", "DEPARTMENT_COORDINATOR"), bound.alertRoles());
+        assertEquals(Set.of(), bound.alertRecipients());
+    }
+
+    @Test
+    void alertSettingsBindFromCommaSeparatedValues() {
+        PartnerMouProperties bound = new Binder(new MapConfigurationPropertySource(Map.of(
+                "operations.partners.alert-roles", "administrator, finance_officer",
+                "operations.partners.alert-recipients", "One@Test.Local,two@test.local")))
+                .bindOrCreate("operations.partners", PartnerMouProperties.class);
+
+        assertEquals(Set.of("ADMINISTRATOR", "FINANCE_OFFICER"), bound.alertRoles());
+        assertEquals(Set.of("one@test.local", "two@test.local"), bound.alertRecipients());
+    }
+
+    @Test
+    void alertRecipientsMustLookLikeEmailAddresses() {
+        for (String bad : new String[] {"not-an-email", "two@@test.local", "a b@test.local", "nodot@localhost",
+                "@test.local", "x".repeat(250) + "@test.local"}) {
+            assertThrows(IllegalArgumentException.class,
+                    () -> new PartnerMouProperties(60, 30, Set.of(), Set.of(bad)), bad);
+        }
+        PartnerMouProperties valid = new PartnerMouProperties(60, 30, Set.of(), Set.of("ok.name+tag@sub.test.local"));
+        assertEquals(Set.of("ok.name+tag@sub.test.local"), valid.alertRecipients());
+    }
+
+    @Test
+    void anInvalidRecipientInTheSettingsStopsBindingInsteadOfFailingLater() {
+        assertThrows(RuntimeException.class, () -> new Binder(new MapConfigurationPropertySource(Map.of(
+                "operations.partners.alert-recipients", "good@test.local,oops")))
+                .bindOrCreate("operations.partners", PartnerMouProperties.class));
+    }
+
+    @Test
+    void rejectsThresholdsInTheWrongOrder() {
+        assertThrows(IllegalArgumentException.class, () -> new PartnerMouProperties(10, 20, Set.of(), Set.of()));
+        assertThrows(IllegalArgumentException.class, () -> new PartnerMouProperties(10, -1, Set.of(), Set.of()));
+    }
+
+    private static PartnerStatusPolicy policyAt(Instant instant) {
+        return new PartnerStatusPolicy(new PartnerMouProperties(60, 30, Set.of(), Set.of()), Clock.fixed(instant, KAMPALA));
+    }
+}
