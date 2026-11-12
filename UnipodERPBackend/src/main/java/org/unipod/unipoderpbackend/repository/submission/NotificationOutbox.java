@@ -181,12 +181,33 @@ public class NotificationOutbox {
             Instant expiresAt,
             Instant occurredAt
     ) {
+        recordPasswordLink("auth.password_setup", userId, email, setPasswordUrl, expiresAt, occurredAt);
+    }
+
+    public void recordPasswordReset(
+            UUID userId,
+            String email,
+            String setPasswordUrl,
+            Instant expiresAt,
+            Instant occurredAt
+    ) {
+        recordPasswordLink("auth.password_reset", userId, email, setPasswordUrl, expiresAt, occurredAt);
+    }
+
+    private void recordPasswordLink(
+            String eventType,
+            UUID userId,
+            String email,
+            String setPasswordUrl,
+            Instant expiresAt,
+            Instant occurredAt
+    ) {
         jdbcTemplate.update("""
                 INSERT INTO notification_outbox (
                     id, aggregate_id, event_type, payload, occurred_at, next_attempt_at
                 )
                 VALUES (
-                    ?, ?, 'auth.password_setup',
+                    ?, ?, ?,
                     jsonb_build_object(
                         'userId', ?::text,
                         'notificationEmail', ?::text,
@@ -198,6 +219,7 @@ public class NotificationOutbox {
                 """,
                 UUID.randomUUID(),
                 userId,
+                eventType,
                 userId.toString(),
                 email,
                 setPasswordUrl,
