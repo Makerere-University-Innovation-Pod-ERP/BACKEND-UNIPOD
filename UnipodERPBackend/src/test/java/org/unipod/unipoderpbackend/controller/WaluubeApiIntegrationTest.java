@@ -516,21 +516,21 @@ class WaluubeApiIntegrationTest {
                         .content("""
                                 {"to_stage":"FACT_FINDING","version":-1}
                                 """))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isUnprocessableContent());
         mockMvc.perform(put("/cases/{id}/outcome", id)
                         .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"decision":"Approve","version":-1}
                                 """))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isUnprocessableContent());
         mockMvc.perform(put("/cases/{id}/outcome", id)
                         .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"decision":" ","note":"  ","version":4}
                                 """))
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.detail").value("Submission details are invalid or incomplete."));
     }
 
@@ -785,7 +785,7 @@ class WaluubeApiIntegrationTest {
                         .with(user("receptionist").roles("RECEPTIONIST"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(request))
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.detail").value("One or more request values are invalid."));
     }
 
@@ -800,7 +800,7 @@ class WaluubeApiIntegrationTest {
         mockMvc.perform(get("/submissions/search")
                         .with(user("observer").roles("OBSERVER"))
                         .param("code", "   "))
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.title").value("Validation failed"));
     }
 
@@ -925,6 +925,6 @@ class WaluubeApiIntegrationTest {
                         .with(observer)
                         .param("receivedFrom", today.toString())
                         .param("receivedTo", today.minusDays(1).toString()))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isUnprocessableContent());
     }
 }
