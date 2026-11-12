@@ -550,6 +550,244 @@ paths:
                 $ref: '#/components/schemas/Me'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /users:
+    get:
+      tags: [Users]
+      operationId: listUsers
+      x-required-roles: [ADMINISTRATOR]
+      summary: List and search accounts [AD1]
+      description: Administrator only (USER_MANAGE); other roles get 403 with code ROLE_NOT_PERMITTED. Staff accounts are created with `POST /admin/users`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: role
+          in: query
+          schema:
+            $ref: '#/components/schemas/ApiUserRole'
+        - name: active
+          in: query
+          schema:
+            type: boolean
+        - name: q
+          in: query
+          description: Part of the email address.
+          schema:
+            type: string
+            maxLength: 254
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of accounts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSummaryPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /users/{id}:
+    get:
+      tags: [Users]
+      operationId: getUser
+      x-required-roles: [ADMINISTRATOR]
+      summary: One account
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Users]
+      operationId: updateUser
+      x-required-roles: [ADMINISTRATOR]
+      summary: Change an account's role or departments [AD1]
+      description: |
+        Send only what changes. `departmentIds` replaces the user's department list
+        (send `[]` to remove all). You cannot change your own role, and the last
+        active administrator cannot be demoted (409). Every change is audited.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: The updated account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSummary'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /users/{id}/deactivate:
+    post:
+      tags: [Users]
+      operationId: deactivateUser
+      x-required-roles: [ADMINISTRATOR]
+      summary: Deactivate an account [AD1]
+      description: The account can no longer sign in. Idempotent. You cannot deactivate yourself or the last active administrator (409). Tokens already issued expire on their own (at most one hour).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /users/{id}/reactivate:
+    post:
+      tags: [Users]
+      operationId: reactivateUser
+      x-required-roles: [ADMINISTRATOR]
+      summary: Reactivate an account [AD1]
+      description: Idempotent.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /roles:
+    get:
+      tags: [Users]
+      operationId: listRoles
+      x-required-roles: []
+      summary: Role list [AD1]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Every role; `staff` is false only for SUBMITTER
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Role'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /departments:
+    get:
+      tags: [Users]
+      operationId: listDepartments
+      x-required-roles: []
+      summary: Active departments
+      description: Departments are the same records as sectors (`/sectors`).
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Active departments by name
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SectorFilterOption'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Users]
+      operationId: createDepartment
+      x-required-roles: [ADMINISTRATOR]
+      summary: Create a department
+      description: Same body and rules as `POST /sectors`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SectorRequest'
+      responses:
+        '201':
+          description: Department created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sector'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /me/submissions:
     get:
       tags: [Submissions]
@@ -3091,6 +3329,70 @@ components:
         scope:
           type: string
           enum: [OWN, ASSIGNED, DEPARTMENT, ALL]
+    UserSummary:
+      type: object
+      required: [id, email, role, active, departmentIds, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        role:
+          $ref: '#/components/schemas/ApiUserRole'
+        active:
+          type: boolean
+        departmentIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        profile:
+          oneOf:
+            - $ref: '#/components/schemas/UserProfile'
+            - type: 'null'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    UserSummaryPage:
+      type: object
+      required: [items, page, size, totalElements, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserSummary'
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+    UpdateUserRequest:
+      type: object
+      properties:
+        role:
+          $ref: '#/components/schemas/ApiUserRole'
+        departmentIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+    Role:
+      type: object
+      required: [role, staff]
+      properties:
+        role:
+          $ref: '#/components/schemas/ApiUserRole'
+        staff:
+          type: boolean
     SignupRequest:
       type: object
       required: [accountKind, fullName, phone, email, password, rulesAccepted, rulesVersion]
@@ -3210,6 +3512,8 @@ components:
         - IP_LIAISON
         - SUBMITTER
         - OBSERVER
+        - FINANCE_OFFICER
+        - DEPARTMENT_HEAD
     CreateSubmissionRequest:
       type: object
       additionalProperties: false
