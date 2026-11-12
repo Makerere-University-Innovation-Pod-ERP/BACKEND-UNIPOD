@@ -588,8 +588,14 @@ Errors use RFC 9457 `application/problem+json` responses. This replaces the
 previous custom `ApiErrorResponse` response shape; workflow success responses
 are unchanged by the error-format refactor.
 
-Problem responses include `type`, `title`, `status`, and `detail`. Unexpected
-server errors also include a safe `reference` support ID.
+Problem responses include `type`, `title`, `status`, `detail` (the human
+reason) and `code` (a machine-readable reason the frontend can switch on).
+Unexpected server errors also include a safe `reference` support ID.
+
+Status codes follow the assignment doc: `403` for permission, `409` for a gate
+or conflict, `422` for validation. Validation errors (`code: VALIDATION_FAILED`)
+also carry `errors`, a list of `{ "field", "message" }`. Malformed requests
+(broken JSON, a parameter of the wrong type, a missing parameter) stay `400`.
 
 Client errors include a safe summary describing the problem.
 
@@ -749,6 +755,7 @@ Test the following scenarios:
 | Request without an access token                | `401 Unauthorized`   |
 | Request with a token lacking an allowed role   | `403 Forbidden`      |
 | Request containing an undeclared JSON property | `400 Bad Request`    |
+| Request with an invalid field value            | `422 Unprocessable Content` |
 | Request using an unknown submission UUID       | `404 Not Found`      |
 | Registering an already registered submission   | `409 Conflict`       |
 
