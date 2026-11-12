@@ -31,6 +31,7 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.unipod.unipoderpbackend.dto.FieldErrorResponse;
+import org.unipod.unipoderpbackend.exception.auth.InvalidSignupException;
 import org.unipod.unipoderpbackend.exception.authorization.AccessDeniedWithReasonException;
 import org.unipod.unipoderpbackend.exception.notification.NotificationNotFoundException;
 import org.unipod.unipoderpbackend.exception.sector.SectorConflictException;
@@ -107,6 +108,11 @@ public class ApiExceptionHandler {
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     ResponseEntity<ProblemDetail> handleMaxUploadSize(MaxUploadSizeExceededException exception) {
         return problem(HttpStatus.PAYLOAD_TOO_LARGE, "Upload too large", "The uploaded file exceeds the allowed size.");
+    }
+
+    @ExceptionHandler(InvalidSignupException.class)
+    ResponseEntity<ProblemDetail> handleInvalidSignup(InvalidSignupException exception) {
+        return validationProblem(exception.getErrors());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
