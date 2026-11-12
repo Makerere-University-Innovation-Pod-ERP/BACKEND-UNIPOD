@@ -9,7 +9,6 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
 
-/** One bell notification for one person. Stored, so it is an entity. */
 @Entity
 @Table(name = "notifications")
 public class Notification {
@@ -64,7 +63,6 @@ public class Notification {
         this.createdAt = createdAt;
     }
 
-    /** Marks it read. Reading it again keeps the first time, so the call is safe to repeat. */
     public void markRead(Instant now) {
         if (readAt == null) {
             readAt = now;
