@@ -44,6 +44,7 @@ class SignupApiIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.tokenType").value("Bearer"))
                 .andExpect(jsonPath("$.mustChangePassword").value(false))
+                .andExpect(jsonPath("$.refreshToken").isNotEmpty())
                 .andReturn().getResponse().getContentAsString();
         String token = objectMapper.readTree(response).get("accessToken").asString();
 
