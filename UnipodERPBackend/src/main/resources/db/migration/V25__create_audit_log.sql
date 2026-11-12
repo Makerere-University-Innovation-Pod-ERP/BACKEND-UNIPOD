@@ -1,5 +1,3 @@
--- Domain audit log (AD2): who did what to which record, with before and after values.
--- This is separate from audit_events (V21), which only records HTTP requests.
 CREATE TABLE audit_log (
     id            UUID         NOT NULL,
     occurred_at   TIMESTAMPTZ  NOT NULL,
@@ -19,7 +17,6 @@ CREATE INDEX ix_audit_log_entity ON audit_log (entity_type, entity_id, occurred_
 CREATE INDEX ix_audit_log_occurred_at ON audit_log (occurred_at DESC);
 CREATE INDEX ix_audit_log_actor ON audit_log (actor, occurred_at DESC);
 
--- Append-only: once a line is written nobody can change or remove it, not even through SQL.
 CREATE FUNCTION audit_log_reject_change() RETURNS trigger AS $$
 BEGIN
     RAISE EXCEPTION 'audit_log is append-only: % is not allowed', TG_OP;
