@@ -9,10 +9,13 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.server.ResponseStatusException;
+import org.unipod.unipoderpbackend.exception.authorization.AccessDeniedWithReasonException;
 import org.unipod.unipoderpbackend.exception.sector.SectorConflictException;
 import org.unipod.unipoderpbackend.exception.storage.StorageObjectNotFoundException;
 import org.unipod.unipoderpbackend.exception.submission.InvalidSubmissionException;
 import org.unipod.unipoderpbackend.exception.submission.SubmissionConflictException;
+import org.unipod.unipoderpbackend.model.authorization.AuthorizationDecision;
+import org.unipod.unipoderpbackend.model.authorization.DenialCode;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -52,6 +55,18 @@ class ApiExceptionHandlerTest {
         assertNotNull(response.getBody());
         assertEquals("Forbidden", response.getBody().getTitle());
         assertFalse(response.getBody().getDetail().contains("internal rule"));
+    }
+
+    @Test
+    void accessDeniedWithReasonReturnsCodeAndReason() {
+        ResponseEntity<ProblemDetail> response = handler.handleAccessDeniedWithReason(
+                new AccessDeniedWithReasonException(AuthorizationDecision.deny(DenialCode.NOT_OWNER))
+        );
+
+        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals("NOT_OWNER", response.getBody().getProperties().get("code"));
+        assertEquals(DenialCode.NOT_OWNER.message(), response.getBody().getDetail());
     }
 
     @Test
