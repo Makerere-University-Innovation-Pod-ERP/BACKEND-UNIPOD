@@ -558,7 +558,10 @@ Configure the following environment variables in the deployment environment.
 | `APP_PUBLIC_BASE_URL` | Public frontend base URL used in password-setup links, for example `https://app.example.test`. When unset, assisted accounts fall back to the origin of the incoming API request and log a warning. |
 | `JWT_ROLES_CLAIM` | JWT claim containing role names. Defaults to `roles`. |
 | `JWT_SUBJECT_CLAIM` | JWT claim used as the authenticated user identifier. Defaults to `sub`. |
-| `NOTIFICATION_EMAIL_ENABLED` | Enables the scheduled SMTP outbox worker; defaults to `false`. |
+| `NOTIFICATION_EMAIL_ENABLED` | Enables the scheduled outbox email worker; defaults to `false`. |
+| `NOTIFICATION_EMAIL_PROVIDER` | How the worker sends email: `smtp` (default) or `emailjs`. Use `emailjs` on hosts that block outbound SMTP. |
+| `EMAILJS_SERVICE_ID`, `EMAILJS_TEMPLATE_ID` | EmailJS service and template. The template uses `{{to_email}}` as To, `{{subject}}` as Subject and `{{message}}` as Content. |
+| `EMAILJS_PUBLIC_KEY`, `EMAILJS_PRIVATE_KEY` | EmailJS account keys. Turn on "Allow EmailJS API for non-browser applications" in the EmailJS account security settings. Keep the private key secret. |
 | `NOTIFICATION_EMAIL_FROM` | Sender address for forwarding notifications. |
 | `NOTIFICATIONS_RECEPTION_EMAIL` | Reception mailbox notified when a brief is submitted or a submitter replies. Leave blank to skip those notifications. |
 | `SMTP_HOST`, `SMTP_PORT` | SMTP server and port (port defaults to `587`). |
