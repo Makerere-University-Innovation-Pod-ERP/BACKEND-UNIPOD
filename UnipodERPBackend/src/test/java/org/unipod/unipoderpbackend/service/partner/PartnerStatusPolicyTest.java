@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -53,7 +54,7 @@ class PartnerStatusPolicyTest {
     @Test
     void respectsConfiguredThresholds() {
         PartnerStatusPolicy custom = new PartnerStatusPolicy(
-                new PartnerMouProperties(14, 7), Clock.fixed(Instant.parse("2026-11-11T09:00:00Z"), KAMPALA));
+                new PartnerMouProperties(14, 7, Set.of(), Set.of()), Clock.fixed(Instant.parse("2026-11-11T09:00:00Z"), KAMPALA));
 
         assertEquals(PartnerStatus.ACTIVE, custom.statusOf(TODAY.plusDays(15)));
         assertEquals(PartnerStatus.RENEWAL_DUE, custom.statusOf(TODAY.plusDays(14)));
@@ -81,12 +82,32 @@ class PartnerStatusPolicyTest {
     }
 
     @Test
+    void alertSettingsDefaultToAdministratorAndCoordinatorRoles() {
+        PartnerMouProperties bound = new Binder(new MapConfigurationPropertySource(Map.of()))
+                .bindOrCreate("operations.partners", PartnerMouProperties.class);
+
+        assertEquals(Set.of("ADMINISTRATOR", "DEPARTMENT_COORDINATOR"), bound.alertRoles());
+        assertEquals(Set.of(), bound.alertRecipients());
+    }
+
+    @Test
+    void alertSettingsBindFromCommaSeparatedValues() {
+        PartnerMouProperties bound = new Binder(new MapConfigurationPropertySource(Map.of(
+                "operations.partners.alert-roles", "administrator, finance_officer",
+                "operations.partners.alert-recipients", "One@Test.Local,two@test.local")))
+                .bindOrCreate("operations.partners", PartnerMouProperties.class);
+
+        assertEquals(Set.of("ADMINISTRATOR", "FINANCE_OFFICER"), bound.alertRoles());
+        assertEquals(Set.of("one@test.local", "two@test.local"), bound.alertRecipients());
+    }
+
+    @Test
     void rejectsThresholdsInTheWrongOrder() {
-        assertThrows(IllegalArgumentException.class, () -> new PartnerMouProperties(10, 20));
-        assertThrows(IllegalArgumentException.class, () -> new PartnerMouProperties(10, -1));
+        assertThrows(IllegalArgumentException.class, () -> new PartnerMouProperties(10, 20, Set.of(), Set.of()));
+        assertThrows(IllegalArgumentException.class, () -> new PartnerMouProperties(10, -1, Set.of(), Set.of()));
     }
 
     private static PartnerStatusPolicy policyAt(Instant instant) {
-        return new PartnerStatusPolicy(new PartnerMouProperties(60, 30), Clock.fixed(instant, KAMPALA));
+        return new PartnerStatusPolicy(new PartnerMouProperties(60, 30, Set.of(), Set.of()), Clock.fixed(instant, KAMPALA));
     }
 }
