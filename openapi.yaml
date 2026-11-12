@@ -98,6 +98,8 @@ tags:
     description: Append-only audit log (AD2) and the history panel on a brief
   - name: Notifications
     description: The in-app bell (NT1). Always the signed-in person's own notifications
+  - name: Configuration
+    description: Read-only settings from ConfigService (case code format, review defaults, document rules, departments)
 x-cors:
   allowedOrigins:
     - http://localhost:5173
@@ -1451,6 +1453,26 @@ paths:
                 $ref: '#/components/schemas/ReadAllResult'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /config:
+    get:
+      tags: [Configuration]
+      operationId: getConfig
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
+      summary: Current settings
+      description: |
+        Read-only. Values are cached for up to 60 seconds. Only the future
+        settings endpoint (D2) writes them. The number of reviews for a single
+        brief is still set per brief by the coordinator (CO1); the value here is
+        only the default.
+      responses:
+        '200':
+          description: The settings every module reads
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Config'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 components:
   securitySchemes:
     bearerAuth:
@@ -1864,6 +1886,41 @@ components:
       properties:
         marked:
           type: integer
+    Config:
+      type: object
+      required: [caseCodeStudentPrefix, caseCodeGeneralPrefix, caseCodeSequenceDigits, defaultReviewMode, defaultRequiredReviews, recommendationLetterRequiredFor, departments]
+      properties:
+        caseCodeStudentPrefix:
+          type: string
+          example: STU
+        caseCodeGeneralPrefix:
+          type: string
+          example: GEN
+        caseCodeSequenceDigits:
+          type: integer
+          example: 6
+        defaultReviewMode:
+          type: string
+          enum: [PARALLEL, SEQUENTIAL]
+        defaultRequiredReviews:
+          type: integer
+          example: 2
+        recommendationLetterRequiredFor:
+          type: array
+          items:
+            type: string
+            enum: [student, general]
+        departments:
+          type: array
+          items:
+            type: object
+            required: [id, name]
+            properties:
+              id:
+                type: string
+                format: uuid
+              name:
+                type: string
     SubmissionPage:
       type: object
       required: [items, page, size, totalElements, totalPages]
