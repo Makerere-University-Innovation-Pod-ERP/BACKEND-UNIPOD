@@ -2,6 +2,7 @@ package org.unipod.unipoderpbackend.service.partner;
 
 import java.time.Clock;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -62,7 +63,7 @@ public class PartnerService {
             // constraint the entity does not already guard, so it decides.
             throw nameTaken();
         }
-        audit.log(AuditEvent.created(actor, CREATED, ENTITY_TYPE, partner.getId(), PartnerAuditSnapshot.of(partner, false)));
+        audit.log(AuditEvent.created(actor, CREATED, ENTITY_TYPE, partner.getId(), PartnerAuditSnapshot.of(partner, false, false)));
         return toResponse(partner);
     }
 
@@ -77,8 +78,8 @@ public class PartnerService {
                 && partners.existsByNameIgnoringCaseExcluding(request.name().strip(), id)) {
             throw nameTaken();
         }
-        PartnerAuditSnapshot before = PartnerAuditSnapshot.of(partner, false);
-        Contacts contactsBefore = Contacts.of(partner);
+        PartnerAuditSnapshot before = PartnerAuditSnapshot.of(partner, false, false);
+        PersonalText personalBefore = PersonalText.of(partner);
         partner.updateDetails(
                 request.name(),
                 request.type(),
@@ -94,22 +95,22 @@ public class PartnerService {
         } catch (ObjectOptimisticLockingFailureException concurrentEdit) {
             throw staleVersion();
         }
-        auditChange(actor, UPDATED, partner, before, contactsBefore);
+        auditChange(actor, UPDATED, partner, before, personalBefore);
         return toResponse(partner);
     }
 
     @Transactional
     public PartnerResponse recordMouRenewal(Actor actor, UUID id, RecordMouRenewalRequest request) {
         Partner partner = partners.findById(id).orElseThrow(PartnerNotFoundException::new);
-        PartnerAuditSnapshot before = PartnerAuditSnapshot.of(partner, false);
-        Contacts contactsBefore = Contacts.of(partner);
+        PartnerAuditSnapshot before = PartnerAuditSnapshot.of(partner, false, false);
+        PersonalText personalBefore = PersonalText.of(partner);
         partner.renewMou(request.renewalDate(), request.documentReference(), clock.instant());
         try {
             partners.saveAndFlush(partner);
         } catch (ObjectOptimisticLockingFailureException concurrentEdit) {
             throw staleVersion();
         }
-        auditChange(actor, MOU_RENEWED, partner, before, contactsBefore);
+        auditChange(actor, MOU_RENEWED, partner, before, personalBefore);
         return toResponse(partner);
     }
 
@@ -129,8 +130,10 @@ public class PartnerService {
 
     // A request that leaves every audited value as it was is not worth an entry in an append-only log.
     private void auditChange(
-            Actor actor, String action, Partner partner, PartnerAuditSnapshot before, Contacts contactsBefore) {
-        PartnerAuditSnapshot after = PartnerAuditSnapshot.of(partner, !Contacts.of(partner).equals(contactsBefore));
+            Actor actor, String action, Partner partner, PartnerAuditSnapshot before, PersonalText personalBefore) {
+        PersonalText personalAfter = PersonalText.of(partner);
+        PartnerAuditSnapshot after = PartnerAuditSnapshot.of(
+                partner, personalAfter.contactsDiffer(personalBefore), personalAfter.notesDiffer(personalBefore));
         if (!after.equals(before)) {
             audit.log(AuditEvent.changed(actor, action, ENTITY_TYPE, partner.getId(), before, after));
         }
@@ -140,10 +143,19 @@ public class PartnerService {
         return PartnerResponse.from(partner, statusPolicy.statusOf(partner.getRenewalDate()));
     }
 
-    // Compared only to learn whether contact details changed; never written to the audit log.
-    private record Contacts(String person, String email) {
-        static Contacts of(Partner partner) {
-            return new Contacts(partner.getContactPerson(), partner.getContactEmail());
+    // Compared only to learn whether contact details or notes changed; never written to the audit log.
+    private record PersonalText(String contactPerson, String contactEmail, String notes) {
+        static PersonalText of(Partner partner) {
+            return new PersonalText(partner.getContactPerson(), partner.getContactEmail(), partner.getNotes());
+        }
+
+        boolean contactsDiffer(PersonalText other) {
+            return !Objects.equals(contactPerson, other.contactPerson)
+                    || !Objects.equals(contactEmail, other.contactEmail);
+        }
+
+        boolean notesDiffer(PersonalText other) {
+            return !Objects.equals(notes, other.notes);
         }
     }
 

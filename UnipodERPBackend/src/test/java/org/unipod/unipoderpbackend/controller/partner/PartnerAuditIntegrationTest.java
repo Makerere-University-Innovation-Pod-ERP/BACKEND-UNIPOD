@@ -65,13 +65,17 @@ class PartnerAuditIntegrationTest {
         mockMvc.perform(MockMvcRequestBuilders.patch("/operations/partners/{id}", id)
                         .with(admin(actor))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"version\": 0, \"notes\": \"after note\"}"))
+                        .content("{\"version\": 0, \"type\": \"ACADEMIC_PARTNER\", "
+                                + "\"notes\": \"Secret note text\"}"))
                 .andExpect(status().isOk());
 
         Map<String, Object> entry = onlyEntry(actor, "partner.updated");
         assertEquals(UUID.fromString(id), entry.get("entity_id"));
-        assertNull(entry.get("before_notes"));
-        assertEquals("after note", entry.get("after_notes"));
+        assertEquals("FUNDER", JsonPath.read((String) entry.get("before_text"), "$.type"));
+        assertEquals("ACADEMIC_PARTNER", entry.get("after_type"));
+        assertEquals("true", entry.get("after_notes_changed"));
+        assertEquals("false", entry.get("after_contact_changed"));
+        assertNoPersonalData(entry);
     }
 
     @Test
@@ -88,37 +92,45 @@ class PartnerAuditIntegrationTest {
 
         Map<String, Object> entry = onlyEntry(actor, "partner.updated");
         assertEquals("true", entry.get("after_contact_changed"));
+        assertEquals("false", entry.get("after_notes_changed"));
         assertNoPersonalData(entry);
     }
 
     @Test
-    void updatesThatLeaveContactsAloneRecordContactChangedFalse() throws Exception {
+    void changingOnlyNotesRecordsNotesChangedWithoutTheText() throws Exception {
         String actor = actorEmail();
         String id = createPartner(actor, "Audit Notes Only " + shortId());
 
         mockMvc.perform(MockMvcRequestBuilders.patch("/operations/partners/{id}", id)
                         .with(admin(actor))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"version\": 0, \"notes\": \"only notes\"}"))
+                        .content("{\"version\": 0, \"notes\": \"Secret note text\"}"))
                 .andExpect(status().isOk());
 
-        assertEquals("false", onlyEntry(actor, "partner.updated").get("after_contact_changed"));
+        Map<String, Object> entry = onlyEntry(actor, "partner.updated");
+        assertEquals("true", entry.get("after_notes_changed"));
+        assertEquals("false", entry.get("after_contact_changed"));
+        assertNoPersonalData(entry);
     }
 
     @Test
-    void createdEntriesDoNotCarryContactDetails() throws Exception {
+    void createdEntriesDoNotCarryContactDetailsOrNotes() throws Exception {
         String actor = actorEmail();
         String body = mockMvc.perform(MockMvcRequestBuilders.post("/operations/partners")
                         .with(admin(actor))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\": \"Audit Contacts Create " + shortId() + "\", \"type\": \"FUNDER\", "
                                 + "\"contactPerson\": \"Secret Person\", "
-                                + "\"contactEmail\": \"secret.person@partner.test\"}"))
+                                + "\"contactEmail\": \"secret.person@partner.test\", "
+                                + "\"notes\": \"Secret note text\"}"))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         assertEquals("Secret Person", JsonPath.read(body, "$.contactPerson"));
 
-        assertNoPersonalData(onlyEntry(actor, "partner.created"));
+        Map<String, Object> entry = onlyEntry(actor, "partner.created");
+        assertEquals("false", entry.get("after_contact_changed"));
+        assertEquals("false", entry.get("after_notes_changed"));
+        assertNoPersonalData(entry);
     }
 
     @Test
@@ -207,7 +219,9 @@ class PartnerAuditIntegrationTest {
             String json = String.valueOf(entry.get(column));
             assertFalse(json.contains("Secret Person"), json);
             assertFalse(json.contains("secret.person@partner.test"), json);
+            assertFalse(json.contains("Secret note text"), json);
             assertFalse(json.contains("contactPerson") || json.contains("contactEmail"), json);
+            assertFalse(json.contains("\"notes\""), json);
         }
     }
 
@@ -231,14 +245,13 @@ class PartnerAuditIntegrationTest {
         entityManager.flush();
         return jdbc.queryForList("""
                 SELECT entity_type, entity_id, actor_role, before_value,
-                       before_value ->> 'notes' AS before_notes,
                        before_value ->> 'renewalDate' AS before_date,
                        after_value ->> 'name' AS after_name,
                        after_value ->> 'type' AS after_type,
-                       after_value ->> 'notes' AS after_notes,
                        after_value ->> 'renewalDate' AS after_date,
                        after_value ->> 'documentReference' AS after_ref,
                        after_value ->> 'contactChanged' AS after_contact_changed,
+                       after_value ->> 'notesChanged' AS after_notes_changed,
                        before_value::text AS before_text,
                        after_value::text AS after_text
                 FROM audit_log WHERE actor = ? AND action = ?
