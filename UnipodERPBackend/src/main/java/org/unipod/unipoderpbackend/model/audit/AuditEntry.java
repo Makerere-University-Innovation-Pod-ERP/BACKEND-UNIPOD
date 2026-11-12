@@ -9,12 +9,6 @@ import java.util.UUID;
 import org.hibernate.annotations.ColumnTransformer;
 import org.hibernate.annotations.Immutable;
 
-/**
- * One permanent line in the audit log. Stored, so it is an entity.
- *
- * <p>{@code @Immutable} tells Hibernate never to issue an UPDATE for it, and the
- * database trigger in V25 rejects UPDATE and DELETE as a second wall.</p>
- */
 @Entity
 @Immutable
 @Table(name = "audit_log")
