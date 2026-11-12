@@ -87,8 +87,18 @@ class ReviewAssignmentRepositoryTest {
         reloaded.setStatus(ReviewAssignmentStatus.SUBMITTED);
         ReviewAssignment updated = repository.saveAndFlush(reloaded);
 
+        // Never compare a stored timestamp with an in-memory one: PostgreSQL rounds TIMESTAMPTZ to
+        // microseconds, and on Windows Instant.now() keeps 100 ns digits and often returns the same
+        // value for the insert and the update, so a reloaded createdAt can round up past updatedAt.
+        // Compare in-memory with in-memory, and stored with stored.
         assertNotNull(updated.getUpdatedAt());
-        assertFalse(updated.getUpdatedAt().isBefore(updated.getCreatedAt()));
+        assertFalse(updated.getUpdatedAt().isBefore(saved.getCreatedAt()));
+
+        entityManager.clear();
+        ReviewAssignment stored = repository.findById(saved.getId()).orElseThrow();
+        assertNotNull(stored.getCreatedAt());
+        assertNotNull(stored.getUpdatedAt());
+        assertFalse(stored.getUpdatedAt().isBefore(stored.getCreatedAt()));
     }
 
     @Test
