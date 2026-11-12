@@ -11,6 +11,7 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.unipod.unipoderpbackend.exception.ProblemCodes;
 
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -40,6 +41,7 @@ public class ApiErrorController implements ErrorController {
 
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
         problem.setTitle(status.getReasonPhrase());
+        problem.setProperty("code", ProblemCodes.forStatus(status));
 
         if (status.is5xxServerError()) {
             String reference = reference(request);
