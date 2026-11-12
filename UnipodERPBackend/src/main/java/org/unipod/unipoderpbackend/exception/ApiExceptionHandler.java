@@ -27,6 +27,7 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import org.unipod.unipoderpbackend.exception.authorization.AccessDeniedWithReasonException;
 import org.unipod.unipoderpbackend.exception.sector.SectorConflictException;
 import org.unipod.unipoderpbackend.exception.sector.SectorNotFoundException;
 import org.unipod.unipoderpbackend.exception.storage.StorageObjectNotFoundException;
@@ -167,6 +168,20 @@ public class ApiExceptionHandler {
                 "Not acceptable",
                 "The requested response format is not supported."
         );
+    }
+
+    @ExceptionHandler(AccessDeniedWithReasonException.class)
+    ResponseEntity<ProblemDetail> handleAccessDeniedWithReason(AccessDeniedWithReasonException exception) {
+        ProblemDetail problem = problemDetail(
+                HttpStatus.FORBIDDEN,
+                "Forbidden",
+                exception.getDecision().reason()
+        );
+        problem.setProperty("code", exception.getDecision().code().name());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .header("WWW-Authenticate", "Bearer")
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problem);
     }
 
     @ExceptionHandler(AccessDeniedException.class)
