@@ -3,11 +3,14 @@ package org.unipod.unipoderpbackend.repository.auth;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.unipod.unipoderpbackend.model.auth.ApiUser;
+import org.unipod.unipoderpbackend.model.auth.ApiUserRole;
 
 public interface ApiUserRepository extends JpaRepository<ApiUser, UUID> {
     Optional<ApiUser> findByEmailIgnoreCase(String email);
@@ -15,6 +18,22 @@ public interface ApiUserRepository extends JpaRepository<ApiUser, UUID> {
     Optional<ApiUser> findByPasswordSetupTokenHash(String passwordSetupTokenHash);
 
     boolean existsByEmailIgnoreCase(String email);
+
+    long countByRoleAndEnabledTrue(ApiUserRole role);
+
+    @Query("""
+            select user from ApiUser user
+            where (:role is null or user.role = :role)
+              and (:enabled is null or user.enabled = :enabled)
+              and (:query = '' or lower(user.email) like concat('%', :query, '%'))
+            order by user.createdAt desc, user.id
+            """)
+    Page<ApiUser> search(
+            @Param("role") ApiUserRole role,
+            @Param("enabled") Boolean enabled,
+            @Param("query") String query,
+            Pageable pageable
+    );
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
