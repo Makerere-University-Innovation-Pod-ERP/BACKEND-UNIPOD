@@ -1,24 +1,25 @@
 package org.unipod.unipoderpbackend.security;
 
 import java.util.List;
-import java.util.Set;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.stereotype.Component;
 import org.unipod.unipoderpbackend.model.auth.ApiUserRole;
 import org.unipod.unipoderpbackend.model.authorization.Actor;
+import org.unipod.unipoderpbackend.repository.sector.SectorMemberRepository;
 
-/**
- * Turns the Spring Security login (from the JWT) into an {@link Actor}.
- * Controllers call {@code CurrentActor.from(authentication)} and pass the result to the service.
- */
-public final class CurrentActor {
+@Component
+public class CurrentActor {
     private static final String ROLE_PREFIX = "ROLE_";
 
-    private CurrentActor() {
+    private final SectorMemberRepository sectorMembers;
+
+    public CurrentActor(SectorMemberRepository sectorMembers) {
+        this.sectorMembers = sectorMembers;
     }
 
-    public static Actor from(Authentication authentication) {
+    public Actor from(Authentication authentication) {
         if (authentication == null || !authentication.isAuthenticated()) {
             throw new AccessDeniedException("Not signed in.");
         }
@@ -36,7 +37,10 @@ public final class CurrentActor {
         } catch (IllegalArgumentException unknownRole) {
             throw new AccessDeniedException("Unknown role.");
         }
-        // Departments are empty until the team decides where they live, so DEPARTMENT scope denies (fails closed).
-        return new Actor(authentication.getName(), role, Set.of());
+        return new Actor(
+                authentication.getName(),
+                role,
+                sectorMembers.findSectorIdsBySubject(authentication.getName())
+        );
     }
 }
