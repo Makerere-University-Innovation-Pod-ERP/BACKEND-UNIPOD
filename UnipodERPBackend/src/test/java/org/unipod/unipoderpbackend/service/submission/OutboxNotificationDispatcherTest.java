@@ -29,11 +29,10 @@ class OutboxNotificationDispatcherTest {
     void setUp() {
         dispatcher = new OutboxNotificationDispatcher(
                 jdbcTemplate,
-                mailSender,
+                mailSender::send,
                 new ObjectMapper(),
                 mock(PlatformTransactionManager.class),
-                "no-reply@example.invalid",
-                "smtp.example.invalid"
+                "no-reply@example.invalid"
         );
     }
 

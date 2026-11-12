@@ -13,11 +13,11 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.unipod.unipoderpbackend.service.notification.EmailSender;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -64,22 +64,21 @@ public class OutboxNotificationDispatcher {
             """;
 
     private final JdbcTemplate jdbcTemplate;
-    private final JavaMailSender mailSender;
+    private final EmailSender mailSender;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transaction;
     private final String fromAddress;
 
     public OutboxNotificationDispatcher(
             JdbcTemplate jdbcTemplate,
-            JavaMailSender mailSender,
+            EmailSender mailSender,
             ObjectMapper objectMapper,
             PlatformTransactionManager transactionManager,
-            @Value("${notifications.email.from}") String fromAddress,
-            @Value("${spring.mail.host}") String mailHost
+            @Value("${notifications.email.from}") String fromAddress
     ) {
-        if (fromAddress.isBlank() || mailHost.isBlank() || !isValidAddress(fromAddress)) {
+        if (fromAddress.isBlank() || !isValidAddress(fromAddress)) {
             throw new IllegalStateException(
-                    "NOTIFICATION_EMAIL_FROM and SMTP_HOST must be configured when email delivery is enabled."
+                    "NOTIFICATION_EMAIL_FROM must be configured when email delivery is enabled."
             );
         }
         this.jdbcTemplate = jdbcTemplate;

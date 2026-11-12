@@ -96,6 +96,12 @@ notifications:
   email:
     enabled: ${NOTIFICATION_EMAIL_ENABLED:false}
     from: ${NOTIFICATION_EMAIL_FROM:}
+    provider: ${NOTIFICATION_EMAIL_PROVIDER:smtp}
+    emailjs:
+      service-id: ${EMAILJS_SERVICE_ID:}
+      template-id: ${EMAILJS_TEMPLATE_ID:}
+      public-key: ${EMAILJS_PUBLIC_KEY:}
+      private-key: ${EMAILJS_PRIVATE_KEY:}
   reception:
     email: ${NOTIFICATIONS_RECEPTION_EMAIL:}
   outbox:
