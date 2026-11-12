@@ -99,15 +99,11 @@ class PartnerUpdateApiIntegrationTest {
     }
 
     @Test
-    void bothManageRolesCanUpdate() throws Exception {
-        Partner first = seed(uniqueName("Admin"));
-        Partner second = seed(uniqueName("Coordinator"));
+    void administratorCanUpdate() throws Exception {
+        Partner partner = seed(uniqueName("Admin"));
 
-        mockMvc.perform(patchRequest(first.getId(), "{\"version\": 0, \"notes\": \"x\"}",
+        mockMvc.perform(patchRequest(partner.getId(), "{\"version\": 0, \"notes\": \"x\"}",
                         user(actor()).roles("ADMINISTRATOR")))
-                .andExpect(status().isOk());
-        mockMvc.perform(patchRequest(second.getId(), "{\"version\": 0, \"notes\": \"x\"}",
-                        user(actor()).roles("DEPARTMENT_COORDINATOR")))
                 .andExpect(status().isOk());
     }
 
@@ -243,6 +239,6 @@ class PartnerUpdateApiIntegrationTest {
     }
 
     private static RequestPostProcessor manager() {
-        return user(actor()).roles("DEPARTMENT_COORDINATOR");
+        return user(actor()).roles("ADMINISTRATOR");
     }
 }

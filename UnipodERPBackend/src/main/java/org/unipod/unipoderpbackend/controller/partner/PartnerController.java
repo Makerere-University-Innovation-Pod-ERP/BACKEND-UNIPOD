@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -20,6 +21,7 @@ import org.unipod.unipoderpbackend.dto.partner.PartnerResponse;
 import org.unipod.unipoderpbackend.dto.partner.PartnersOverviewResponse;
 import org.unipod.unipoderpbackend.dto.partner.RecordMouRenewalRequest;
 import org.unipod.unipoderpbackend.dto.partner.UpdatePartnerRequest;
+import org.unipod.unipoderpbackend.security.CurrentActor;
 import org.unipod.unipoderpbackend.service.partner.PartnerService;
 
 @RestController
@@ -33,9 +35,11 @@ public class PartnerController {
     private static final String MANAGE_ROLES = "hasAnyRole('ADMINISTRATOR', 'DEPARTMENT_COORDINATOR')";
 
     private final PartnerService partners;
+    private final CurrentActor currentActor;
 
-    public PartnerController(PartnerService partners) {
+    public PartnerController(PartnerService partners, CurrentActor currentActor) {
         this.partners = partners;
+        this.currentActor = currentActor;
     }
 
     @GetMapping("/overview")
@@ -53,20 +57,24 @@ public class PartnerController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize(MANAGE_ROLES)
-    public PartnerResponse create(@Valid @RequestBody CreatePartnerRequest request) {
-        return partners.create(request);
+    public PartnerResponse create(
+            @Valid @RequestBody CreatePartnerRequest request, Authentication authentication) {
+        return partners.create(currentActor.from(authentication), request);
     }
 
     @PatchMapping("/{id}")
     @PreAuthorize(MANAGE_ROLES)
-    public PartnerResponse update(@PathVariable UUID id, @Valid @RequestBody UpdatePartnerRequest request) {
-        return partners.update(id, request);
+    public PartnerResponse update(
+            @PathVariable UUID id, @Valid @RequestBody UpdatePartnerRequest request, Authentication authentication) {
+        return partners.update(currentActor.from(authentication), id, request);
     }
 
     @PutMapping("/{id}/mou")
     @PreAuthorize(MANAGE_ROLES)
     public PartnerResponse recordMouRenewal(
-            @PathVariable UUID id, @Valid @RequestBody RecordMouRenewalRequest request) {
-        return partners.recordMouRenewal(id, request);
+            @PathVariable UUID id,
+            @Valid @RequestBody RecordMouRenewalRequest request,
+            Authentication authentication) {
+        return partners.recordMouRenewal(currentActor.from(authentication), id, request);
     }
 }

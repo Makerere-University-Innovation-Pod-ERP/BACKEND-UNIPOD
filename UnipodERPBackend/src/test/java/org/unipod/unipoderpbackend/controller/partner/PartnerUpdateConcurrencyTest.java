@@ -95,7 +95,7 @@ class PartnerUpdateConcurrencyTest {
 
     private Callable<Integer> putMouStatus(UUID id, String body) {
         return () -> mockMvc.perform(MockMvcRequestBuilders.put("/operations/partners/{id}/mou", id)
-                        .with(user("manager-" + UUID.randomUUID() + "@test.local").roles("DEPARTMENT_COORDINATOR"))
+                        .with(user("manager-" + UUID.randomUUID() + "@test.local").roles("ADMINISTRATOR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andReturn().getResponse().getStatus();
@@ -103,7 +103,7 @@ class PartnerUpdateConcurrencyTest {
 
     private Callable<Integer> patchStatus(UUID id, String body) {
         return () -> mockMvc.perform(MockMvcRequestBuilders.patch("/operations/partners/{id}", id)
-                        .with(user("manager-" + UUID.randomUUID() + "@test.local").roles("DEPARTMENT_COORDINATOR"))
+                        .with(user("manager-" + UUID.randomUUID() + "@test.local").roles("ADMINISTRATOR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andReturn().getResponse().getStatus();

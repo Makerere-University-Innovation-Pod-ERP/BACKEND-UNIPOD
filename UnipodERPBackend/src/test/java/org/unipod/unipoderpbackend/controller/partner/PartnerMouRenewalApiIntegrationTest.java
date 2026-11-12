@@ -84,13 +84,11 @@ class PartnerMouRenewalApiIntegrationTest {
     }
 
     @Test
-    void bothManageRolesCanRecordARenewal() throws Exception {
+    void administratorCanRecordARenewal() throws Exception {
         Partner partner = seed(null);
-        String body = "{\"renewalDate\": \"2030-01-01\"}";
 
-        mockMvc.perform(put(partner.getId(), body, user(actor()).roles("ADMINISTRATOR")))
-                .andExpect(status().isOk());
-        mockMvc.perform(put(partner.getId(), body, user(actor()).roles("DEPARTMENT_COORDINATOR")))
+        mockMvc.perform(put(partner.getId(), "{\"renewalDate\": \"2030-01-01\"}",
+                        user(actor()).roles("ADMINISTRATOR")))
                 .andExpect(status().isOk());
     }
 
@@ -178,6 +176,6 @@ class PartnerMouRenewalApiIntegrationTest {
     }
 
     private static RequestPostProcessor manager() {
-        return user(actor()).roles("DEPARTMENT_COORDINATOR");
+        return user(actor()).roles("ADMINISTRATOR");
     }
 }

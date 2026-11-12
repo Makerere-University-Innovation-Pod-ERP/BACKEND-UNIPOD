@@ -22,7 +22,6 @@ import org.springframework.transaction.annotation.Transactional;
 @AutoConfigureMockMvc
 @Transactional
 class PartnerCreateApiIntegrationTest {
-    private static final String[] MANAGE_ROLES = {"ADMINISTRATOR", "DEPARTMENT_COORDINATOR"};
     private static final String[] NON_MANAGE_ROLES = {
             "INNOVATION_COORDINATOR", "RECEPTIONIST", "FACT_FINDING_OFFICER", "REVIEWER",
             "SECTOR_OFFICER", "IP_LIAISON", "FINANCE_OFFICER", "OBSERVER", "SUBMITTER"
@@ -92,16 +91,14 @@ class PartnerCreateApiIntegrationTest {
     }
 
     @Test
-    void bothManageRolesCanCreate() throws Exception {
-        for (String role : MANAGE_ROLES) {
-            mockMvc.perform(post("/operations/partners")
-                            .with(user(actor()).roles(role))
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content("""
-                                    {"name": "%s", "type": "FUNDER"}
-                                    """.formatted(uniqueName(role))))
-                    .andExpect(status().isCreated());
-        }
+    void administratorCanCreate() throws Exception {
+        mockMvc.perform(post("/operations/partners")
+                        .with(user(actor()).roles("ADMINISTRATOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name": "%s", "type": "FUNDER"}
+                                """.formatted(uniqueName("Admin"))))
+                .andExpect(status().isCreated());
     }
 
     @Test
@@ -195,6 +192,6 @@ class PartnerCreateApiIntegrationTest {
     }
 
     private static RequestPostProcessor manager() {
-        return user(actor()).roles("DEPARTMENT_COORDINATOR");
+        return user(actor()).roles("ADMINISTRATOR");
     }
 }

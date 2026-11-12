@@ -14,24 +14,35 @@ import org.unipod.unipoderpbackend.dto.partner.RecordMouRenewalRequest;
 import org.unipod.unipoderpbackend.dto.partner.UpdatePartnerRequest;
 import org.unipod.unipoderpbackend.exception.partner.PartnerConflictException;
 import org.unipod.unipoderpbackend.exception.partner.PartnerNotFoundException;
+import org.unipod.unipoderpbackend.model.audit.AuditEvent;
+import org.unipod.unipoderpbackend.model.authorization.Actor;
 import org.unipod.unipoderpbackend.model.partner.Partner;
 import org.unipod.unipoderpbackend.model.partner.PartnerStatus;
 import org.unipod.unipoderpbackend.repository.partner.PartnerRepository;
+import org.unipod.unipoderpbackend.service.audit.AuditService;
 
 @Service
 public class PartnerService {
+    private static final String ENTITY_TYPE = "partner";
+    private static final String CREATED = "partner.created";
+    private static final String UPDATED = "partner.updated";
+    private static final String MOU_RENEWED = "partner.mou_renewed";
+
     private final PartnerRepository partners;
     private final PartnerStatusPolicy statusPolicy;
+    private final AuditService audit;
     private final Clock clock;
 
-    public PartnerService(PartnerRepository partners, PartnerStatusPolicy statusPolicy, Clock clock) {
+    public PartnerService(
+            PartnerRepository partners, PartnerStatusPolicy statusPolicy, AuditService audit, Clock clock) {
         this.partners = partners;
         this.statusPolicy = statusPolicy;
+        this.audit = audit;
         this.clock = clock;
     }
 
     @Transactional
-    public PartnerResponse create(CreatePartnerRequest request) {
+    public PartnerResponse create(Actor actor, CreatePartnerRequest request) {
         Partner partner = new Partner(
                 UUID.randomUUID(),
                 request.name(),
@@ -51,11 +62,12 @@ public class PartnerService {
             // constraint the entity does not already guard, so it decides.
             throw nameTaken();
         }
+        audit.log(AuditEvent.created(actor, CREATED, ENTITY_TYPE, partner.getId(), PartnerAuditSnapshot.of(partner)));
         return toResponse(partner);
     }
 
     @Transactional
-    public PartnerResponse update(UUID id, UpdatePartnerRequest request) {
+    public PartnerResponse update(Actor actor, UUID id, UpdatePartnerRequest request) {
         Partner partner = partners.findById(id).orElseThrow(PartnerNotFoundException::new);
         if (!request.version().equals(partner.getVersion())) {
             throw staleVersion();
@@ -65,6 +77,7 @@ public class PartnerService {
                 && partners.existsByNameIgnoringCaseExcluding(request.name().strip(), id)) {
             throw nameTaken();
         }
+        PartnerAuditSnapshot before = PartnerAuditSnapshot.of(partner);
         partner.updateDetails(
                 request.name(),
                 request.type(),
@@ -80,18 +93,21 @@ public class PartnerService {
         } catch (ObjectOptimisticLockingFailureException concurrentEdit) {
             throw staleVersion();
         }
+        auditChange(actor, UPDATED, partner, before);
         return toResponse(partner);
     }
 
     @Transactional
-    public PartnerResponse recordMouRenewal(UUID id, RecordMouRenewalRequest request) {
+    public PartnerResponse recordMouRenewal(Actor actor, UUID id, RecordMouRenewalRequest request) {
         Partner partner = partners.findById(id).orElseThrow(PartnerNotFoundException::new);
+        PartnerAuditSnapshot before = PartnerAuditSnapshot.of(partner);
         partner.renewMou(request.renewalDate(), request.documentReference(), clock.instant());
         try {
             partners.saveAndFlush(partner);
         } catch (ObjectOptimisticLockingFailureException concurrentEdit) {
             throw staleVersion();
         }
+        auditChange(actor, MOU_RENEWED, partner, before);
         return toResponse(partner);
     }
 
@@ -107,6 +123,14 @@ public class PartnerService {
                 .filter(partner -> partner.status() != PartnerStatus.ACTIVE)
                 .count();
         return new PartnersOverviewResponse(all.size(), needingAttention, all);
+    }
+
+    // A request that leaves every audited value as it was is not worth an entry in an append-only log.
+    private void auditChange(Actor actor, String action, Partner partner, PartnerAuditSnapshot before) {
+        PartnerAuditSnapshot after = PartnerAuditSnapshot.of(partner);
+        if (!after.equals(before)) {
+            audit.log(AuditEvent.changed(actor, action, ENTITY_TYPE, partner.getId(), before, after));
+        }
     }
 
     private PartnerResponse toResponse(Partner partner) {
