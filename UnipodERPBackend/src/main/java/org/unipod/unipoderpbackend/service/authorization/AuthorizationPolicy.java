@@ -16,13 +16,6 @@ import static org.unipod.unipoderpbackend.model.authorization.AuthorizationActio
 import static org.unipod.unipoderpbackend.model.authorization.AuthorizationAction.CASE_REVIEW;
 import static org.unipod.unipoderpbackend.model.authorization.AuthorizationAction.CASE_VIEW;
 
-/**
- * Which role may do which action, and on how many records.
- *
- * <p>Anything not listed is denied. This is a first draft built from the
- * assignment doc, section 2; confirm it with Waluube and Mark. It lives in one
- * place so it can later move to ConfigService without touching callers.</p>
- */
 @Component
 public class AuthorizationPolicy {
     private final Map<ApiUserRole, Map<AuthorizationAction, Scope>> rules = new EnumMap<>(ApiUserRole.class);
@@ -43,10 +36,12 @@ public class AuthorizationPolicy {
         ));
         rules.put(ApiUserRole.RECEPTIONIST, Map.of(
                 CASE_VIEW, Scope.ALL,
+                CASE_EDIT, Scope.ALL,
                 CASE_FORWARD, Scope.ALL
         ));
         rules.put(ApiUserRole.FACT_FINDING_OFFICER, Map.of(
-                CASE_VIEW, Scope.ALL
+                CASE_VIEW, Scope.ALL,
+                CASE_EDIT, Scope.ALL
         ));
         rules.put(ApiUserRole.REVIEWER, Map.of(
                 CASE_VIEW, Scope.ASSIGNED,
@@ -63,13 +58,11 @@ public class AuthorizationPolicy {
                 CASE_VIEW, Scope.ALL,
                 AUDIT_VIEW, Scope.ALL
         ));
-        // IP_LIAISON has no rules: IP is out of scope, so every action is denied.
+        rules.put(ApiUserRole.IP_LIAISON, Map.of(
+                CASE_VIEW, Scope.ALL
+        ));
     }
 
-    /**
-     * The scope a role has for an action, or empty if the role may not do it at all.
-     * List endpoints use this to filter their queries (e.g. OWN means "WHERE submitter_email = me").
-     */
     public Optional<Scope> scopeFor(ApiUserRole role, AuthorizationAction action) {
         return Optional.ofNullable(rules.getOrDefault(role, Map.of()).get(action));
     }
