@@ -45,6 +45,7 @@ public class AuthenticationService {
     private static final Logger log = LoggerFactory.getLogger(AuthenticationService.class);
     private static final Duration MAX_TOKEN_TTL = Duration.ofHours(1);
     private static final Duration PASSWORD_SETUP_TTL = Duration.ofHours(72);
+    private static final Duration PASSWORD_RESET_TTL = Duration.ofHours(1);
     private static final String TEMPORARY_PASSWORD_ALPHABET =
             "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&*";
     private static final int TEMPORARY_PASSWORD_LENGTH = 16;
@@ -113,7 +114,10 @@ public class AuthenticationService {
                         HttpStatus.UNAUTHORIZED,
                         "Invalid email or password."
                 ));
+        return issueToken(user);
+    }
 
+    public LoginResponse issueToken(ApiUser user) {
         Instant issuedAt = clock.instant();
         Instant expiresAt = issuedAt.plus(tokenTtl);
         JwtClaimsSet claims = JwtClaimsSet.builder()
@@ -211,6 +215,30 @@ public class AuthenticationService {
         );
         if (updated != 1) {
             throw invalidSetupToken();
+        }
+    }
+
+    @Transactional
+    public void requestPasswordReset(String email) {
+        ApiUser user = users.findByEmailIgnoreCase(normalizeEmail(email))
+                .filter(ApiUser::isEnabled)
+                .orElse(null);
+        if (user == null) {
+            return;
+        }
+        Instant now = clock.instant();
+        String resetToken = passwordSetupToken();
+        Instant expiresAt = now.plus(PASSWORD_RESET_TTL);
+        user.issuePasswordSetupToken(hashToken(resetToken), expiresAt, now);
+        users.save(user);
+        if (notificationOutbox != null) {
+            notificationOutbox.recordPasswordReset(
+                    user.getId(),
+                    user.getEmail(),
+                    passwordSetupUrl(resetToken),
+                    expiresAt,
+                    now
+            );
         }
     }
 
