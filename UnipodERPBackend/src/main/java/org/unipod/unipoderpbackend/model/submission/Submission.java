@@ -50,6 +50,9 @@ public class Submission {
     @Column(name = "submitter_name", length = 255)
     private String submitterName;
 
+    @Column(name = "submitter_phone", length = 40)
+    private String submitterPhone;
+
     @Column(name = "receiving_officer")
     private String receivingOfficer;
 
@@ -69,6 +72,28 @@ public class Submission {
     @Column(name = "recommendation_letter_status", length = 24)
     private RecommendationLetterStatus recommendationLetterStatus;
 
+    @Column(name = "service_requested", length = 255)
+    private String serviceRequested;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "service_requester", length = 32)
+    private ServiceRequester serviceRequester;
+
+    @Column(length = 255)
+    private String department;
+
+    @Column(name = "expected_result", columnDefinition = "text")
+    private String expectedResult;
+
+    @Column(name = "project_code", unique = true, length = 32)
+    private String projectCode;
+
+    @Column(name = "brief_version", nullable = false)
+    private int briefVersion = 1;
+
+    @Column(name = "accepted_rules_version", length = 32)
+    private String acceptedRulesVersion;
+
     @Column(name = "responsible_sector_id")
     private UUID responsibleSectorId;
 
@@ -83,8 +108,23 @@ public class Submission {
     @Column(name = "received_at")
     private Instant receivedAt;
 
+    @Column(name = "submitted_at")
+    private Instant submittedAt;
+
     @Column(name = "forwarded_at")
     private Instant forwardedAt;
+
+    @Column(name = "forward_note", columnDefinition = "text")
+    private String forwardNote;
+
+    @Column(name = "forwarded_by")
+    private String forwardedBy;
+
+    @Column(name = "confirmed_at")
+    private Instant confirmedAt;
+
+    @Column(name = "rejection_reason", columnDefinition = "text")
+    private String rejectionReason;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "outcome_status", nullable = false, length = 24)
@@ -216,23 +256,160 @@ public class Submission {
         if (stage != SubmissionStage.DRAFT) {
             throw new SubmissionConflictException("Submission has already been registered.");
         }
-        if (category == SubmissionCategory.STUDENT
-                && (isBlank(studentNumber) || isBlank(programme) || isBlank(supervisor)
-                || recommendationLetterStatus == null)) {
-            throw new InvalidSubmissionException(
-                    "Student submissions require student number, programme, supervisor, and recommendation-letter status."
-            );
-        }
+        requireStudentDetails();
         if (this.code == null) {
             this.code = caseCode;
         } else if (!this.code.equals(caseCode)) {
             throw new SubmissionConflictException("A submission tracking reference cannot be changed.");
         }
         this.receivedAt = time;
+        this.submittedAt = this.submittedAt == null ? time : this.submittedAt;
         this.receivingOfficer = officer;
         this.stage = SubmissionStage.RECEIVED;
         this.updatedAt = time;
         clearInformationRequest();
+    }
+
+    /**
+     * Moves a draft into the submitter-facing intake queue. The tracking
+     * reference is allocated on submit (it is also allocated on create for the
+     * assisted/legacy flow).
+     */
+    public void submit(String caseCode, Instant time) {
+        if (stage != SubmissionStage.DRAFT) {
+            throw new SubmissionConflictException("Only a draft submission can be submitted.");
+        }
+        requireStudentDetails();
+        requireServiceRequestDetails();
+        requireContactDetails();
+        if (this.code == null) {
+            this.code = caseCode;
+        }
+        this.receivedAt = time;
+        this.submittedAt = time;
+        this.stage = SubmissionStage.SUBMITTED;
+        this.updatedAt = time;
+        clearInformationRequest();
+    }
+
+    /**
+     * Records the submitter's response to an information request and returns
+     * the brief to the intake queue as a new brief version.
+     */
+    public void reply(Instant time) {
+        if (stage != SubmissionStage.AWAITING_INFORMATION && stage != SubmissionStage.SUBMITTED) {
+            throw new SubmissionConflictException("Only a submitted or awaiting-information submission can be replied to.");
+        }
+        requireStudentDetails();
+        requireServiceRequestDetails();
+        requireContactDetails();
+        this.briefVersion = Math.max(1, this.briefVersion) + 1;
+        this.submittedAt = time;
+        this.stage = SubmissionStage.SUBMITTED;
+        this.updatedAt = time;
+        clearInformationRequest();
+    }
+
+    /**
+     * Applies the fields a submitter supplies when answering an information
+     * request. Only non-null values are applied so a submitter can send just the
+     * detail reception asked for.
+     */
+    public void applyReplyDetails(
+            String title,
+            String purpose,
+            String problemAddressed,
+            String studentNumber,
+            String programme,
+            String supervisor,
+            RecommendationLetterStatus recommendationLetterStatus,
+            String submitterPhone,
+            String serviceRequested,
+            String department,
+            String expectedResult,
+            Instant time
+    ) {
+        if (stage != SubmissionStage.AWAITING_INFORMATION && stage != SubmissionStage.SUBMITTED) {
+            throw new SubmissionConflictException("Only a submitted or awaiting-information submission can be updated by its submitter.");
+        }
+        requireReplyDetailsMatchCategory(
+                studentNumber,
+                programme,
+                supervisor,
+                recommendationLetterStatus,
+                serviceRequested,
+                department,
+                expectedResult
+        );
+        if (title != null) {
+            this.title = title.trim();
+        }
+        if (purpose != null) {
+            this.purpose = purpose.trim();
+        }
+        if (problemAddressed != null) {
+            this.problemAddressed = problemAddressed.trim();
+        }
+        if (studentNumber != null) {
+            this.studentNumber = clean(studentNumber);
+        }
+        if (programme != null) {
+            this.programme = clean(programme);
+        }
+        if (supervisor != null) {
+            this.supervisor = clean(supervisor);
+        }
+        if (recommendationLetterStatus != null) {
+            this.recommendationLetterStatus = recommendationLetterStatus;
+        }
+        if (submitterPhone != null) {
+            this.submitterPhone = clean(submitterPhone);
+        }
+        if (serviceRequested != null) {
+            this.serviceRequested = clean(serviceRequested);
+        }
+        if (department != null) {
+            this.department = clean(department);
+        }
+        if (expectedResult != null) {
+            this.expectedResult = clean(expectedResult);
+        }
+        this.updatedAt = time;
+    }
+
+    private void requireReplyDetailsMatchCategory(
+            String studentNumber,
+            String programme,
+            String supervisor,
+            RecommendationLetterStatus recommendationLetterStatus,
+            String serviceRequested,
+            String department,
+            String expectedResult
+    ) {
+        boolean studentDetails = clean(studentNumber) != null
+                || clean(programme) != null
+                || clean(supervisor) != null
+                || recommendationLetterStatus != null;
+        boolean serviceDetails = clean(serviceRequested) != null
+                || clean(department) != null
+                || clean(expectedResult) != null;
+        if (category == SubmissionCategory.STUDENT && serviceDetails) {
+            throw new InvalidSubmissionException(
+                    "Student submissions cannot carry service-request fields."
+            );
+        }
+        if (category == SubmissionCategory.SERVICE_REQUEST && studentDetails) {
+            throw new InvalidSubmissionException(
+                    "Service-request submissions cannot carry student fields."
+            );
+        }
+        if (category != SubmissionCategory.STUDENT
+                && category != SubmissionCategory.SERVICE_REQUEST
+                && (studentDetails || serviceDetails)) {
+            throw new InvalidSubmissionException(
+                    "This submission category does not accept student or service-request fields."
+            );
+        }
     }
 
     public void clearInformationRequest() {
@@ -247,6 +424,22 @@ public class Submission {
 
     public void updateSubmitterName(String submitterName) {
         this.submitterName = submitterName == null || submitterName.isBlank() ? null : submitterName.trim();
+    }
+
+    public void applyIntakeDetails(
+            String submitterPhone,
+            String serviceRequested,
+            ServiceRequester serviceRequester,
+            String department,
+            String expectedResult,
+            String acceptedRulesVersion
+    ) {
+        this.submitterPhone = clean(submitterPhone);
+        this.serviceRequested = clean(serviceRequested);
+        this.serviceRequester = serviceRequester;
+        this.department = clean(department);
+        this.expectedResult = clean(expectedResult);
+        this.acceptedRulesVersion = clean(acceptedRulesVersion);
     }
 
     public void assignTrackingReference(String caseCode) {
@@ -280,8 +473,8 @@ public class Submission {
     }
 
     public void requestInformation(String note, String actor, Instant time) {
-        if (stage != SubmissionStage.DRAFT) {
-            throw new SubmissionConflictException("Information can only be requested for a draft submission.");
+        if (stage != SubmissionStage.DRAFT && stage != SubmissionStage.SUBMITTED) {
+            throw new SubmissionConflictException("Information can only be requested for a draft or submitted submission.");
         }
         if (isBlank(note)) {
             throw new InvalidSubmissionException("A reason is required when requesting more information.");
@@ -289,12 +482,19 @@ public class Submission {
         this.informationRequestedNote = note.trim();
         this.informationRequestedBy = actor;
         this.informationRequestedAt = time;
+        if (stage == SubmissionStage.SUBMITTED) {
+            this.stage = SubmissionStage.AWAITING_INFORMATION;
+        }
         this.updatedAt = time;
     }
 
     public void forward(Sector sector, Instant time) {
-        if (stage != SubmissionStage.RECEIVED) {
-            throw new SubmissionConflictException("Only received submissions can be forwarded.");
+        forward(sector, null, null, time);
+    }
+
+    public void forward(Sector sector, String note, String actor, Instant time) {
+        if (stage != SubmissionStage.RECEIVED && stage != SubmissionStage.SUBMITTED) {
+            throw new SubmissionConflictException("Only received or submitted submissions can be forwarded.");
         }
         if (sector == null) {
             throw new InvalidSubmissionException("A sector is required to forward a submission.");
@@ -302,8 +502,55 @@ public class Submission {
         this.responsibleSectorId = sector.getId();
         this.responsibleSector = sector;
         this.forwardedAt = time;
+        this.forwardNote = clean(note);
+        this.forwardedBy = clean(actor);
+        if (this.receivingOfficer == null) {
+            this.receivingOfficer = clean(actor);
+        }
         this.stage = SubmissionStage.FORWARDED;
         this.updatedAt = time;
+    }
+
+    public void confirmAsProject(String projectCode, String note, Instant time) {
+        confirmAsProject(projectCode, note, null, time);
+    }
+
+    public void confirmAsProject(String projectCode, String note, String actor, Instant time) {
+        boolean confirmable = stage == SubmissionStage.SUBMITTED
+                || stage == SubmissionStage.RECEIVED
+                || stage == SubmissionStage.FORWARDED
+                || stage == SubmissionStage.FACT_FINDING;
+        if (!confirmable) {
+            throw new SubmissionConflictException("This submission cannot be confirmed as a project in its current stage.");
+        }
+        if (isBlank(projectCode)) {
+            throw new InvalidSubmissionException("A project code is required to confirm a project.");
+        }
+        this.projectCode = projectCode.trim();
+        this.forwardNote = clean(note) == null ? this.forwardNote : clean(note);
+        if (this.receivingOfficer == null) {
+            this.receivingOfficer = clean(actor);
+        }
+        this.confirmedAt = time;
+        this.stage = SubmissionStage.CONFIRMED_AS_PROJECT;
+        this.updatedAt = time;
+    }
+
+    public void reject(String reason, Instant time) {
+        boolean rejectable = stage == SubmissionStage.SUBMITTED
+                || stage == SubmissionStage.AWAITING_INFORMATION
+                || stage == SubmissionStage.RECEIVED
+                || stage == SubmissionStage.FORWARDED;
+        if (!rejectable) {
+            throw new SubmissionConflictException("This submission cannot be rejected in its current stage.");
+        }
+        if (isBlank(reason)) {
+            throw new InvalidSubmissionException("A reason is required to reject a submission.");
+        }
+        this.rejectionReason = reason.trim();
+        this.stage = SubmissionStage.REJECTED;
+        this.updatedAt = time;
+        clearInformationRequest();
     }
 
     public void advanceTo(SubmissionStage nextStage, Instant time) {
@@ -324,10 +571,11 @@ public class Submission {
             case REGISTERED -> nextStage == SubmissionStage.FACT_FINDING;
             case FACT_FINDING, FORWARDED -> nextStage == SubmissionStage.UNDER_REVIEW
                     || nextStage == SubmissionStage.REFINEMENT_REQUESTED;
+            case CONFIRMED_AS_PROJECT -> nextStage == SubmissionStage.FACT_FINDING;
             case UNDER_REVIEW, IN_PROGRESS -> nextStage == SubmissionStage.REFINEMENT_REQUESTED;
             case REFINEMENT_REQUESTED -> nextStage == SubmissionStage.FURTHER_HANDLING;
             case FURTHER_HANDLING -> nextStage == SubmissionStage.COMPLETED;
-            default -> false;
+            case DRAFT, SUBMITTED, AWAITING_INFORMATION, REJECTED, COMPLETED -> false;
         };
         if (!validTransition) {
             throw new SubmissionConflictException("The requested lifecycle transition is not allowed.");
@@ -337,7 +585,9 @@ public class Submission {
     }
 
     public void saveOutcome(String decision, String note, String actor, Instant time) {
-        if (stage == SubmissionStage.DRAFT || stage == SubmissionStage.COMPLETED) {
+        if (stage == SubmissionStage.DRAFT
+                || stage == SubmissionStage.REJECTED
+                || stage == SubmissionStage.COMPLETED) {
             throw new SubmissionConflictException("The outcome cannot be changed in the current case stage.");
         }
         this.outcomeDecision = clean(decision);
@@ -351,8 +601,8 @@ public class Submission {
     }
 
     public void touch(Instant time) {
-        if (stage == SubmissionStage.COMPLETED) {
-            throw new SubmissionConflictException("Completed submissions cannot be changed.");
+        if (stage == SubmissionStage.COMPLETED || stage == SubmissionStage.REJECTED) {
+            throw new SubmissionConflictException("Closed submissions cannot be changed.");
         }
         this.updatedAt = time;
     }
@@ -397,6 +647,10 @@ public class Submission {
         return submitterName;
     }
 
+    public String getSubmitterPhone() {
+        return submitterPhone;
+    }
+
     public String getReceivingOfficer() {
         return receivingOfficer;
     }
@@ -426,6 +680,34 @@ public class Submission {
         return recommendationLetterStatus;
     }
 
+    public String getServiceRequested() {
+        return serviceRequested;
+    }
+
+    public ServiceRequester getServiceRequester() {
+        return serviceRequester;
+    }
+
+    public String getDepartment() {
+        return department;
+    }
+
+    public String getExpectedResult() {
+        return expectedResult;
+    }
+
+    public String getProjectCode() {
+        return projectCode;
+    }
+
+    public int getBriefVersion() {
+        return briefVersion;
+    }
+
+    public String getAcceptedRulesVersion() {
+        return acceptedRulesVersion;
+    }
+
     public UUID getResponsibleSectorId() {
         return responsibleSectorId;
     }
@@ -442,8 +724,28 @@ public class Submission {
         return receivedAt;
     }
 
+    public Instant getSubmittedAt() {
+        return submittedAt;
+    }
+
     public Instant getForwardedAt() {
         return forwardedAt;
+    }
+
+    public String getForwardNote() {
+        return forwardNote;
+    }
+
+    public String getForwardedBy() {
+        return forwardedBy;
+    }
+
+    public Instant getConfirmedAt() {
+        return confirmedAt;
+    }
+
+    public String getRejectionReason() {
+        return rejectionReason;
     }
 
     public OutcomeStatus getOutcomeStatus() {
@@ -488,6 +790,39 @@ public class Submission {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    private void requireStudentDetails() {
+        if (category == SubmissionCategory.STUDENT
+                && (isBlank(studentNumber) || isBlank(programme) || isBlank(supervisor)
+                || recommendationLetterStatus == null)) {
+            throw new InvalidSubmissionException(
+                    "Student submissions require student number, programme, supervisor, and recommendation-letter status."
+            );
+        }
+    }
+
+    private void requireServiceRequestDetails() {
+        if (category == SubmissionCategory.SERVICE_REQUEST
+                && (isBlank(serviceRequested) || isBlank(expectedResult))) {
+            throw new InvalidSubmissionException(
+                    "Service requests require the service requested and the expected result."
+            );
+        }
+    }
+
+    /**
+     * The intake form requires a way to reach the submitter before the brief
+     * leaves DRAFT, but a draft may be saved without one.
+     */
+    private void requireContactDetails() {
+        boolean hasPhone = !isBlank(submitterPhone);
+        boolean hasEmail = !isBlank(submitterEmail) && submitterEmail.contains("@");
+        if (!hasPhone && !hasEmail) {
+            throw new InvalidSubmissionException(
+                    "A phone number or email address is required before submitting the brief."
+            );
+        }
     }
 
     private static boolean isBlank(String value) {

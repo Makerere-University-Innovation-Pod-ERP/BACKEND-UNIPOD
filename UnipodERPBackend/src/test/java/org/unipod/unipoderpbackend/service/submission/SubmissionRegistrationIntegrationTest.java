@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.unipod.unipoderpbackend.dto.dashboard.DashboardOverviewResponse;
@@ -196,13 +197,13 @@ class SubmissionRegistrationIntegrationTest {
                         null,
                         "submitter@example.test"
                 ),
-                "submitter@example.test"
+                "receptionist-1"
         );
 
         SubmissionResponse requested = submissions.requestInformation(
                 created.id(),
                 new RequestInformationRequest("Please attach a project brief."),
-                "receptionist-1"
+                new TestingAuthenticationToken("receptionist-1", "n/a", "ROLE_RECEPTIONIST")
         );
 
         assertEquals(SubmissionStage.DRAFT, requested.stage());
@@ -242,12 +243,12 @@ class SubmissionRegistrationIntegrationTest {
                         null,
                         "submitter@example.test"
                 ),
-                "submitter@example.test"
+                "receptionist-1"
         );
         submissions.requestInformation(
                 created.id(),
                 new RequestInformationRequest("Please attach a project brief."),
-                "receptionist-1"
+                new TestingAuthenticationToken("receptionist-1", "n/a", "ROLE_RECEPTIONIST")
         );
 
         submissions.updateDraft(
@@ -294,7 +295,7 @@ class SubmissionRegistrationIntegrationTest {
                 () -> submissions.requestInformation(
                         created.id(),
                         new RequestInformationRequest("Please attach a project brief."),
-                        "receptionist-1"
+                        new TestingAuthenticationToken("receptionist-1", "n/a", "ROLE_RECEPTIONIST")
                 )
         );
         assertEquals(0, jdbcTemplate.queryForObject(
@@ -352,7 +353,8 @@ class SubmissionRegistrationIntegrationTest {
         assertEquals(
                 "sector@example.invalid",
                 jdbcTemplate.queryForObject(
-                        "SELECT payload ->> 'notificationEmail' FROM notification_outbox WHERE aggregate_id = ?",
+                        "SELECT payload ->> 'notificationEmail' FROM notification_outbox "
+                                + "WHERE aggregate_id = ? AND event_type = 'submission.forwarded'",
                         String.class,
                         draft.id()
                 )
@@ -391,10 +393,14 @@ class SubmissionRegistrationIntegrationTest {
                         null,
                         null,
                         null,
+                        null,
+                        null,
+                        "queue-submitter@example.test",
                         null
                 ),
                 "receptionist-queue-test"
         );
+        submissions.submit(draft.id(), "receptionist-queue-test", false);
 
         ReceptionQueueResponse queue = submissions.receptionQueue(
                 PageRequest.of(0, 10)
@@ -411,7 +417,7 @@ class SubmissionRegistrationIntegrationTest {
         assertEquals(1, mine.getTotalElements());
         assertTrue(overview.totalSubmissions() >= 1);
         assertTrue(overview.generalSubmissions() >= 1);
-        assertTrue(overview.byStage().get(SubmissionStage.DRAFT) >= 1);
+        assertTrue(overview.byStage().get(SubmissionStage.SUBMITTED) >= 1);
     }
 
     @Test

@@ -38,6 +38,7 @@ import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
 import org.unipod.unipoderpbackend.repository.submission.CaseStageHistoryRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionDocumentRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
+import org.unipod.unipoderpbackend.service.audit.AuditTrail;
 import org.unipod.unipoderpbackend.service.factfinding.FactFindingGuard;
 
 @Service
@@ -63,6 +64,7 @@ public class CaseFileService {
     private final CaseStageHistoryRepository history;
     private final CaseFileEnrichmentProvider enrichment;
     private final FactFindingGuard factFindingGuard;
+    private final AuditTrail auditTrail;
     private final Clock clock;
 
     public CaseFileService(
@@ -71,6 +73,7 @@ public class CaseFileService {
             CaseStageHistoryRepository history,
             CaseFileEnrichmentProvider enrichment,
             FactFindingGuard factFindingGuard,
+            AuditTrail auditTrail,
             Clock clock
     ) {
         this.submissions = submissions;
@@ -78,6 +81,7 @@ public class CaseFileService {
         this.history = history;
         this.enrichment = enrichment;
         this.factFindingGuard = factFindingGuard;
+        this.auditTrail = auditTrail;
         this.clock = clock;
     }
 
@@ -128,6 +132,9 @@ public class CaseFileService {
                 clean(request.note()),
                 now
         ));
+        auditTrail.record(authentication.getName(), "submission.transitioned", id,
+                AuditTrail.details("stage", previousStage.name()),
+                AuditTrail.details("stage", nextStage.name(), "note", clean(request.note())));
         submissions.flush();
         return aggregate(submission, authentication);
     }
@@ -150,6 +157,10 @@ public class CaseFileService {
             throw new SubmissionConflictException(QUORUM_REQUIRED);
         }
         submission.saveOutcome(decision, note, authentication.getName(), clock.instant());
+        auditTrail.record(authentication.getName(), "submission.outcome_saved", id, null, AuditTrail.details(
+                "decision", decision,
+                "note", note
+        ));
         submissions.flush();
         return aggregate(submission, authentication);
     }
@@ -167,6 +178,11 @@ public class CaseFileService {
                 .orElseThrow(StorageObjectNotFoundException::new);
         submission.touch(clock.instant());
         document.updateStatus(request.status());
+        auditTrail.record(authentication.getName(), "submission.document_status_updated", id, null, AuditTrail.details(
+                "documentId", documentId,
+                "name", document.getName(),
+                "status", request.status().name()
+        ));
         submissions.flush();
         return aggregate(submission, authentication);
     }
@@ -244,8 +260,10 @@ public class CaseFileService {
         String operatorReason = operator ? null : OPERATOR_REQUIRED;
         String quorumReason = review.quorumAvailable() && review.quorumMet() ? null : QUORUM_REQUIRED;
         boolean outcomeStageOpen = submission.getStage() != SubmissionStage.DRAFT
+                && submission.getStage() != SubmissionStage.REJECTED
                 && submission.getStage() != SubmissionStage.COMPLETED;
-        boolean documentsOpen = submission.getStage() != SubmissionStage.COMPLETED;
+        boolean documentsOpen = submission.getStage() != SubmissionStage.REJECTED
+                && submission.getStage() != SubmissionStage.COMPLETED;
         return new Capabilities(
                 capability(!allowed.isEmpty(), !allowed.isEmpty()
                         ? null
@@ -256,7 +274,7 @@ public class CaseFileService {
                                 : quorumReason),
                 capability(operator && documentsOpen,
                         !operator ? operatorReason
-                                : !documentsOpen ? "Completed cases cannot be changed." : null)
+                                : !documentsOpen ? "Closed cases cannot be changed." : null)
         );
     }
 
@@ -276,13 +294,13 @@ public class CaseFileService {
     private static CaseStage caseStage(SubmissionStage stage) {
         return switch (stage) {
             case DRAFT -> null;
-            case RECEIVED -> CaseStage.RECEIVED;
+            case SUBMITTED, AWAITING_INFORMATION, RECEIVED -> CaseStage.RECEIVED;
             case REGISTERED -> CaseStage.REGISTERED;
             case FACT_FINDING, FORWARDED -> CaseStage.FACT_FINDING;
             case UNDER_REVIEW, IN_PROGRESS -> CaseStage.UNDER_REVIEW;
             case REFINEMENT_REQUESTED -> CaseStage.REFINEMENT_REQUESTED;
-            case FURTHER_HANDLING -> CaseStage.FURTHER_HANDLING;
-            case COMPLETED -> CaseStage.COMPLETED;
+            case FURTHER_HANDLING, CONFIRMED_AS_PROJECT -> CaseStage.FURTHER_HANDLING;
+            case REJECTED, COMPLETED -> CaseStage.COMPLETED;
         };
     }
 
@@ -294,6 +312,7 @@ public class CaseFileService {
             case UNDER_REVIEW, IN_PROGRESS -> List.of(CaseStage.REFINEMENT_REQUESTED);
             case REFINEMENT_REQUESTED -> List.of(CaseStage.FURTHER_HANDLING);
             case FURTHER_HANDLING -> List.of(CaseStage.COMPLETED);
+            case CONFIRMED_AS_PROJECT -> List.of(CaseStage.FACT_FINDING);
             default -> List.of();
         };
     }

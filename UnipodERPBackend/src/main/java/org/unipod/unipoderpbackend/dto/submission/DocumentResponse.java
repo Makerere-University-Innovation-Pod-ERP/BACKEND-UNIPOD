@@ -16,6 +16,7 @@ public record DocumentResponse(
         String contentType,
         Long fileSize,
         String originalFilename,
+        long version,
         String createdBy,
         Instant createdAt
 ) {
@@ -30,6 +31,7 @@ public record DocumentResponse(
                 document.getContentType(),
                 document.getFileSize(),
                 document.getOriginalFilename(),
+                document.getVersion(),
                 document.getCreatedBy(),
                 document.getCreatedAt()
         );

@@ -9,10 +9,13 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.server.ResponseStatusException;
+import org.unipod.unipoderpbackend.exception.authorization.AccessDeniedWithReasonException;
 import org.unipod.unipoderpbackend.exception.sector.SectorConflictException;
 import org.unipod.unipoderpbackend.exception.storage.StorageObjectNotFoundException;
 import org.unipod.unipoderpbackend.exception.submission.InvalidSubmissionException;
 import org.unipod.unipoderpbackend.exception.submission.SubmissionConflictException;
+import org.unipod.unipoderpbackend.model.authorization.AuthorizationDecision;
+import org.unipod.unipoderpbackend.model.authorization.DenialCode;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -55,6 +58,18 @@ class ApiExceptionHandlerTest {
     }
 
     @Test
+    void accessDeniedWithReasonReturnsCodeAndReason() {
+        ResponseEntity<ProblemDetail> response = handler.handleAccessDeniedWithReason(
+                new AccessDeniedWithReasonException(AuthorizationDecision.deny(DenialCode.NOT_OWNER))
+        );
+
+        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals("NOT_OWNER", response.getBody().getProperties().get("code"));
+        assertEquals(DenialCode.NOT_OWNER.message(), response.getBody().getDetail());
+    }
+
+    @Test
     void responseStatusExceptionsPreserveTheirStatusAndSafeReason() {
         ResponseEntity<ProblemDetail> response = handler.handleResponseStatus(
                 new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid email or password.")
@@ -71,7 +86,7 @@ class ApiExceptionHandlerTest {
                 new InvalidSubmissionException("SQL details and internal implementation path")
         );
 
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertEquals(HttpStatus.UNPROCESSABLE_CONTENT, response.getStatusCode());
         assertNotNull(response.getBody());
         assertEquals("Submission details are invalid or incomplete.", response.getBody().getDetail());
         assertFalse(response.getBody().getDetail().contains("SQL details"));

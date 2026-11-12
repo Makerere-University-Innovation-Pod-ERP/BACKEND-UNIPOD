@@ -1,6 +1,7 @@
 package org.unipod.unipoderpbackend.repository.sector;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -12,6 +13,9 @@ public interface SectorMemberRepository extends JpaRepository<SectorMember, UUID
     List<SectorMember> findAllBySectorIdOrderBySubjectAsc(UUID sectorId);
 
     boolean existsBySectorIdAndSubject(UUID sectorId, String subject);
+
+    @Query("select member.sectorId from SectorMember member where member.subject = :subject")
+    Set<UUID> findSectorIdsBySubject(@Param("subject") String subject);
 
     void deleteBySectorIdAndSubject(UUID sectorId, String subject);
 

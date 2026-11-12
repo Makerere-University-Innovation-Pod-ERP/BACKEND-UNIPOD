@@ -1,0 +1,202 @@
+package org.unipod.unipoderpbackend.service.submission;
+
+import java.time.Clock;
+import java.time.Instant;
+import java.util.EnumMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import org.springframework.security.core.Authentication;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.unipod.unipoderpbackend.dto.submission.ReceptionCheckItemRequest;
+import org.unipod.unipoderpbackend.dto.submission.ReceptionCheckItemResponse;
+import org.unipod.unipoderpbackend.dto.submission.ReceptionCheckResponse;
+import org.unipod.unipoderpbackend.dto.submission.ReceptionCheckUpdateRequest;
+import org.unipod.unipoderpbackend.exception.submission.InvalidSubmissionException;
+import org.unipod.unipoderpbackend.exception.submission.SubmissionConflictException;
+import org.unipod.unipoderpbackend.exception.submission.SubmissionNotFoundException;
+import org.unipod.unipoderpbackend.model.submission.ReceptionCheck;
+import org.unipod.unipoderpbackend.model.submission.ReceptionCheckItem;
+import org.unipod.unipoderpbackend.model.submission.Submission;
+import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
+import org.unipod.unipoderpbackend.repository.submission.ReceptionCheckRepository;
+import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
+import org.unipod.unipoderpbackend.service.audit.AuditTrail;
+
+@Service
+public class ReceptionChecklistService {
+    private final SubmissionRepository submissions;
+    private final ReceptionCheckRepository checks;
+    private final AuditTrail auditTrail;
+    private final Clock clock;
+
+    public ReceptionChecklistService(
+            SubmissionRepository submissions,
+            ReceptionCheckRepository checks,
+            AuditTrail auditTrail,
+            Clock clock
+    ) {
+        this.submissions = submissions;
+        this.checks = checks;
+        this.auditTrail = auditTrail;
+        this.clock = clock;
+    }
+
+    @Transactional(readOnly = true)
+    public ReceptionCheckResponse get(UUID submissionId, Authentication authentication) {
+        Submission submission = visible(submissionId, authentication);
+        return response(submission, existingByKey(submissionId));
+    }
+
+    @Transactional
+    public ReceptionCheckResponse update(
+            UUID submissionId,
+            ReceptionCheckUpdateRequest request,
+            Authentication authentication
+    ) {
+        Submission submission = visibleForUpdate(submissionId, authentication);
+        requireCheckable(submission);
+        String actor = authentication.getName();
+
+        Instant now = clock.instant();
+        Map<ReceptionCheckItem, ReceptionCheck> existing = existingByKey(submissionId);
+        for (ReceptionCheckItemRequest itemRequest : request.items()) {
+            ReceptionCheckItem item = requireItem(itemRequest.key());
+            ReceptionCheck check = existing.get(item);
+            if (check == null) {
+                check = checks.save(new ReceptionCheck(
+                        UUID.randomUUID(),
+                        submissionId,
+                        item.name(),
+                        item.label(),
+                        now
+                ));
+                existing.put(item, check);
+            }
+            check.update(
+                    Boolean.TRUE.equals(itemRequest.checked()),
+                    clean(itemRequest.note()),
+                    actor,
+                    now
+            );
+        }
+        submission.touch(now);
+        checks.flush();
+        ReceptionCheckResponse response = response(submission, existing);
+        auditTrail.record(actor, "submission.checklist_updated", submissionId, null, AuditTrail.details(
+                "items", request.items().size(),
+                "complete", response.complete()
+        ));
+        return response;
+    }
+
+    /**
+     * Reports whether every applicable reception line has been checked. Used as
+     * the forward gate for submitter-created briefs.
+     */
+    @Transactional(readOnly = true)
+    public boolean isComplete(UUID submissionId) {
+        Submission submission = submissions.findById(submissionId)
+                .orElseThrow(() -> new SubmissionNotFoundException(submissionId));
+        return response(submission, existingByKey(submissionId)).complete();
+    }
+
+    private Submission visible(UUID submissionId, Authentication authentication) {
+        return submissions.findVisibleById(
+                        submissionId,
+                        SubmissionVisibility.scope(authentication),
+                        authentication.getName()
+                )
+                .orElseThrow(() -> new SubmissionNotFoundException(submissionId));
+    }
+
+    private Submission visibleForUpdate(UUID submissionId, Authentication authentication) {
+        return submissions.findVisibleByIdForUpdate(
+                        submissionId,
+                        SubmissionVisibility.scope(authentication),
+                        authentication.getName()
+                )
+                .orElseThrow(() -> new SubmissionNotFoundException(submissionId));
+    }
+
+    @Transactional(readOnly = true)
+    public void requireComplete(UUID submissionId) {
+        if (!isComplete(submissionId)) {
+            throw new SubmissionConflictException(
+                    "Complete the reception checklist before forwarding the submission."
+            );
+        }
+    }
+
+    private static void requireCheckable(Submission submission) {
+        if (submission.getStage() != SubmissionStage.DRAFT
+                && submission.getStage() != SubmissionStage.SUBMITTED
+                && submission.getStage() != SubmissionStage.RECEIVED) {
+            throw new SubmissionConflictException(
+                    "The reception checklist can only be changed before the submission is forwarded."
+            );
+        }
+    }
+
+    private static ReceptionCheckItem requireItem(String key) {
+        try {
+            return ReceptionCheckItem.fromKey(key.trim());
+        } catch (IllegalArgumentException exception) {
+            throw new InvalidSubmissionException("The reception checklist item is unknown.");
+        }
+    }
+
+    private Map<ReceptionCheckItem, ReceptionCheck> existingByKey(UUID submissionId) {
+        Map<ReceptionCheckItem, ReceptionCheck> result = new EnumMap<>(ReceptionCheckItem.class);
+        for (ReceptionCheck check : checks.findAllBySubmissionIdOrderByItemKeyAsc(submissionId)) {
+            try {
+                result.put(ReceptionCheckItem.fromKey(check.getItemKey()), check);
+            } catch (IllegalArgumentException ignored) {
+                // Retired checklist lines stay in storage but are not shown.
+            }
+        }
+        return result;
+    }
+
+    private static ReceptionCheckResponse response(
+            Submission submission,
+            Map<ReceptionCheckItem, ReceptionCheck> existing
+    ) {
+        List<ReceptionCheckItemResponse> items = ReceptionCheckItem
+                .applicableTo(submission.getCategory())
+                .stream()
+                .map(item -> response(item, existing.get(item)))
+                .toList();
+        int checkedCount = (int) items.stream().filter(ReceptionCheckItemResponse::checked).count();
+        return new ReceptionCheckResponse(
+                submission.getId(),
+                checkedCount == items.size(),
+                checkedCount,
+                items.size(),
+                items
+        );
+    }
+
+    private static ReceptionCheckItemResponse response(
+            ReceptionCheckItem item,
+            ReceptionCheck check
+    ) {
+        if (check == null) {
+            return new ReceptionCheckItemResponse(
+                    item.name(),
+                    item.label(),
+                    false,
+                    null,
+                    null,
+                    null,
+                    null
+            );
+        }
+        return ReceptionCheckItemResponse.from(check);
+    }
+
+    private static String clean(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+}

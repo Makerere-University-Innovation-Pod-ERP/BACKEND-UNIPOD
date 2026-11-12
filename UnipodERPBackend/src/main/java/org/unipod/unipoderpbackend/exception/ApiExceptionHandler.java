@@ -1,7 +1,10 @@
 package org.unipod.unipoderpbackend.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
+import jakarta.validation.Path;
+import java.util.List;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
@@ -27,6 +30,9 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import org.unipod.unipoderpbackend.dto.FieldErrorResponse;
+import org.unipod.unipoderpbackend.exception.authorization.AccessDeniedWithReasonException;
+import org.unipod.unipoderpbackend.exception.notification.NotificationNotFoundException;
 import org.unipod.unipoderpbackend.exception.sector.SectorConflictException;
 import org.unipod.unipoderpbackend.exception.sector.SectorNotFoundException;
 import org.unipod.unipoderpbackend.exception.storage.StorageObjectNotFoundException;
@@ -51,9 +57,10 @@ public class ApiExceptionHandler {
     @ExceptionHandler(InvalidSubmissionException.class)
     ResponseEntity<ProblemDetail> handleInvalidSubmission(InvalidSubmissionException exception) {
         return problem(
-                HttpStatus.BAD_REQUEST,
+                HttpStatus.UNPROCESSABLE_CONTENT,
                 "Invalid submission",
-                "Submission details are invalid or incomplete."
+                "Submission details are invalid or incomplete.",
+                "SUBMISSION_INVALID"
         );
     }
 
@@ -62,13 +69,14 @@ public class ApiExceptionHandler {
         return problem(
                 HttpStatus.CONFLICT,
                 "Submission conflict",
-                exception.getMessage()
+                exception.getMessage(),
+                "SUBMISSION_CONFLICT"
         );
     }
 
     @ExceptionHandler(SectorConflictException.class)
     ResponseEntity<ProblemDetail> handleSectorConflict(SectorConflictException exception) {
-        return problem(HttpStatus.CONFLICT, "Sector conflict", "The sector was changed by another request or conflicts with an existing name.");
+        return problem(HttpStatus.CONFLICT, "Sector conflict", "The sector was changed by another request or conflicts with an existing name.", "SECTOR_CONFLICT");
     }
 
     @ExceptionHandler(SubmissionNotFoundException.class)
@@ -76,18 +84,24 @@ public class ApiExceptionHandler {
         return problem(
                 HttpStatus.NOT_FOUND,
                 "Submission not found",
-                "The requested submission was not found."
+                "The requested submission was not found.",
+                "SUBMISSION_NOT_FOUND"
         );
     }
 
     @ExceptionHandler(SectorNotFoundException.class)
     ResponseEntity<ProblemDetail> handleSectorNotFound(SectorNotFoundException exception) {
-        return problem(HttpStatus.NOT_FOUND, "Sector not found", "The requested sector was not found or is inactive.");
+        return problem(HttpStatus.NOT_FOUND, "Sector not found", "The requested sector was not found or is inactive.", "SECTOR_NOT_FOUND");
+    }
+
+    @ExceptionHandler(NotificationNotFoundException.class)
+    ResponseEntity<ProblemDetail> handleNotificationNotFound(NotificationNotFoundException exception) {
+        return problem(HttpStatus.NOT_FOUND, "Notification not found", "The requested notification was not found.", "NOTIFICATION_NOT_FOUND");
     }
 
     @ExceptionHandler(StorageObjectNotFoundException.class)
     ResponseEntity<ProblemDetail> handleDocumentNotFound(StorageObjectNotFoundException exception) {
-        return problem(HttpStatus.NOT_FOUND, "Document not found", "The requested document was not found.");
+        return problem(HttpStatus.NOT_FOUND, "Document not found", "The requested document was not found.", "DOCUMENT_NOT_FOUND");
     }
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)
@@ -97,22 +111,35 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ResponseEntity<ProblemDetail> handleValidation(MethodArgumentNotValidException exception) {
-        return problem(HttpStatus.BAD_REQUEST, "Validation failed", "One or more request values are invalid.");
+        List<FieldErrorResponse> errors = exception.getBindingResult().getFieldErrors().stream()
+                .map(error -> new FieldErrorResponse(error.getField(), error.getDefaultMessage()))
+                .toList();
+        return validationProblem(errors);
     }
 
     @ExceptionHandler(HandlerMethodValidationException.class)
     ResponseEntity<ProblemDetail> handleMethodValidation(HandlerMethodValidationException exception) {
-        return problem(HttpStatus.BAD_REQUEST, "Validation failed", "One or more request values are invalid.");
+        List<FieldErrorResponse> errors = exception.getParameterValidationResults().stream()
+                .flatMap(result -> result.getResolvableErrors().stream()
+                        .map(error -> new FieldErrorResponse(
+                                result.getMethodParameter().getParameterName(),
+                                error.getDefaultMessage()
+                        )))
+                .toList();
+        return validationProblem(errors);
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
     ResponseEntity<ProblemDetail> handleConstraintViolation(ConstraintViolationException exception) {
-        return problem(HttpStatus.BAD_REQUEST, "Validation failed", "One or more request values are invalid.");
+        List<FieldErrorResponse> errors = exception.getConstraintViolations().stream()
+                .map(violation -> new FieldErrorResponse(lastNode(violation), violation.getMessage()))
+                .toList();
+        return validationProblem(errors);
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     ResponseEntity<ProblemDetail> handleTypeMismatch(MethodArgumentTypeMismatchException exception) {
-        return problem(HttpStatus.BAD_REQUEST, "Invalid request", "A request parameter has an invalid value.");
+        return problem(HttpStatus.BAD_REQUEST, "Invalid request", "A request parameter has an invalid value.", "INVALID_PARAMETER");
     }
 
     @ExceptionHandler(MissingServletRequestParameterException.class)
@@ -120,7 +147,8 @@ public class ApiExceptionHandler {
         return problem(
                 HttpStatus.BAD_REQUEST,
                 "Invalid request",
-                "A required request parameter is missing."
+                "A required request parameter is missing.",
+                "MISSING_PARAMETER"
         );
     }
 
@@ -129,7 +157,8 @@ public class ApiExceptionHandler {
         return problem(
                 HttpStatus.BAD_REQUEST,
                 "Malformed request body",
-                "The request body is missing or is not valid JSON. Check the JSON syntax and that enum values match the API contract."
+                "The request body is missing or is not valid JSON. Check the JSON syntax and that enum values match the API contract.",
+                "MALFORMED_BODY"
         );
     }
 
@@ -167,6 +196,20 @@ public class ApiExceptionHandler {
                 "Not acceptable",
                 "The requested response format is not supported."
         );
+    }
+
+    @ExceptionHandler(AccessDeniedWithReasonException.class)
+    ResponseEntity<ProblemDetail> handleAccessDeniedWithReason(AccessDeniedWithReasonException exception) {
+        ProblemDetail problem = problemDetail(
+                HttpStatus.FORBIDDEN,
+                "Forbidden",
+                exception.getDecision().reason()
+        );
+        problem.setProperty("code", exception.getDecision().code().name());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .header("WWW-Authenticate", "Bearer")
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problem);
     }
 
     @ExceptionHandler(AccessDeniedException.class)
@@ -221,9 +264,34 @@ public class ApiExceptionHandler {
         return response(status, problemDetail(status, title, detail));
     }
 
+    private static ResponseEntity<ProblemDetail> problem(HttpStatus status, String title, String detail, String code) {
+        ProblemDetail problem = problemDetail(status, title, detail);
+        problem.setProperty("code", code);
+        return response(status, problem);
+    }
+
+    private static ResponseEntity<ProblemDetail> validationProblem(List<FieldErrorResponse> errors) {
+        ProblemDetail problem = problemDetail(
+                HttpStatus.UNPROCESSABLE_CONTENT,
+                "Validation failed",
+                "One or more request values are invalid."
+        );
+        problem.setProperty("errors", errors);
+        return response(HttpStatus.UNPROCESSABLE_CONTENT, problem);
+    }
+
+    private static String lastNode(ConstraintViolation<?> violation) {
+        String field = null;
+        for (Path.Node node : violation.getPropertyPath()) {
+            field = node.getName();
+        }
+        return field;
+    }
+
     private static ProblemDetail problemDetail(HttpStatus status, String title, String detail) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
         problem.setTitle(title);
+        problem.setProperty("code", ProblemCodes.forStatus(status));
         return problem;
     }
 

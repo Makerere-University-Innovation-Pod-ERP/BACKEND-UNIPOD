@@ -26,6 +26,7 @@ import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
 import org.unipod.unipoderpbackend.repository.submission.CaseStageHistoryRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionDocumentRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
+import org.unipod.unipoderpbackend.service.audit.AuditTrail;
 import org.unipod.unipoderpbackend.service.factfinding.FactFindingGuard;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -47,9 +48,10 @@ class CaseFileServiceTest {
     private final CaseStageHistoryRepository history = mock(CaseStageHistoryRepository.class);
     private final CaseFileEnrichmentProvider enrichment = mock(CaseFileEnrichmentProvider.class);
     private final FactFindingGuard factFindingGuard = mock(FactFindingGuard.class);
+    private final AuditTrail audit = mock(AuditTrail.class);
     private final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
     private final CaseFileService service = new CaseFileService(
-            submissions, documents, history, enrichment, factFindingGuard, clock
+            submissions, documents, history, enrichment, factFindingGuard, audit, clock
     );
     private Submission submission;
 

@@ -27,6 +27,7 @@ import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
 import org.unipod.unipoderpbackend.repository.factfinding.FactFindingRepository;
 import org.unipod.unipoderpbackend.repository.submission.CaseStageHistoryRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
+import org.unipod.unipoderpbackend.service.audit.AuditTrail;
 import org.unipod.unipoderpbackend.service.submission.SubmissionVisibility;
 
 @Service
@@ -41,17 +42,20 @@ public class FactFindingCommandService {
     private final SubmissionRepository submissions;
     private final FactFindingRepository checks;
     private final CaseStageHistoryRepository history;
+    private final AuditTrail auditTrail;
     private final Clock clock;
 
     public FactFindingCommandService(
             SubmissionRepository submissions,
             FactFindingRepository checks,
             CaseStageHistoryRepository history,
+            AuditTrail auditTrail,
             Clock clock
     ) {
         this.submissions = submissions;
         this.checks = checks;
         this.history = history;
+        this.auditTrail = auditTrail;
         this.clock = clock;
     }
 
@@ -66,6 +70,11 @@ public class FactFindingCommandService {
         Submission brief = visibleCaseForUpdate(briefId, authentication);
         requireSavableStage(brief.getStage());
         FactFindingCheck check = saveAnswers(briefId, request, authentication.getName());
+        auditTrail.record(authentication.getName(), "submission.fact_finding_saved", briefId, null,
+                AuditTrail.details(
+                        "round", check.getRound(),
+                        "stage", brief.getStage().name()
+                ));
         return FactFindingResponse.from(brief, check);
     }
 
@@ -107,6 +116,9 @@ public class FactFindingCommandService {
                 "Fact-finding complete: ready for review.",
                 now
         ));
+        auditTrail.record(authentication.getName(), "submission.fact_finding_completed", briefId,
+                AuditTrail.details("stage", previousStage.name()),
+                AuditTrail.details("stage", SubmissionStage.UNDER_REVIEW.name(), "round", check.getRound()));
         submissions.flush();
         return FactFindingResponse.from(brief, check);
     }

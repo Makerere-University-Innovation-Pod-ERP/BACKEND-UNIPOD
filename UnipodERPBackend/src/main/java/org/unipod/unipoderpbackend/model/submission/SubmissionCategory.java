@@ -7,7 +7,8 @@ import java.util.Locale;
 
 public enum SubmissionCategory {
     STUDENT,
-    GENERAL;
+    GENERAL,
+    SERVICE_REQUEST;
 
     @JsonValue
     public String toJson() {
@@ -19,6 +20,6 @@ public enum SubmissionCategory {
         if (value == null) {
             return null;
         }
-        return valueOf(value.trim().toUpperCase(Locale.ROOT));
+        return valueOf(value.trim().toUpperCase(Locale.ROOT).replace('-', '_'));
     }
 }

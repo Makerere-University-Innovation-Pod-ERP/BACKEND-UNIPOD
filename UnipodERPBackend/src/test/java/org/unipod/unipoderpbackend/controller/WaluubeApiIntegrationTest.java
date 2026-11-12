@@ -195,7 +195,8 @@ class WaluubeApiIntegrationTest {
         assertEquals(
                 "sector@example.invalid",
                 jdbcTemplate.queryForObject(
-                        "SELECT payload ->> 'notificationEmail' FROM notification_outbox WHERE aggregate_id = ?",
+                        "SELECT payload ->> 'notificationEmail' FROM notification_outbox "
+                                + "WHERE aggregate_id = ? AND event_type = 'submission.forwarded'",
                         String.class,
                         UUID.fromString(id)
                 )
@@ -241,7 +242,7 @@ class WaluubeApiIntegrationTest {
         var receptionistUser = user(receptionist).roles("RECEPTIONIST");
 
         String created = mockMvc.perform(post("/submissions")
-                        .with(submitterUser)
+                        .with(receptionistUser)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -249,14 +250,14 @@ class WaluubeApiIntegrationTest {
                                   "title": "Submitter intake test",
                                   "purpose": "Complete the requested student details",
                                   "problemAddressed": "Validate submitter ownership and intake",
-                                  "submitterId": "spoofed-owner"
+                                  "submitterId": "%s"
                                 }
-                                """))
+                                """.formatted(submitter)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.stage").value("DRAFT"))
                 .andExpect(jsonPath("$.code").value(org.hamcrest.Matchers.startsWith("STU-")))
                 .andExpect(jsonPath("$.submitterId").value(submitter))
-                .andExpect(jsonPath("$.registeredBy").value(submitter))
+                .andExpect(jsonPath("$.registeredBy").value(receptionist))
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
@@ -516,21 +517,21 @@ class WaluubeApiIntegrationTest {
                         .content("""
                                 {"to_stage":"FACT_FINDING","version":-1}
                                 """))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isUnprocessableContent());
         mockMvc.perform(put("/cases/{id}/outcome", id)
                         .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"decision":"Approve","version":-1}
                                 """))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isUnprocessableContent());
         mockMvc.perform(put("/cases/{id}/outcome", id)
                         .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"decision":" ","note":"  ","version":4}
                                 """))
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.detail").value("Submission details are invalid or incomplete."));
     }
 
@@ -785,7 +786,7 @@ class WaluubeApiIntegrationTest {
                         .with(user("receptionist").roles("RECEPTIONIST"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(request))
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.detail").value("One or more request values are invalid."));
     }
 
@@ -800,7 +801,7 @@ class WaluubeApiIntegrationTest {
         mockMvc.perform(get("/submissions/search")
                         .with(user("observer").roles("OBSERVER"))
                         .param("code", "   "))
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.title").value("Validation failed"));
     }
 
@@ -822,9 +823,10 @@ class WaluubeApiIntegrationTest {
                                   "purpose": "Verify search fields",
                                   "problemAddressed": "Search must cover every display key",
                                   "submitterId": "submitter-%s",
-                                  "submitterName": "%s"
+                                  "submitterName": "%s",
+                                  "submitterEmail": "submitter-%s@example.test"
                                 }
-                                """.formatted(title, token, submitterName)))
+                                """.formatted(title, token, submitterName, token)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.submitterName").value(submitterName))
                 .andReturn()
@@ -836,6 +838,10 @@ class WaluubeApiIntegrationTest {
         assertTrue(codeMatcher.find(), "Create response should include the tracking reference.");
         String id = idMatcher.group(1);
         String code = codeMatcher.group(1);
+
+        mockMvc.perform(post("/submissions/" + id + "/submit")
+                        .with(receptionist))
+                .andExpect(status().isOk());
 
         mockMvc.perform(get("/submissions/search")
                         .with(observer)
@@ -925,6 +931,6 @@ class WaluubeApiIntegrationTest {
                         .with(observer)
                         .param("receivedFrom", today.toString())
                         .param("receivedTo", today.minusDays(1).toString()))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isUnprocessableContent());
     }
 }
