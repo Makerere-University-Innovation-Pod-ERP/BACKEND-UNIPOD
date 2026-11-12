@@ -244,8 +244,10 @@ public class CaseFileService {
         String operatorReason = operator ? null : OPERATOR_REQUIRED;
         String quorumReason = review.quorumAvailable() && review.quorumMet() ? null : QUORUM_REQUIRED;
         boolean outcomeStageOpen = submission.getStage() != SubmissionStage.DRAFT
+                && submission.getStage() != SubmissionStage.REJECTED
                 && submission.getStage() != SubmissionStage.COMPLETED;
-        boolean documentsOpen = submission.getStage() != SubmissionStage.COMPLETED;
+        boolean documentsOpen = submission.getStage() != SubmissionStage.REJECTED
+                && submission.getStage() != SubmissionStage.COMPLETED;
         return new Capabilities(
                 capability(!allowed.isEmpty(), !allowed.isEmpty()
                         ? null
@@ -256,7 +258,7 @@ public class CaseFileService {
                                 : quorumReason),
                 capability(operator && documentsOpen,
                         !operator ? operatorReason
-                                : !documentsOpen ? "Completed cases cannot be changed." : null)
+                                : !documentsOpen ? "Closed cases cannot be changed." : null)
         );
     }
 
@@ -276,13 +278,13 @@ public class CaseFileService {
     private static CaseStage caseStage(SubmissionStage stage) {
         return switch (stage) {
             case DRAFT -> null;
-            case RECEIVED -> CaseStage.RECEIVED;
+            case SUBMITTED, AWAITING_INFORMATION, RECEIVED -> CaseStage.RECEIVED;
             case REGISTERED -> CaseStage.REGISTERED;
             case FACT_FINDING, FORWARDED -> CaseStage.FACT_FINDING;
             case UNDER_REVIEW, IN_PROGRESS -> CaseStage.UNDER_REVIEW;
             case REFINEMENT_REQUESTED -> CaseStage.REFINEMENT_REQUESTED;
-            case FURTHER_HANDLING -> CaseStage.FURTHER_HANDLING;
-            case COMPLETED -> CaseStage.COMPLETED;
+            case FURTHER_HANDLING, CONFIRMED_AS_PROJECT -> CaseStage.FURTHER_HANDLING;
+            case REJECTED, COMPLETED -> CaseStage.COMPLETED;
         };
     }
 
@@ -294,6 +296,7 @@ public class CaseFileService {
             case UNDER_REVIEW, IN_PROGRESS -> List.of(CaseStage.REFINEMENT_REQUESTED);
             case REFINEMENT_REQUESTED -> List.of(CaseStage.FURTHER_HANDLING);
             case FURTHER_HANDLING -> List.of(CaseStage.COMPLETED);
+            case CONFIRMED_AS_PROJECT -> List.of(CaseStage.FACT_FINDING);
             default -> List.of();
         };
     }

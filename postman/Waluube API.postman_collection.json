@@ -157,6 +157,43 @@
               }
             }
           ]
+        },
+        {
+          "name": "POST /auth/change-password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/change-password",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"{{testerPassword}}\",\n  \"newPassword\": \"{{newTesterPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Change the authenticated account's password\n\nRequires a valid bearer token. Set the environment variables testerPassword and newTesterPassword before running this request. The current password must match, and the new password must be 12-72 characters and different from the current password. A successful change clears the temporary-password flag returned by login.\n\nExpected documented status codes: 204, 400, 401"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([204, 400, 401]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -738,6 +775,263 @@
                 "exec": [
                   "pm.test('Status is documented for this endpoint', function () {",
                   "  pm.expect([200, 401, 403, 404]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /submissions/assisted",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/submissions/assisted",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"submitterEmail\": \"walkin@example.test\",\n  \"category\": \"general\",\n  \"title\": \"Walk-in community water idea\",\n  \"purpose\": \"Improve access to clean water\",\n  \"problemAddressed\": \"Households travel long distances for water\",\n  \"studentNumber\": null,\n  \"programme\": null,\n  \"supervisor\": null,\n  \"recommendationLetterStatus\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create a walk-in submission with a minimal submitter account\n\nReception can capture a walk-in brief and create a minimal SUBMITTER account in one step. If the email already has an account it is reused. When a new account is created, temporaryPassword is returned exactly once and mustChangePassword is set so the submitter changes it at first login. The account and draft are committed together.\n\nExpected documented status codes: 201, 400, 401, 403, 409"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([201, 400, 401, 403, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.submission && data.submission.id) pm.environment.set('submissionId', data.submission.id);",
+                  "  if (data.submission && data.submission.code) pm.environment.set('submissionCode', data.submission.code);",
+                  "  if (data.account && data.account.email) pm.environment.set('submitterSubject', data.account.email);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /submissions/{id}/reception-checklist",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/submissions/{{submissionId}}/reception-checklist",
+            "description": "Read the reception verification checklist\n\nReturns the same four canonical checklist lines for every submission category: DETAILS_COMPLETE, DOCUMENTS_COMPLETE, FILES_READABLE, and CORRECT_TYPE. Lines that have not been saved yet are returned unchecked.\n\nExpected documented status codes: 200, 401, 403, 404"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 401, 403, 404]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT /submissions/{id}/reception-checklist",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/submissions/{{submissionId}}/reception-checklist",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"key\": \"DETAILS_COMPLETE\",\n      \"checked\": true,\n      \"note\": \"Student ID sighted\"\n    },\n    {\n      \"key\": \"DOCUMENTS_COMPLETE\",\n      \"checked\": false,\n      \"note\": \"Project brief still missing\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Tick reception checklist lines with a note per line\n\nUpdates one or more checklist lines. A note can be recorded per line. The checklist can only be changed while the submission is DRAFT, SUBMITTED, or RECEIVED; it becomes read-only once the submission is forwarded.\n\nExpected documented status codes: 200, 400, 401, 403, 404, 409"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 400, 401, 403, 404, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /submissions/{id}/missing-items",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/submissions/{{submissionId}}/missing-items",
+            "description": "List missing information and missing documents\n\nReturns every outstanding and resolved missing item for the submission. Items requested through request-information and the missing-documents endpoint appear here. Uploading a document automatically resolves a matching open document request.\n\nExpected documented status codes: 200, 401, 403, 404"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 401, 403, 404]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.items && data.items.length > 0 && data.items[0].id) pm.environment.set('missingItemId', data.items[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /submissions/{id}/missing-documents",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/submissions/{{submissionId}}/missing-documents",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"label\": \"Signed recommendation letter\",\n      \"note\": \"Please upload the signed copy\",\n      \"documentType\": \"RECOMMENDATION_LETTER\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Record the documents a submitter still owes\n\nAdds one open document request per line. A documentType is required for every line. Use POST /submissions/{id}/reminders to notify the submitter.\n\nExpected documented status codes: 201, 400, 401, 403, 404, 409"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([201, 400, 401, 403, 404, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.items && data.items.length > 0 && data.items[0].id) pm.environment.set('missingItemId', data.items[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /submissions/{id}/missing-items/{itemId}/resolve",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/submissions/{{submissionId}}/missing-items/{{missingItemId}}/resolve",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Received by email and filed\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Mark a missing item resolved\n\nRecords who resolved the item and an optional resolution note. Uploading a matching document resolves document requests automatically.\n\nExpected documented status codes: 200, 400, 401, 403, 404, 409"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 400, 401, 403, 404, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
+                  "  const data = pm.response.json();",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /submissions/{id}/reminders",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/submissions/{{submissionId}}/reminders",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Reminder: the project brief and signed letter are still outstanding.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Send the submitter a reminder about open missing items\n\nMarks every open missing item as reminded and publishes a submission.reminder_sent notification. A missing submitter email returns 400; no open items returns 409.\n\nExpected documented status codes: 200, 400, 401, 403, 404, 409"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is documented for this endpoint', function () {",
+                  "  pm.expect([200, 400, 401, 403, 404, 409]).to.include(pm.response.code);",
                   "});",
                   "if (pm.response.code >= 200 && pm.response.code < 300 && (pm.response.headers.get('Content-Type') || '').includes('application/json')) {",
                   "  const data = pm.response.json();",

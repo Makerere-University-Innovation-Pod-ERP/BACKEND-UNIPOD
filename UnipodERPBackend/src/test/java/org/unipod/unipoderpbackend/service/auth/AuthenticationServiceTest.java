@@ -16,6 +16,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.web.server.ResponseStatusException;
+import org.unipod.unipoderpbackend.dto.auth.ChangePasswordRequest;
 import org.unipod.unipoderpbackend.dto.auth.CreateApiUserRequest;
 import org.unipod.unipoderpbackend.dto.auth.LoginRequest;
 import org.unipod.unipoderpbackend.model.auth.ApiUser;
@@ -23,7 +24,11 @@ import org.unipod.unipoderpbackend.model.auth.ApiUserRole;
 import org.unipod.unipoderpbackend.repository.auth.ApiUserRepository;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
@@ -50,7 +55,9 @@ class AuthenticationServiceTest {
                 clock,
                 "https://api.example.test",
                 "unipod-erp-api",
-                Duration.ofMinutes(15)
+                Duration.ofMinutes(15),
+                null,
+                "https://portal.example.test"
         );
     }
 
@@ -70,7 +77,10 @@ class AuthenticationServiceTest {
         assertEquals("Bearer", response.tokenType());
         assertEquals("signed-token", response.accessToken());
         assertEquals(NOW.plus(Duration.ofMinutes(15)), response.expiresAt());
-        verify(jwtEncoder).encode(any(JwtEncoderParameters.class));
+        assertFalse(response.mustChangePassword());
+        var parameters = org.mockito.ArgumentCaptor.forClass(JwtEncoderParameters.class);
+        verify(jwtEncoder).encode(parameters.capture());
+        assertFalse(Boolean.TRUE.equals(parameters.getValue().getClaims().getClaim("mustChangePassword")));
     }
 
     @Test
@@ -103,6 +113,201 @@ class AuthenticationServiceTest {
                         && user.getPasswordHash().length() <= 100
                         && user.getRole() == ApiUserRole.REVIEWER
         ));
+    }
+
+    @Test
+    void loginReportsThatAnAssistedAccountMustChangeItsPassword() {
+        ApiUser user = new ApiUser(
+                UUID.randomUUID(),
+                "walkin@example.test",
+                passwordEncoder.encode(PASSWORD),
+                ApiUserRole.SUBMITTER,
+                true,
+                NOW
+        );
+        when(users.findByEmailIgnoreCase("walkin@example.test")).thenReturn(Optional.of(user));
+        when(jwtEncoder.encode(any(JwtEncoderParameters.class))).thenReturn(jwt());
+
+        var response = authentication.login(new LoginRequest("walkin@example.test", PASSWORD));
+
+        assertTrue(response.mustChangePassword());
+    }
+
+    @Test
+    void createAssistedSubmitterCreatesAccountWithOneTimeTemporaryPassword() {
+        when(users.existsByEmailIgnoreCase("walkin@example.test")).thenReturn(false);
+        when(users.saveAndFlush(any(ApiUser.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var account = authentication.createAssistedSubmitter(" Walkin@Example.Test ");
+
+        assertEquals("walkin@example.test", account.email());
+        assertTrue(account.created());
+        assertNotNull(account.temporaryPassword());
+        assertTrue(account.temporaryPassword().length() >= 12);
+        assertNotNull(account.setPasswordToken());
+        assertNotNull(account.setPasswordUrl());
+        assertTrue(account.setPasswordUrl().contains(account.setPasswordToken()));
+        verify(users).saveAndFlush(argThat(user ->
+                user.getRole() == ApiUserRole.SUBMITTER
+                        && user.isMustChangePassword()
+                        && user.getPasswordSetupTokenHash() != null
+                        && !user.getPasswordSetupTokenHash().equals(account.setPasswordToken())
+                        && user.getPasswordSetupExpiresAt() != null
+                        && user.getPasswordSetupExpiresAt().isAfter(NOW)
+                        && passwordEncoder.matches(account.temporaryPassword(), user.getPasswordHash())
+        ));
+    }
+
+    @Test
+    void createAssistedSubmitterReusesExistingAccountWithoutExposingAPassword() {
+        when(users.existsByEmailIgnoreCase("walkin@example.test")).thenReturn(true);
+
+        var account = authentication.createAssistedSubmitter("walkin@example.test");
+
+        assertEquals("walkin@example.test", account.email());
+        assertFalse(account.created());
+        assertNull(account.temporaryPassword());
+    }
+
+    @Test
+    void changePasswordReplacesHashAndClearsTemporaryPasswordFlag() {
+        ApiUser user = new ApiUser(
+                UUID.randomUUID(),
+                "walkin@example.test",
+                passwordEncoder.encode(PASSWORD),
+                ApiUserRole.SUBMITTER,
+                true,
+                NOW
+        );
+        when(users.findByEmailIgnoreCase("walkin@example.test")).thenReturn(Optional.of(user));
+        user.issuePasswordSetupToken("a".repeat(64), NOW.plus(Duration.ofHours(1)), NOW);
+
+        authentication.changePassword(
+                "walkin@example.test",
+                new ChangePasswordRequest(PASSWORD, "a brand new password")
+        );
+
+        assertFalse(user.isMustChangePassword());
+        assertNull(user.getPasswordSetupTokenHash());
+        assertNull(user.getPasswordSetupExpiresAt());
+        assertTrue(passwordEncoder.matches("a brand new password", user.getPasswordHash()));
+        verify(users).save(user);
+    }
+
+    @Test
+    void changePasswordRejectsIncorrectCurrentPassword() {
+        ApiUser user = user("walkin@example.test", ApiUserRole.SUBMITTER);
+        when(users.findByEmailIgnoreCase("walkin@example.test")).thenReturn(Optional.of(user));
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> authentication.changePassword(
+                        "walkin@example.test",
+                        new ChangePasswordRequest("wrong password", "a brand new password")
+                )
+        );
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+    }
+
+    @Test
+    void changePasswordRejectsReusingTheCurrentPassword() {
+        ApiUser user = user("walkin@example.test", ApiUserRole.SUBMITTER);
+        when(users.findByEmailIgnoreCase("walkin@example.test")).thenReturn(Optional.of(user));
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> authentication.changePassword(
+                        "walkin@example.test",
+                        new ChangePasswordRequest(PASSWORD, PASSWORD)
+                )
+        );
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+    }
+
+    @Test
+    void setPasswordConsumesTheSingleUseSetupToken() {
+        ApiUser user = new ApiUser(
+                UUID.randomUUID(),
+                "walkin@example.test",
+                passwordEncoder.encode(PASSWORD),
+                ApiUserRole.SUBMITTER,
+                true,
+                NOW
+        );
+        user.issuePasswordSetupToken("hashed-token", NOW.plus(Duration.ofHours(1)), NOW);
+        when(users.findByPasswordSetupTokenHash(any())).thenReturn(Optional.of(user));
+        when(users.consumePasswordSetupToken(any(), any(), any())).thenReturn(1);
+
+        authentication.setPassword(new org.unipod.unipoderpbackend.dto.auth.SetPasswordRequest(
+                "raw-token",
+                "a brand new password"
+        ));
+
+        verify(users).consumePasswordSetupToken(
+                any(),
+                argThat(hash -> passwordEncoder.matches("a brand new password", hash)),
+                any()
+        );
+    }
+
+    @Test
+    void setPasswordRejectsExpiredSetupToken() {
+        ApiUser user = new ApiUser(
+                UUID.randomUUID(),
+                "walkin@example.test",
+                passwordEncoder.encode(PASSWORD),
+                ApiUserRole.SUBMITTER,
+                true,
+                NOW
+        );
+        user.issuePasswordSetupToken("hashed-token", NOW.minus(Duration.ofMinutes(1)), NOW);
+        when(users.findByPasswordSetupTokenHash(any())).thenReturn(Optional.of(user));
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> authentication.setPassword(new org.unipod.unipoderpbackend.dto.auth.SetPasswordRequest(
+                        "raw-token",
+                        "a brand new password"
+                ))
+        );
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+    }
+
+    @Test
+    void setPasswordRejectsTokenConsumedConcurrently() {
+        ApiUser user = new ApiUser(
+                UUID.randomUUID(),
+                "walkin@example.test",
+                passwordEncoder.encode(PASSWORD),
+                ApiUserRole.SUBMITTER,
+                true,
+                NOW
+        );
+        user.issuePasswordSetupToken("hashed-token", NOW.plus(Duration.ofHours(1)), NOW);
+        when(users.findByPasswordSetupTokenHash(any())).thenReturn(Optional.of(user));
+        when(users.consumePasswordSetupToken(any(), any(), any())).thenReturn(0);
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> authentication.setPassword(new org.unipod.unipoderpbackend.dto.auth.SetPasswordRequest(
+                        "raw-token",
+                        "a brand new password"
+                ))
+        );
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+    }
+
+    private Jwt jwt() {
+        return Jwt.withTokenValue("signed-token")
+                .header("alg", "HS256")
+                .claim("sub", "walkin@example.test")
+                .issuedAt(NOW)
+                .expiresAt(NOW.plus(Duration.ofMinutes(15)))
+                .build();
     }
 
     private ApiUser user(String email, ApiUserRole role) {

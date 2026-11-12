@@ -5,10 +5,16 @@ info:
   description: |
     REST contract for the Makerere Innovation Hub ERP intake and case workflow.
 
-    A submission receives its tracking reference when it is created, remains a draft while
-    information is being completed, and can be registered and forwarded to a sector. Student
-    evidence is required before registration; general-public cases must not include
-    student-specific fields.
+    A submission receives its tracking reference when it is created and remains a draft while
+    information is being completed. The submitter then submits it for reception review; reception
+    verifies the brief, may request missing information or documents, and either forwards it to a
+    sector, confirms it as a project, or rejects it. Student evidence is required before
+    registration; general-public cases must not include student-specific fields.
+
+    Three categories are supported: `student`, `general`, and `service_request`. Service requests
+    describe a requested service (`serviceRequested`), who is asking (`serviceRequester`), the
+    requesting department, and the `expectedResult`; the service fields are required when the
+    brief is submitted.
 
     ## Base URL
 
@@ -64,14 +70,20 @@ info:
 
     ## Identifiers and timestamps
 
-    IDs are UUID strings. Case codes follow `(STU|GEN)-<year>-<sequence>`. Timestamps are ISO-8601
-    instants in UTC (for example `2026-03-10T09:30:00Z`).
+    IDs are UUID strings. Intake codes follow `(STU|GEN|SRV)-<year>-<sequence>`; a confirmed
+    project receives a `PRJ-<year>-<sequence>` project code. Timestamps are ISO-8601 instants in
+    UTC (for example `2026-03-10T09:30:00Z`).
 
     ## Files
 
     `POST /submissions/{id}/documents/upload` accepts `multipart/form-data`; the server generates
-    the opaque `fileReference`. `GET /submissions/{id}/documents/{documentId}/file` streams the
-    stored bytes as an attachment. Never construct a `fileReference` yourself.
+    the opaque `fileReference`. Files are limited to 15 MB (15,728,640 bytes) and must be one of
+    PDF, Word, Excel, PowerPoint, RTF, ZIP, plain text, CSV, common image types, and the design
+    formats DXF, DWG, STL, and SVG (an allowed file extension is accepted when the browser reports
+    `application/octet-stream`). `GET
+    /submissions/{id}/documents/{documentId}/file` streams the stored bytes as an attachment.
+    Never construct a `fileReference` yourself. Uploading a document increments its per-type
+    `version` and resolves a matching open document request.
 servers:
   - url: https://backend-unipod.onrender.com/api
     description: Production API on Render
@@ -134,6 +146,54 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /auth/change-password:
+    post:
+      tags: [Authentication]
+      operationId: changePassword
+      x-required-roles: []
+      summary: Change the authenticated account's password
+      description: |
+        Requires a valid bearer token. The current password must match, and the new
+        password must be 12-72 characters and different from the current password.
+        A successful change clears the temporary-password flag returned by login.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '204':
+          description: Password changed
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/set-password:
+    post:
+      tags: [Authentication]
+      operationId: setPassword
+      x-required-roles: []
+      summary: Set a password using a one-time setup token
+      description: |
+        Public endpoint for a submitter who received a password setup link during an
+        assisted submission. The token is single-use and expires after 72 hours; an
+        unknown, used, or expired token returns 400. A successful call also clears the
+        temporary-password flag.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetPasswordRequest'
+      responses:
+        '204':
+          description: Password set
+        '400':
+          $ref: '#/components/responses/BadRequest'
   /admin/users:
     post:
       tags: [Authentication]
@@ -180,6 +240,11 @@ paths:
         from the authenticated principal; a supplied submitterId cannot change
         ownership. Intake staff may create walk-in submissions for another
         submitter. A unique case code is allocated atomically at creation.
+
+        Student fields apply to `student` briefs, service fields apply to
+        `service_request` briefs, and general briefs leave both groups empty.
+        The draft is completed with `PUT /submissions/{id}` and submitted with
+        `POST /submissions/{id}/submit`.
       security:
         - bearerAuth: []
       requestBody:
@@ -207,6 +272,16 @@ paths:
                   problemAddressed: Limited access to reliable charging
                   submitterId: submitter@example.test
                   submitterEmail: submitter@example.test
+              service_request:
+                value:
+                  category: service_request
+                  title: Prototype enclosure for soil sensor
+                  purpose: Build a weatherproof enclosure for field testing
+                  problemAddressed: The current sensor housing fails in rain
+                  serviceRequested: Prototyping and fabrication
+                  serviceRequester: staff
+                  department: Agricultural Engineering
+                  expectedResult: Three tested enclosures and a build guide
       responses:
         '201':
           description: Draft created
@@ -238,7 +313,7 @@ paths:
           description: Submission type.
           schema:
             type: string
-            enum: [student, general]
+            enum: [student, general, service_request]
         - name: stage
           in: query
           description: Current submission status.
@@ -278,6 +353,45 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /submissions/assisted:
+    post:
+      tags: [Submissions]
+      operationId: createAssistedSubmission
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
+      summary: Create a walk-in submission with a minimal submitter account
+      description: |
+        Reception can capture a walk-in brief and create a minimal `SUBMITTER`
+        account in one step. If the email already has an account it is reused.
+        When a new account is created, `temporaryPassword` is returned exactly
+        once and `mustChangePassword` is set so the submitter changes it at first
+        login. A single-use `setPasswordToken` and `setPasswordUrl` are also
+        returned so the submitter can choose their own password through
+        `POST /auth/set-password`; the token expires after 72 hours. The account
+        and draft are committed together. Service-request fields are accepted
+        for `service_request` briefs.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssistedSubmissionRequest'
+      responses:
+        '201':
+          description: Draft and submitter account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssistedSubmissionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /submissions/search:
     get:
       tags: [Submissions]
@@ -348,6 +462,30 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /me/submissions/{id}:
+    get:
+      tags: [Submissions]
+      operationId: getMySubmission
+      x-required-roles: [SUBMITTER]
+      summary: Get one submitter-owned submission
+      description: Returns the submitter-facing view of a submission owned by the authenticated submitter. Another submitter's case returns 404.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      responses:
+        '200':
+          description: Submitter-owned submission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmitterSubmission'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /me/capabilities:
     get:
       tags: [Submissions]
@@ -397,13 +535,170 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/Conflict'
+  /submissions/{id}/submit:
+    post:
+      tags: [Submissions]
+      operationId: submitSubmission
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, SUBMITTER]
+      summary: Submit a draft for reception review
+      description: |
+        Moves a draft to `SUBMITTED`, stamps `submittedAt`, and publishes a
+        `submission.submitted` notification to the submitter. A submitter may
+        submit only their own draft. Student briefs require student number,
+        programme, supervisor, and recommendation-letter status; service requests
+        require `serviceRequested` and `expectedResult`. A blank department is
+        suggested from the active sector names. Submitting a brief that is not a
+        draft returns 409.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      responses:
+        '200':
+          description: Submitted brief
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /submissions/{id}/reply:
+    post:
+      tags: [Submissions]
+      operationId: replyToInformationRequest
+      x-required-roles: [SUBMITTER]
+      summary: Reply to an information request
+      description: |
+        Available to the owning submitter while the brief is `SUBMITTED` or
+        `AWAITING_INFORMATION`. Every field is optional so the submitter can send
+        only the missing detail. Open information requests are resolved
+        automatically; the brief returns to `SUBMITTED` and a
+        `submission.reply_received` notification is published.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplySubmissionRequest'
+      responses:
+        '200':
+          description: Updated brief
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /submissions/{id}/confirm-project:
+    post:
+      tags: [Submissions]
+      operationId: confirmSubmissionAsProject
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
+      summary: Confirm a brief as a project
+      description: |
+        Closes the intake decision by moving the brief to `CONFIRMED_AS_PROJECT`.
+        The optional `projectCode` is used when supplied; when blank the server
+        allocates the next `PRJ-<year>-<sequence>` code. A
+        `submission.confirmed_as_project` notification is published to the
+        submitter.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmProjectRequest'
+      responses:
+        '200':
+          description: Confirmed project brief
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /submissions/{id}/reject:
+    post:
+      tags: [Submissions]
+      operationId: rejectSubmission
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
+      summary: Reject a brief
+      description: |
+        Closes the intake decision by moving the brief to `REJECTED` with the
+        required `reason`. Outstanding information requests are cleared and a
+        `submission.rejected` notification is published to the submitter.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejectSubmissionRequest'
+      responses:
+        '200':
+          description: Rejected brief
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /submissions/{id}/request-information:
     post:
       tags: [Submissions]
       operationId: requestSubmissionInformation
-      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
-      summary: Ask a submitter to complete or correct a draft
-      description: Intake roles can attach a required-information note to a draft with a known submitter email. A missing email returns 400. The change and notification outbox event are committed together.
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER]
+      summary: Ask a submitter for missing information or documents
+      description: |
+        Operational staff can attach a required-information `reason`, a list of
+        missing `items`, or both to a brief with a known submitter email. Each
+        item becomes an open missing item; a `documentType` marks it as a document
+        request. When the brief is `SUBMITTED` it moves to `AWAITING_INFORMATION`;
+        a `DRAFT` stays a draft. A missing email or an empty request returns 400.
+        The change, missing items, and `submission.information_requested`
+        notification are committed together.
       security:
         - bearerAuth: []
       parameters:
@@ -421,6 +716,252 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Submission'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /submissions/{id}/reception-checklist:
+    get:
+      tags: [Submissions]
+      operationId: getReceptionChecklist
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
+      summary: Read the reception verification checklist
+      description: |
+        Returns the same four canonical checklist lines for every category:
+        `DETAILS_COMPLETE`, `DOCUMENTS_COMPLETE`, `FILES_READABLE`, and
+        `CORRECT_TYPE`. Lines that have not been saved yet are returned
+        unchecked.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      responses:
+        '200':
+          description: Reception checklist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceptionCheckResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Submissions]
+      operationId: updateReceptionChecklist
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
+      summary: Tick reception checklist lines with a note per line
+      description: |
+        Updates one or more checklist lines. A note can be recorded per line.
+        The checklist can only be changed while the submission is `DRAFT`,
+        `SUBMITTED`, or `RECEIVED`; it becomes read-only once the submission is
+        forwarded. Forwarding a `SUBMITTED` brief requires a complete checklist.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReceptionCheckUpdateRequest'
+      responses:
+        '200':
+          description: Updated reception checklist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceptionCheckResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /submissions/{id}/missing-items:
+    get:
+      tags: [Submissions]
+      operationId: listMissingItems
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, OBSERVER]
+      summary: List missing information and missing documents
+      description: |
+        Returns every outstanding and resolved missing item for the submission.
+        Items requested through `request-information` and the missing-items
+        endpoint appear here. Uploading a document automatically resolves a
+        matching open document request. Observers have read-only access.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      responses:
+        '200':
+          description: Missing items
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissingItemsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Submissions]
+      operationId: addMissingItems
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER]
+      summary: Record missing information and/or document requests
+      description: |
+        Adds one open missing item per line. A line with a `documentType` is a
+        document request; otherwise it is an information request. Each line can
+        carry a `reason`, `dueAt`, and submitter-facing `message`. Use
+        `POST /submissions/{id}/reminders` to notify the submitter.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MissingItemsRequest'
+      responses:
+        '201':
+          description: Missing items after the requests were recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissingItemsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /submissions/{id}/missing-documents:
+    post:
+      tags: [Submissions]
+      operationId: addMissingDocuments
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER]
+      summary: Record the documents a submitter still owes
+      description: |
+        Adds one open document request per line. A `documentType` is required
+        for every line. Use `POST /submissions/{id}/reminders` to notify the
+        submitter.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MissingItemsRequest'
+      responses:
+        '201':
+          description: Missing items after the documents were recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissingItemsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /submissions/{id}/missing-items/{itemId}/resolve:
+    post:
+      tags: [Submissions]
+      operationId: resolveMissingItem
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER]
+      summary: Mark a missing item resolved
+      description: |
+        Records who resolved the item and an optional resolution note. Uploading
+        a matching document resolves document requests automatically.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveMissingItemRequest'
+      responses:
+        '200':
+          description: Resolved missing item
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissingItemResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /submissions/{id}/reminders:
+    post:
+      tags: [Submissions]
+      operationId: sendMissingItemsReminder
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER]
+      summary: Send the submitter a reminder about open missing items
+      description: |
+        Marks every open missing item as reminded and publishes a
+        `submission.reminder_sent` notification. A missing submitter email
+        returns 400; no open items returns 409.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendReminderRequest'
+      responses:
+        '200':
+          description: Missing items after the reminder
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissingItemsResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -810,7 +1351,13 @@ paths:
       operationId: forwardSubmission
       x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
       summary: Register and forward a draft, or forward a received submission
-      description: A draft is registered and forwarded in one transaction. Stores the sector assignment, stage history, and durable submission.forwarded outbox event in the same transaction.
+      description: |
+        A draft is registered and forwarded in one transaction; a `SUBMITTED`
+        brief is forwarded after its reception checklist is complete. Stores the
+        sector assignment, optional handover `note`, stage history, a durable
+        `submission.forwarded` outbox event for the sector, and a
+        `submission.forwarded_copy` notification to the submitter in the same
+        transaction. An incomplete checklist for a `SUBMITTED` brief returns 409.
       security:
         - bearerAuth: []
       parameters:
@@ -914,8 +1461,14 @@ paths:
       summary: Upload a document file
       description: |
         Stores the file in configured object storage, or in Postgres when object storage is
-        disabled. Files are limited by the server-side upload limit; oversized files return
-        `413`. `documentType` defaults to `OTHER` when omitted.
+        disabled. Files are limited to 15 MB (15,728,640 bytes); oversized files return `413`.
+        Accepted content types are PDF, Word, Excel, PowerPoint, RTF, ZIP, plain text, CSV,
+        JPEG, PNG, GIF, WebP, or TIFF images, and the design formats DXF, DWG, STL, and SVG
+        (an allowed file extension is accepted when the browser reports
+        `application/octet-stream`); anything else returns `400`. Each upload receives
+        the next per-type `version` and resolves a matching open document request.
+        `documentType` defaults to `OTHER` when omitted. Submitters may upload only while their
+        brief is `DRAFT`, `SUBMITTED`, or `AWAITING_INFORMATION`.
       parameters:
         - $ref: '#/components/parameters/SubmissionId'
       requestBody:
@@ -1463,7 +2016,7 @@ components:
           maxLength: 128
     LoginResponse:
       type: object
-      required: [tokenType, accessToken, expiresAt]
+      required: [tokenType, accessToken, expiresAt, mustChangePassword]
       properties:
         tokenType:
           type: string
@@ -1473,6 +2026,25 @@ components:
         expiresAt:
           type: string
           format: date-time
+        mustChangePassword:
+          type: boolean
+          description: |
+            True when the account was created through assisted submission and
+            still uses its one-time temporary password.
+    ChangePasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword:
+          type: string
+          format: password
+          maxLength: 72
+        newPassword:
+          type: string
+          format: password
+          minLength: 12
+          maxLength: 72
     CreateApiUserRequest:
       type: object
       required: [email, password, role]
@@ -1522,7 +2094,7 @@ components:
       properties:
         category:
           type: string
-          enum: [student, general]
+          enum: [student, general, service_request]
         title:
           type: string
           minLength: 1
@@ -1542,6 +2114,12 @@ components:
           type: [string, 'null']
           format: email
           maxLength: 254
+        submitterName:
+          type: [string, 'null']
+          maxLength: 255
+        submitterPhone:
+          type: [string, 'null']
+          maxLength: 40
         studentNumber:
           type: string
           maxLength: 80
@@ -1553,6 +2131,26 @@ components:
           maxLength: 255
         recommendationLetterStatus:
           $ref: '#/components/schemas/RecommendationLetterStatus'
+        serviceRequested:
+          type: [string, 'null']
+          maxLength: 255
+          description: The service the requester needs (for example prototyping or testing).
+        serviceRequester:
+          oneOf:
+            - $ref: '#/components/schemas/ServiceRequester'
+            - type: 'null'
+        department:
+          type: [string, 'null']
+          maxLength: 255
+          description: Requesting department. A blank value is suggested from active sector names at submit time.
+        expectedResult:
+          type: [string, 'null']
+          maxLength: 5000
+          description: What the requester expects the hub to deliver.
+        acceptedRulesVersion:
+          type: [string, 'null']
+          maxLength: 32
+          description: Version of the intake rules the submitter accepted.
       allOf:
         - if:
             properties:
@@ -1565,21 +2163,300 @@ components:
                 - required: [programme]
                 - required: [supervisor]
                 - required: [recommendationLetterStatus]
+                - required: [serviceRequested]
+                - required: [serviceRequester]
+                - required: [expectedResult]
     RequestInformationRequest:
       type: object
       additionalProperties: false
-      required: [note]
+      description: |
+        Provide `reason`, `items`, or both. The single `note` form remains
+        supported for older clients and is used as the request summary when
+        present. Each item becomes an open missing item.
+      anyOf:
+        - required: [note]
+        - required: [reason]
+        - required: [items]
       properties:
         note:
           type: string
           minLength: 1
           maxLength: 2000
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 255
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/MissingItemRequest'
+    ReceptionCheckItemKey:
+      type: string
+      enum:
+        - DETAILS_COMPLETE
+        - DOCUMENTS_COMPLETE
+        - FILES_READABLE
+        - CORRECT_TYPE
+    ReceptionCheckItemRequest:
+      type: object
+      additionalProperties: false
+      required: [key, checked]
+      properties:
+        key:
+          $ref: '#/components/schemas/ReceptionCheckItemKey'
+        checked:
+          type: boolean
+        note:
+          type: string
+          maxLength: 2000
+    ReceptionCheckUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ReceptionCheckItemRequest'
+    ReceptionCheckItemResponse:
+      type: object
+      required: [key, label, checked]
+      properties:
+        key:
+          $ref: '#/components/schemas/ReceptionCheckItemKey'
+        label:
+          type: string
+        checked:
+          type: boolean
+        note:
+          type: [string, 'null']
+        checkedBy:
+          type: [string, 'null']
+        checkedAt:
+          type: [string, 'null']
+          format: date-time
+        updatedAt:
+          type: [string, 'null']
+          format: date-time
+    ReceptionCheckResponse:
+      type: object
+      required: [submissionId, complete, checkedCount, totalCount, items]
+      properties:
+        submissionId:
+          type: string
+          format: uuid
+        complete:
+          type: boolean
+        checkedCount:
+          type: integer
+        totalCount:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReceptionCheckItemResponse'
+    MissingItemKind:
+      type: string
+      enum: [INFORMATION, DOCUMENT]
+    MissingItemStatus:
+      type: string
+      enum: [OPEN, RESOLVED]
+    MissingItemRequest:
+      type: object
+      additionalProperties: false
+      required: [label]
+      properties:
+        label:
+          type: string
+          minLength: 1
+          maxLength: 255
+        note:
+          type: string
+          maxLength: 2000
+        documentType:
+          $ref: '#/components/schemas/DocumentType'
+        reason:
+          type: string
+          maxLength: 255
+          description: Why the item is needed.
+        dueAt:
+          type: [string, 'null']
+          format: date-time
+          description: Optional deadline shown to the submitter.
+        message:
+          type: string
+          maxLength: 2000
+          description: Submitter-facing instructions for this item.
+    MissingItemsRequest:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/MissingItemRequest'
+    MissingItemResponse:
+      type: object
+      required: [id, kind, label, status, requestedBy, requestedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          $ref: '#/components/schemas/MissingItemKind'
+        label:
+          type: string
+        note:
+          type: [string, 'null']
+        reason:
+          type: [string, 'null']
+        dueAt:
+          type: [string, 'null']
+          format: date-time
+        message:
+          type: [string, 'null']
+        documentType:
+          oneOf:
+            - $ref: '#/components/schemas/DocumentType'
+            - type: 'null'
+        status:
+          $ref: '#/components/schemas/MissingItemStatus'
+        requestedBy:
+          type: string
+        requestedAt:
+          type: string
+          format: date-time
+        lastRemindedAt:
+          type: [string, 'null']
+          format: date-time
+        resolvedBy:
+          type: [string, 'null']
+        resolvedAt:
+          type: [string, 'null']
+          format: date-time
+        resolutionNote:
+          type: [string, 'null']
+    MissingItemsResponse:
+      type: object
+      required: [submissionId, openCount, items]
+      properties:
+        submissionId:
+          type: string
+          format: uuid
+        openCount:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MissingItemResponse'
+    ResolveMissingItemRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        note:
+          type: string
+          maxLength: 2000
+    SendReminderRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        note:
+          type: string
+          maxLength: 2000
+    AssistedSubmissionRequest:
+      type: object
+      additionalProperties: false
+      required: [submitterEmail, category, title, purpose, problemAddressed]
+      properties:
+        submitterEmail:
+          type: string
+          format: email
+          maxLength: 254
+        category:
+          type: string
+          enum: [student, general, service_request]
+        title:
+          type: string
+          minLength: 1
+          maxLength: 240
+        purpose:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        problemAddressed:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        studentNumber:
+          type: string
+          maxLength: 80
+        programme:
+          type: string
+          maxLength: 200
+        supervisor:
+          type: string
+          maxLength: 255
+        recommendationLetterStatus:
+          $ref: '#/components/schemas/RecommendationLetterStatus'
+        submitterPhone:
+          type: [string, 'null']
+          maxLength: 40
+        serviceRequested:
+          type: [string, 'null']
+          maxLength: 255
+        serviceRequester:
+          oneOf:
+            - $ref: '#/components/schemas/ServiceRequester'
+            - type: 'null'
+        department:
+          type: [string, 'null']
+          maxLength: 255
+        expectedResult:
+          type: [string, 'null']
+          maxLength: 5000
+        acceptedRulesVersion:
+          type: [string, 'null']
+          maxLength: 32
+    AssistedAccountResponse:
+      type: object
+      required: [email, created]
+      properties:
+        email:
+          type: string
+          format: email
+        created:
+          type: boolean
+        temporaryPassword:
+          type: [string, 'null']
+          description: Returned only once when a new account is created.
+        setPasswordToken:
+          type: [string, 'null']
+          description: Single-use token for `POST /auth/set-password`; expires after 72 hours.
+        setPasswordUrl:
+          type: [string, 'null']
+          description: Frontend link that includes the setup token.
+    AssistedSubmissionResponse:
+      type: object
+      required: [submission, account]
+      properties:
+        submission:
+          $ref: '#/components/schemas/Submission'
+        account:
+          $ref: '#/components/schemas/AssistedAccountResponse'
     RecommendationLetterStatus:
       type: string
       enum: [verified, submitted, one_file, not_required]
+    ServiceRequester:
+      type: string
+      enum: [student, staff, external, other]
+      description: Who is asking for a service.
     SubmissionStage:
       type: string
-      enum: [DRAFT, RECEIVED, REGISTERED, FACT_FINDING, UNDER_REVIEW, REFINEMENT_REQUESTED, FURTHER_HANDLING, FORWARDED, IN_PROGRESS, COMPLETED]
+      enum: [DRAFT, SUBMITTED, AWAITING_INFORMATION, RECEIVED, REGISTERED, FACT_FINDING, UNDER_REVIEW, REFINEMENT_REQUESTED, FURTHER_HANDLING, FORWARDED, IN_PROGRESS, CONFIRMED_AS_PROJECT, REJECTED, COMPLETED]
     CaseStage:
       type: string
       enum: [RECEIVED, REGISTERED, FACT_FINDING, UNDER_REVIEW, REFINEMENT_REQUESTED, FURTHER_HANDLING, COMPLETED]
@@ -1588,7 +2465,11 @@ components:
       enum: [NOT_STARTED, IN_PROGRESS, DECIDED]
     DocumentStatus:
       type: string
-      enum: [VERIFIED, SUBMITTED, ONE_FILE, NOT_REQUIRED]
+      enum: [REQUIRED, OPTIONAL, MISSING, VERIFIED, SUBMITTED, ONE_FILE, NOT_REQUIRED]
+      description: |
+        Intake states are `REQUIRED`, `OPTIONAL`, and `MISSING`; `VERIFIED`,
+        `SUBMITTED`, `ONE_FILE`, and `NOT_REQUIRED` are retained for the case
+        file review workflow.
     DocumentType:
       type: string
       enum: [PROJECT_BRIEF, RECOMMENDATION_LETTER, SUPPORTING_EVIDENCE, OTHER]
@@ -1600,6 +2481,86 @@ components:
         sectorId:
           type: string
           format: uuid
+        note:
+          type: [string, 'null']
+          maxLength: 2000
+          description: Optional handover note recorded on the brief and in the stage history.
+    SetPasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [token, newPassword]
+      properties:
+        token:
+          type: string
+          maxLength: 256
+          description: Single-use setup token from the assisted submission response.
+        newPassword:
+          type: string
+          format: password
+          minLength: 12
+          maxLength: 72
+    ReplySubmissionRequest:
+      type: object
+      additionalProperties: false
+      description: Partial brief supplied by the submitter in response to an information request.
+      properties:
+        title:
+          type: [string, 'null']
+          maxLength: 240
+        purpose:
+          type: [string, 'null']
+          maxLength: 5000
+        problemAddressed:
+          type: [string, 'null']
+          maxLength: 5000
+        studentNumber:
+          type: [string, 'null']
+          maxLength: 80
+        programme:
+          type: [string, 'null']
+          maxLength: 200
+        supervisor:
+          type: [string, 'null']
+          maxLength: 255
+        recommendationLetterStatus:
+          oneOf:
+            - $ref: '#/components/schemas/RecommendationLetterStatus'
+            - type: 'null'
+        submitterPhone:
+          type: [string, 'null']
+          maxLength: 40
+        serviceRequested:
+          type: [string, 'null']
+          maxLength: 255
+        department:
+          type: [string, 'null']
+          maxLength: 255
+        expectedResult:
+          type: [string, 'null']
+          maxLength: 5000
+        note:
+          type: [string, 'null']
+          maxLength: 2000
+    ConfirmProjectRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        projectCode:
+          type: [string, 'null']
+          maxLength: 32
+          description: Optional project code. A `PRJ-<year>-<sequence>` code is allocated when blank.
+        note:
+          type: [string, 'null']
+          maxLength: 2000
+    RejectSubmissionRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 2000
     AdvanceSubmissionRequest:
       type: object
       additionalProperties: false
@@ -1625,6 +2586,11 @@ components:
           type: [string, 'null']
           maxLength: 256
           pattern: '^[A-Za-z0-9_-]+$'
+        version:
+          type: [integer, 'null']
+          format: int64
+          minimum: 1
+          description: Optional explicit document version. The server assigns the next version when omitted.
     SubmissionDocument:
       type: object
       required: [id, submissionId, name, documentType, status, createdBy, createdAt]
@@ -1651,6 +2617,10 @@ components:
         originalFilename:
           type: [string, 'null']
           maxLength: 255
+        version:
+          type: integer
+          format: int64
+          description: Per-document-type version, starting at 1.
         createdBy:
           type: string
         createdAt:
@@ -1877,7 +2847,7 @@ components:
           type: [string, 'null']
         category:
           type: string
-          enum: [student, general]
+          enum: [student, general, service_request]
         title:
           type: string
         purpose:
@@ -1894,12 +2864,39 @@ components:
           anyOf:
             - $ref: '#/components/schemas/RecommendationLetterStatus'
             - type: 'null'
+        serviceRequested:
+          type: [string, 'null']
+        serviceRequester:
+          oneOf:
+            - $ref: '#/components/schemas/ServiceRequester'
+            - type: 'null'
+        department:
+          type: [string, 'null']
+        expectedResult:
+          type: [string, 'null']
+        projectCode:
+          type: [string, 'null']
+        briefVersion:
+          type: integer
         stage:
           $ref: '#/components/schemas/SubmissionStage'
         receivedAt:
           type: [string, 'null']
           format: date-time
+        submittedAt:
+          type: [string, 'null']
+          format: date-time
         forwardedAt:
+          type: [string, 'null']
+          format: date-time
+        confirmedAt:
+          type: [string, 'null']
+          format: date-time
+        rejectionReason:
+          type: [string, 'null']
+        informationRequestedNote:
+          type: [string, 'null']
+        informationRequestedAt:
           type: [string, 'null']
           format: date-time
         createdAt:
@@ -2277,10 +3274,10 @@ components:
           format: uuid
         code:
           type: [string, 'null']
-          pattern: '^(STU|GEN)-[0-9]{4}-[0-9]{6,19}$'
+          pattern: '^(STU|GEN|SRV)-[0-9]{4}-[0-9]{6,19}$'
         category:
           type: string
-          enum: [student, general]
+          enum: [student, general, service_request]
         title:
           type: string
         purpose:
@@ -2294,6 +3291,10 @@ components:
         submitterName:
           type: [string, 'null']
           description: Display name supplied for the submitter, when available.
+        submitterEmail:
+          type: [string, 'null']
+        submitterPhone:
+          type: [string, 'null']
         receivingOfficer:
           type: [string, 'null']
         assignedReviewerSubject:
@@ -2308,6 +3309,24 @@ components:
           oneOf:
             - $ref: '#/components/schemas/RecommendationLetterStatus'
             - type: 'null'
+        serviceRequested:
+          type: [string, 'null']
+        serviceRequester:
+          oneOf:
+            - $ref: '#/components/schemas/ServiceRequester'
+            - type: 'null'
+        department:
+          type: [string, 'null']
+        expectedResult:
+          type: [string, 'null']
+        projectCode:
+          type: [string, 'null']
+          description: Project reference assigned when the brief is confirmed as a project.
+        briefVersion:
+          type: integer
+          description: Incremented each time the brief content is changed.
+        acceptedRulesVersion:
+          type: [string, 'null']
         responsibleSectorId:
           type: [string, 'null']
           format: uuid
@@ -2318,9 +3337,21 @@ components:
         receivedAt:
           type: [string, 'null']
           format: date-time
+        submittedAt:
+          type: [string, 'null']
+          format: date-time
         forwardedAt:
           type: [string, 'null']
           format: date-time
+        forwardNote:
+          type: [string, 'null']
+        forwardedBy:
+          type: [string, 'null']
+        confirmedAt:
+          type: [string, 'null']
+          format: date-time
+        rejectionReason:
+          type: [string, 'null']
         informationRequestedNote:
           type: [string, 'null']
         informationRequestedAt:
