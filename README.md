@@ -703,7 +703,7 @@ After correcting any returned records:
 2. Confirm that it returns no rows.
 3. Verify that the existing records satisfy the new constraints.
 4. Apply the workflow migrations, including V5 for the sector catalog and
-delivery/storage integration metadata and V26 for the completed W1 intake
+delivery/storage integration metadata and V27 for the completed W1 intake
 workflow.
 5. Deploy the updated backend.
 

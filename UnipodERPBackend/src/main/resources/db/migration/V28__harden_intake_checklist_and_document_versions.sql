@@ -1,5 +1,5 @@
 -- Follow-up hardening for the W1 intake tables. These statements cannot live in
--- V25/V26 because those migrations are already applied in deployed databases.
+-- V26/V27 because those migrations are already applied in deployed databases.
 
 -- A checklist line that is not checked must not retain the actor/timestamp of a
 -- previous check. Clear stale values, then enforce the invariant.
@@ -20,7 +20,7 @@ DROP INDEX IF EXISTS ix_reception_checks_submission;
 
 -- Documents created before versioning existed were backfilled with version 0.
 -- Give each document type per submission a gap-free sequence, continuing from
--- any versions created after V26 was applied.
+-- any versions created after V27 was applied.
 WITH unversioned AS (
     SELECT id,
            submission_id,
