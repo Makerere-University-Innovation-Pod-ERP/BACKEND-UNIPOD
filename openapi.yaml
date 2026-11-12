@@ -144,6 +144,8 @@ paths:
                 $ref: '#/components/schemas/LoginResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
   /auth/change-password:
@@ -169,6 +171,8 @@ paths:
           description: Password changed
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
   /auth/set-password:
@@ -194,6 +198,8 @@ paths:
           description: Password set
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /admin/users:
     post:
       tags: [Authentication]
@@ -218,6 +224,8 @@ paths:
                 $ref: '#/components/schemas/ApiUser'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -291,6 +299,8 @@ paths:
                 $ref: '#/components/schemas/Submission'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -386,6 +396,8 @@ paths:
                 $ref: '#/components/schemas/AssistedSubmissionResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -529,6 +541,8 @@ paths:
                 $ref: '#/components/schemas/Submission'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -562,6 +576,8 @@ paths:
                 $ref: '#/components/schemas/Submission'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -601,6 +617,8 @@ paths:
                 $ref: '#/components/schemas/Submission'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -640,6 +658,8 @@ paths:
                 $ref: '#/components/schemas/Submission'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -677,6 +697,8 @@ paths:
                 $ref: '#/components/schemas/Submission'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -718,6 +740,8 @@ paths:
                 $ref: '#/components/schemas/Submission'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -783,6 +807,8 @@ paths:
                 $ref: '#/components/schemas/ReceptionCheckResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -848,6 +874,8 @@ paths:
                 $ref: '#/components/schemas/MissingItemsResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -885,6 +913,8 @@ paths:
                 $ref: '#/components/schemas/MissingItemsResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -927,6 +957,8 @@ paths:
                 $ref: '#/components/schemas/MissingItemResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -964,6 +996,8 @@ paths:
                 $ref: '#/components/schemas/MissingItemsResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1053,6 +1087,8 @@ paths:
                 $ref: '#/components/schemas/Submission'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1299,6 +1335,8 @@ paths:
                 $ref: '#/components/schemas/FactFindingCheck'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1335,6 +1373,8 @@ paths:
                 $ref: '#/components/schemas/FactFindingCheck'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1377,6 +1417,8 @@ paths:
                 $ref: '#/components/schemas/Submission'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1409,6 +1451,8 @@ paths:
                 $ref: '#/components/schemas/Submission'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1445,6 +1489,8 @@ paths:
                 $ref: '#/components/schemas/SubmissionDocument'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1500,6 +1546,8 @@ paths:
                 $ref: '#/components/schemas/SubmissionDocument'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '413':
           description: Uploaded file exceeds the configured size limit
           content:
@@ -1591,6 +1639,8 @@ paths:
                 $ref: '#/components/schemas/Sector'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1666,6 +1716,8 @@ paths:
                 $ref: '#/components/schemas/Sector'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1727,6 +1779,8 @@ paths:
                 type: string
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1858,6 +1912,8 @@ paths:
                 $ref: '#/components/schemas/AuditEntryPage'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1913,6 +1969,8 @@ paths:
                 $ref: '#/components/schemas/NotificationPage'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
   /notifications/unread-count:
@@ -3498,10 +3556,36 @@ components:
           description: Support reference included for unexpected server errors.
         code:
           type: string
-          description: Machine-readable reason on 403 responses from authorize(), e.g. NOT_OWNER, NOT_ASSIGNED, OUTSIDE_DEPARTMENT, ROLE_NOT_PERMITTED.
+          description: |
+            Machine-readable reason, present on every error. Generic codes come from the
+            status (INVALID_REQUEST, UNAUTHORIZED, FORBIDDEN, NOT_FOUND, CONFLICT,
+            VALIDATION_FAILED, INTERNAL_ERROR, ...). Specific ones include
+            ROLE_NOT_PERMITTED, NOT_OWNER, NOT_ASSIGNED, OUTSIDE_DEPARTMENT, MALFORMED_BODY,
+            MISSING_PARAMETER, INVALID_PARAMETER, SUBMISSION_INVALID, SUBMISSION_NOT_FOUND,
+            SUBMISSION_CONFLICT, SECTOR_NOT_FOUND, SECTOR_CONFLICT, DOCUMENT_NOT_FOUND,
+            NOTIFICATION_NOT_FOUND.
+        errors:
+          type: array
+          description: Present on 422 responses. One entry per invalid field.
+          items:
+            $ref: '#/components/schemas/FieldError'
+    FieldError:
+      type: object
+      required: [field, message]
+      properties:
+        field:
+          type: [string, 'null']
+        message:
+          type: string
   responses:
+    ValidationFailed:
+      description: One or more request values are invalid. The body lists each field in `errors`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
     BadRequest:
-      description: Request validation failed
+      description: Malformed request (broken JSON, wrong parameter type, missing parameter)
       content:
         application/problem+json:
           schema:
