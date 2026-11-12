@@ -18,7 +18,6 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
 
     long countByRecipientAndReadAtIsNull(String recipient);
 
-    /** Looks a notification up by id AND owner, so nobody can touch someone else's. */
     Optional<Notification> findByIdAndRecipient(UUID id, String recipient);
 
     @Modifying(flushAutomatically = true, clearAutomatically = true)
