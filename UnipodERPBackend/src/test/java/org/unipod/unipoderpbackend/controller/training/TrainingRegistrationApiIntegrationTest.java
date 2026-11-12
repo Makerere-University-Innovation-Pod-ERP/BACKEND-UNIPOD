@@ -188,6 +188,20 @@ class TrainingRegistrationApiIntegrationTest {
     }
 
     @Test
+    void registrationClosesOnceAnUnpublishedSessionHasEndedToo() throws Exception {
+        Instant now = clock.instant();
+        TrainingSession endedDraft = sessions.saveAndFlush(TrainingFixtures.session(
+                departmentId, now.minus(Duration.ofHours(5)), now.minus(Duration.ofHours(3)), 5, 0, false));
+
+        mockMvc.perform(register(endedDraft, BODY))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("Registration is closed for this session."));
+
+        assertEquals(0, participants.countSeats(endedDraft.getId()));
+        assertEquals(0, registeredAuditLines(endedDraft));
+    }
+
+    @Test
     void aSessionInProgressAndADraftStillTakeRegistrations() throws Exception {
         Instant now = clock.instant();
         TrainingSession running = sessions.saveAndFlush(TrainingFixtures.session(

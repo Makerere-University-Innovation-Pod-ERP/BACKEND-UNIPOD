@@ -265,6 +265,20 @@ class TrainingSessionCreateApiIntegrationTest {
     }
 
     @Test
+    void aDepartmentDeactivatedAfterTheListWasCachedIsRefused() throws Exception {
+        // Load the cache while the department is still active, then deactivate it behind the cache's back.
+        assertTrue(config.departments().stream().anyMatch(department -> department.id().equals(departmentId)));
+        jdbcTemplate.update("UPDATE sectors SET active = FALSE WHERE id = ?", departmentId);
+
+        mockMvc.perform(post("/operations/training/sessions")
+                        .with(administrator("stale-cache@test.local"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body(FULL_BODY)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("Choose an active department."));
+    }
+
+    @Test
     void aDateWithoutAnOffsetOrAnUnknownFieldIsABadRequest() throws Exception {
         mockMvc.perform(post("/operations/training/sessions")
                         .with(administrator("shape@test.local"))

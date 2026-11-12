@@ -113,6 +113,11 @@ public class TrainingSession {
         this.updatedAt = now;
     }
 
+    // Independent of the publish flag: a draft whose time has passed is just as over as a published one.
+    public boolean hasEndedAt(Instant now) {
+        return !now.isBefore(endsAt);
+    }
+
     public TrainingStatus statusAt(Instant now) {
         if (!published) {
             return TrainingStatus.DRAFT;

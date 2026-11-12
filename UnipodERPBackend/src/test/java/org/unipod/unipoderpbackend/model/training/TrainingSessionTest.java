@@ -46,6 +46,14 @@ class TrainingSessionTest {
     }
 
     @Test
+    void hasEndedFromTheExactEndInstantWhetherOrNotItIsPublished() {
+        assertEquals(false, session(true).hasEndedAt(ENDS.minusSeconds(1)));
+        assertEquals(true, session(true).hasEndedAt(ENDS));
+        assertEquals(false, session(false).hasEndedAt(ENDS.minusSeconds(1)));
+        assertEquals(true, session(false).hasEndedAt(ENDS));
+    }
+
+    @Test
     void endsTwoHoursAfterTheStartWhenNoEndIsGiven() {
         TrainingSession session = new TrainingSession(
                 UUID.randomUUID(), UUID.randomUUID(), "Laser cutting", "Eng. Nsubuga", STARTS, null,

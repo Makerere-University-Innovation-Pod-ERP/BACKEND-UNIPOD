@@ -18,7 +18,6 @@ import org.unipod.unipoderpbackend.model.audit.AuditEvent;
 import org.unipod.unipoderpbackend.model.authorization.Actor;
 import org.unipod.unipoderpbackend.model.training.TrainingParticipant;
 import org.unipod.unipoderpbackend.model.training.TrainingSession;
-import org.unipod.unipoderpbackend.model.training.TrainingStatus;
 import org.unipod.unipoderpbackend.repository.training.TrainingParticipantRepository;
 import org.unipod.unipoderpbackend.repository.training.TrainingSessionRepository;
 import org.unipod.unipoderpbackend.service.audit.AuditService;
@@ -50,7 +49,9 @@ public class TrainingSessionService {
 
     @Transactional
     public SessionResponse create(CreateSessionRequest request, Actor actor) {
-        // The foreign key is the backstop; this gives callers a readable reason first.
+        // The department list is cached for a minute; reload it so a department deactivated a moment ago
+        // is refused. The foreign key only proves the row exists, not that it is still active.
+        config.refresh();
         boolean activeDepartment = config.departments().stream()
                 .anyMatch(department -> department.id().equals(request.departmentId()));
         if (!activeDepartment) {
@@ -96,7 +97,7 @@ public class TrainingSessionService {
         TrainingSession session = sessions.findByIdForUpdate(sessionId)
                 .orElseThrow(TrainingNotFoundException::session);
         Instant now = clock.instant();
-        if (session.statusAt(now) == TrainingStatus.COMPLETED) {
+        if (session.hasEndedAt(now)) {
             throw new TrainingConflictException("Registration is closed for this session.");
         }
         String regNumber = request.regNumber().strip();
