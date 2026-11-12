@@ -62,7 +62,7 @@ public class PartnerService {
             // constraint the entity does not already guard, so it decides.
             throw nameTaken();
         }
-        audit.log(AuditEvent.created(actor, CREATED, ENTITY_TYPE, partner.getId(), PartnerAuditSnapshot.of(partner)));
+        audit.log(AuditEvent.created(actor, CREATED, ENTITY_TYPE, partner.getId(), PartnerAuditSnapshot.of(partner, false)));
         return toResponse(partner);
     }
 
@@ -77,7 +77,8 @@ public class PartnerService {
                 && partners.existsByNameIgnoringCaseExcluding(request.name().strip(), id)) {
             throw nameTaken();
         }
-        PartnerAuditSnapshot before = PartnerAuditSnapshot.of(partner);
+        PartnerAuditSnapshot before = PartnerAuditSnapshot.of(partner, false);
+        Contacts contactsBefore = Contacts.of(partner);
         partner.updateDetails(
                 request.name(),
                 request.type(),
@@ -93,21 +94,22 @@ public class PartnerService {
         } catch (ObjectOptimisticLockingFailureException concurrentEdit) {
             throw staleVersion();
         }
-        auditChange(actor, UPDATED, partner, before);
+        auditChange(actor, UPDATED, partner, before, contactsBefore);
         return toResponse(partner);
     }
 
     @Transactional
     public PartnerResponse recordMouRenewal(Actor actor, UUID id, RecordMouRenewalRequest request) {
         Partner partner = partners.findById(id).orElseThrow(PartnerNotFoundException::new);
-        PartnerAuditSnapshot before = PartnerAuditSnapshot.of(partner);
+        PartnerAuditSnapshot before = PartnerAuditSnapshot.of(partner, false);
+        Contacts contactsBefore = Contacts.of(partner);
         partner.renewMou(request.renewalDate(), request.documentReference(), clock.instant());
         try {
             partners.saveAndFlush(partner);
         } catch (ObjectOptimisticLockingFailureException concurrentEdit) {
             throw staleVersion();
         }
-        auditChange(actor, MOU_RENEWED, partner, before);
+        auditChange(actor, MOU_RENEWED, partner, before, contactsBefore);
         return toResponse(partner);
     }
 
@@ -126,8 +128,9 @@ public class PartnerService {
     }
 
     // A request that leaves every audited value as it was is not worth an entry in an append-only log.
-    private void auditChange(Actor actor, String action, Partner partner, PartnerAuditSnapshot before) {
-        PartnerAuditSnapshot after = PartnerAuditSnapshot.of(partner);
+    private void auditChange(
+            Actor actor, String action, Partner partner, PartnerAuditSnapshot before, Contacts contactsBefore) {
+        PartnerAuditSnapshot after = PartnerAuditSnapshot.of(partner, !Contacts.of(partner).equals(contactsBefore));
         if (!after.equals(before)) {
             audit.log(AuditEvent.changed(actor, action, ENTITY_TYPE, partner.getId(), before, after));
         }
@@ -135,6 +138,13 @@ public class PartnerService {
 
     private PartnerResponse toResponse(Partner partner) {
         return PartnerResponse.from(partner, statusPolicy.statusOf(partner.getRenewalDate()));
+    }
+
+    // Compared only to learn whether contact details changed; never written to the audit log.
+    private record Contacts(String person, String email) {
+        static Contacts of(Partner partner) {
+            return new Contacts(partner.getContactPerson(), partner.getContactEmail());
+        }
     }
 
     private static PartnerConflictException staleVersion() {

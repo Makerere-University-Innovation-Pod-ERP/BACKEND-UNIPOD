@@ -1,6 +1,7 @@
 package org.unipod.unipoderpbackend.controller.partner;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -71,6 +72,53 @@ class PartnerAuditIntegrationTest {
         assertEquals(UUID.fromString(id), entry.get("entity_id"));
         assertNull(entry.get("before_notes"));
         assertEquals("after note", entry.get("after_notes"));
+    }
+
+    @Test
+    void changingOnlyContactDetailsWritesAnEntryWithoutTheValues() throws Exception {
+        String actor = actorEmail();
+        String id = createPartner(actor, "Audit Contacts " + shortId());
+
+        mockMvc.perform(MockMvcRequestBuilders.patch("/operations/partners/{id}", id)
+                        .with(admin(actor))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"version\": 0, \"contactPerson\": \"Secret Person\", "
+                                + "\"contactEmail\": \"secret.person@partner.test\"}"))
+                .andExpect(status().isOk());
+
+        Map<String, Object> entry = onlyEntry(actor, "partner.updated");
+        assertEquals("true", entry.get("after_contact_changed"));
+        assertNoPersonalData(entry);
+    }
+
+    @Test
+    void updatesThatLeaveContactsAloneRecordContactChangedFalse() throws Exception {
+        String actor = actorEmail();
+        String id = createPartner(actor, "Audit Notes Only " + shortId());
+
+        mockMvc.perform(MockMvcRequestBuilders.patch("/operations/partners/{id}", id)
+                        .with(admin(actor))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"version\": 0, \"notes\": \"only notes\"}"))
+                .andExpect(status().isOk());
+
+        assertEquals("false", onlyEntry(actor, "partner.updated").get("after_contact_changed"));
+    }
+
+    @Test
+    void createdEntriesDoNotCarryContactDetails() throws Exception {
+        String actor = actorEmail();
+        String body = mockMvc.perform(MockMvcRequestBuilders.post("/operations/partners")
+                        .with(admin(actor))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\": \"Audit Contacts Create " + shortId() + "\", \"type\": \"FUNDER\", "
+                                + "\"contactPerson\": \"Secret Person\", "
+                                + "\"contactEmail\": \"secret.person@partner.test\"}"))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        assertEquals("Secret Person", JsonPath.read(body, "$.contactPerson"));
+
+        assertNoPersonalData(onlyEntry(actor, "partner.created"));
     }
 
     @Test
@@ -154,6 +202,15 @@ class PartnerAuditIntegrationTest {
         assertEquals(0, countFor(actor));
     }
 
+    private static void assertNoPersonalData(Map<String, Object> entry) {
+        for (String column : new String[] {"before_text", "after_text"}) {
+            String json = String.valueOf(entry.get(column));
+            assertFalse(json.contains("Secret Person"), json);
+            assertFalse(json.contains("secret.person@partner.test"), json);
+            assertFalse(json.contains("contactPerson") || json.contains("contactEmail"), json);
+        }
+    }
+
     private String createPartner(String actor, String name) throws Exception {
         String body = mockMvc.perform(MockMvcRequestBuilders.post("/operations/partners")
                         .with(admin(actor))
@@ -180,7 +237,10 @@ class PartnerAuditIntegrationTest {
                        after_value ->> 'type' AS after_type,
                        after_value ->> 'notes' AS after_notes,
                        after_value ->> 'renewalDate' AS after_date,
-                       after_value ->> 'documentReference' AS after_ref
+                       after_value ->> 'documentReference' AS after_ref,
+                       after_value ->> 'contactChanged' AS after_contact_changed,
+                       before_value::text AS before_text,
+                       after_value::text AS after_text
                 FROM audit_log WHERE actor = ? AND action = ?
                 """, actor, action);
     }
