@@ -365,6 +365,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /submissions/assisted:
     post:
       tags: [Submissions]
@@ -434,6 +436,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /submissions/mine:
     get:
       tags: [Submissions]
@@ -454,17 +458,37 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /me/submissions:
     get:
       tags: [Submissions]
       operationId: listMySubmitterSubmissions
       x-required-roles: [SUBMITTER]
-      summary: List cases linked to the authenticated submitter
+      summary: List the authenticated submitter's own briefs
+      description: |
+        Returns only submissions whose `submitter_id` is the signed-in
+        principal; staff-only fields are omitted. Each row includes
+        `pendingAction`, `waitingForYou`, and `waitingSince` so the home screen
+        can highlight work waiting for the submitter. Use `tab` to split the
+        Briefs and Service requests tabs; Invoices and payments and Bookings are
+        separate modules advertised by `GET /me/capabilities`.
       security:
         - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Size'
+        - name: tab
+          in: query
+          required: false
+          description: |
+            Optional submitter-home tab filter. Omit to return all owned cases.
+            Matching is case-insensitive and accepts `SERVICE-REQUESTS` as well
+            as `SERVICE_REQUESTS`. Invoices and bookings are not served by this
+            endpoint.
+          schema:
+            type: string
+            enum: [BRIEFS, SERVICE_REQUESTS]
       responses:
         '200':
           description: Submitter-owned submissions
@@ -472,10 +496,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SubmitterSubmissionPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /me/submissions/{id}:
     get:
       tags: [Submissions]
@@ -505,12 +533,18 @@ paths:
       tags: [Submissions]
       operationId: getSubmitterCapabilities
       x-required-roles: [SUBMITTER]
-      summary: Return submitter navigation capabilities
+      summary: Return what the authenticated submitter can do
+      description: |
+        Reports the submitter's own abilities and the availability of every
+        submitter-home tab. Briefs and service requests are served by this
+        backend. Invoices and payments (D4) and bookings (F1) are delivered by
+        other modules, report `NOT_CONFIGURED`, and keep the matching action
+        flags false until those integrations are connected.
       security:
         - bearerAuth: []
       responses:
         '200':
-          description: Locked modules and registration capability
+          description: Submitter actions and module availability
           content:
             application/json:
               schema:
@@ -1836,6 +1870,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /dashboard/overview:
     get:
       tags: [Dashboard]
@@ -1946,6 +1982,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /notifications:
     get:
       tags: [Notifications]
@@ -2951,7 +2989,18 @@ components:
           type: integer
     SubmitterSubmission:
       type: object
-      required: [id, category, title, purpose, problemAddressed, stage, createdAt, updatedAt]
+      required:
+        - id
+        - category
+        - title
+        - purpose
+        - problemAddressed
+        - stage
+        - pendingAction
+        - waitingForYou
+        - waitingSince
+        - createdAt
+        - updatedAt
       properties:
         id:
           type: string
@@ -2995,6 +3044,17 @@ components:
           type: integer
         stage:
           $ref: '#/components/schemas/SubmissionStage'
+        pendingAction:
+          description: Action the submitter has to take, or null when nothing is waiting.
+          oneOf:
+            - $ref: '#/components/schemas/SubmitterPendingAction'
+            - type: 'null'
+        waitingForYou:
+          type: [string, 'null']
+          description: One-line highlight for the submitter home.
+        waitingSince:
+          type: [string, 'null']
+          format: date-time
         receivedAt:
           type: [string, 'null']
           format: date-time
@@ -3483,16 +3543,48 @@ components:
           format: int64
     SubmitterCapabilities:
       type: object
-      required: [canRegisterSubmission, registrationMessage, lockedModules]
+      required: [canCreateBrief, canEditDraft, canSubmitDraft, canRespondToInformationRequest, canUploadDocuments, canUploadPaymentProof, canBook, modules, message]
       properties:
-        canRegisterSubmission:
+        canCreateBrief:
           type: boolean
-        registrationMessage:
-          type: string
-        lockedModules:
+        canEditDraft:
+          type: boolean
+        canSubmitDraft:
+          type: boolean
+        canRespondToInformationRequest:
+          type: boolean
+        canUploadDocuments:
+          type: boolean
+          description: Uploads are allowed only while the brief is DRAFT, SUBMITTED, or AWAITING_INFORMATION.
+        canUploadPaymentProof:
+          type: boolean
+          description: False while the invoices and payments module reports NOT_CONFIGURED.
+        canBook:
+          type: boolean
+          description: False while the bookings module reports NOT_CONFIGURED.
+        modules:
           type: array
           items:
-            type: string
+            $ref: '#/components/schemas/SubmitterModule'
+        message:
+          type: string
+    SubmitterModule:
+      type: object
+      required: [key, label, availability]
+      properties:
+        key:
+          type: string
+          enum: [BRIEFS, SERVICE_REQUESTS, INVOICES, BOOKINGS]
+        label:
+          type: string
+        availability:
+          type: string
+          enum: [AVAILABLE, NOT_CONFIGURED]
+        reason:
+          type: [string, 'null']
+    SubmitterPendingAction:
+      type: string
+      enum: [CONTINUE_DRAFT, PROVIDE_INFORMATION, PROVIDE_DOCUMENT]
     FactFindingState:
       type: string
       enum: [NOT_STARTED, DRAFT, COMPLETED]
