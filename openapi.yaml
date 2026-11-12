@@ -1205,14 +1205,14 @@ paths:
     get:
       tags: [Case Files]
       operationId: getCaseFileAggregate
-      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, SUBMITTER]
       summary: Get the W4 case file aggregate
       description: |
         Available to Administrator, Innovation Coordinator, Fact-Finding
-        Officer, Reviewer, Sector Officer, IP Liaison, Submitter, and Observer.
-        Reviewer and Sector Officer results are row-scoped. Mark's reviewer
-        panel/quorum and David's activity are marked NOT_CONFIGURED until their
-        integration providers are supplied.
+        Officer, Reviewer, Sector Officer, and Submitter. Reviewer and Sector
+        Officer results are row-scoped. Mark's reviewer panel/quorum and David's
+        activity are marked NOT_CONFIGURED until their integration providers are
+        supplied.
       parameters:
         - $ref: '#/components/parameters/SubmissionId'
       responses:
@@ -1232,7 +1232,7 @@ paths:
     get:
       tags: [Case Files]
       operationId: getCaseFileCapabilities
-      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, SUBMITTER]
       summary: Get enabled state and reason for each case-file control
       parameters:
         - $ref: '#/components/parameters/SubmissionId'
@@ -1253,7 +1253,7 @@ paths:
     get:
       tags: [Case Files]
       operationId: getAllowedCaseTransitions
-      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, SUBMITTER]
       summary: Get valid next case stages for the actor
       parameters:
         - $ref: '#/components/parameters/SubmissionId'
@@ -1306,7 +1306,12 @@ paths:
       operationId: saveCaseOutcome
       x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR]
       summary: Save case outcome
-      description: Only Administrator and Innovation Coordinator may save outcomes. Save is rejected with 409 until Mark's configured reviewer quorum is available and met.
+      description: |
+        Only Administrator and Innovation Coordinator may save outcomes. The
+        decision must be Confirmed as project, Needs more improvement, or Closed
+        with a reason, and a non-blank note is required. Confirming a project
+        requires a destination department. Save is rejected with 409 until the
+        configured reviewer quorum is available and met.
       parameters:
         - $ref: '#/components/parameters/SubmissionId'
       requestBody:
@@ -1330,6 +1335,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /cases/{id}/documents/{documentId}:
     patch:
       tags: [Case Files]
@@ -1439,8 +1446,6 @@ paths:
                 $ref: '#/components/schemas/FactFindingCheck'
         '400':
           $ref: '#/components/responses/BadRequest'
-        '422':
-          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1451,6 +1456,7 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+  /cases/{id}/fact-finding/complete:
     post:
       tags: [Fact-Finding]
       operationId: completeFactFinding
@@ -1477,8 +1483,6 @@ paths:
                 $ref: '#/components/schemas/FactFindingCheck'
         '400':
           $ref: '#/components/responses/BadRequest'
-        '422':
-          $ref: '#/components/responses/ValidationFailed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2028,7 +2032,7 @@ paths:
     get:
       tags: [Audit]
       operationId: listCaseActivity
-      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, SUBMITTER]
       summary: History panel for one brief
       description: |
         Same visibility as GET /cases/{id}. If you can open the brief you can
@@ -4048,7 +4052,7 @@ components:
             $ref: '#/components/schemas/CaseStageHistory'
     CaseFileAggregate:
       type: object
-      required: [submission, currentStage, reference, documents, stageHistory, stepper, outcome, capabilities, transitionOptions, reviewPanel, activity]
+      required: [submission, currentStage, reference, openRequests, documents, stageHistory, stepper, outcome, capabilities, transitionOptions, reviewPanel, activity]
       properties:
         submission:
           $ref: '#/components/schemas/Submission'
@@ -4058,6 +4062,10 @@ components:
             - type: 'null'
         reference:
           type: [string, 'null']
+        openRequests:
+          type: array
+          items:
+            $ref: '#/components/schemas/MissingItemResponse'
         documents:
           type: array
           items:
@@ -4091,13 +4099,18 @@ components:
           enum: [UPCOMING, CURRENT, COMPLETE]
     CaseOutcome:
       type: object
-      required: [status, decision, note, decidedBy, decidedAt]
+      required: [status, decision, note, destinationDepartmentId, destinationDepartmentName, decidedBy, decidedAt]
       properties:
         status:
           $ref: '#/components/schemas/OutcomeStatus'
         decision:
           type: [string, 'null']
         note:
+          type: [string, 'null']
+        destinationDepartmentId:
+          type: [string, 'null']
+          format: uuid
+        destinationDepartmentName:
           type: [string, 'null']
         decidedBy:
           type: [string, 'null']
@@ -4132,16 +4145,12 @@ components:
             $ref: '#/components/schemas/CaseStage'
     CaseReviewPanel:
       type: object
-      required: [availability, reviewerTeam, ipPanel, quorumAvailable, quorumMet]
+      required: [availability, reviewerTeam, quorumAvailable, quorumMet]
       properties:
         availability:
           type: string
           enum: [AVAILABLE, NOT_CONFIGURED]
         reviewerTeam:
-          type: array
-          items:
-            type: string
-        ipPanel:
           type: array
           items:
             type: string
@@ -4187,17 +4196,26 @@ components:
           type: integer
           format: int64
           minimum: 0
+    OutcomeDecision:
+      type: string
+      enum:
+        - Confirmed as project
+        - Needs more improvement
+        - Closed with a reason
     OutcomeUpdateRequest:
       type: object
       additionalProperties: false
-      required: [version]
+      required: [decision, note, version]
       properties:
         decision:
-          type: [string, 'null']
-          maxLength: 120
+          $ref: '#/components/schemas/OutcomeDecision'
         note:
-          type: [string, 'null']
+          type: string
+          minLength: 1
           maxLength: 5000
+        destinationDepartmentId:
+          type: [string, 'null']
+          format: uuid
         version:
           type: integer
           format: int64

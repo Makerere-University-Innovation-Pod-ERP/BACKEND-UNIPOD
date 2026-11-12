@@ -17,7 +17,6 @@ public interface CaseFileEnrichmentProvider {
     record ReviewPanel(
             Availability availability,
             List<String> reviewerTeam,
-            List<String> ipPanel,
             boolean quorumAvailable,
             boolean quorumMet
     ) {

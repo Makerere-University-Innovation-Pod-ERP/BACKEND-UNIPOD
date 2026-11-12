@@ -41,6 +41,8 @@ public class OutboxNotificationDispatcher {
                     'submission.reply_received',
                     'submission.forwarded_copy',
                     'submission.confirmed_as_project',
+                    'submission.refinement_requested',
+                    'submission.closed_with_reason',
                     'submission.rejected',
                     'auth.password_setup',
                     'auth.password_reset'
@@ -253,10 +255,12 @@ public class OutboxNotificationDispatcher {
     private static boolean isSubmitterLifecycleEvent(String eventType) {
         return switch (eventType) {
             case "submission.submitted",
-                 "submission.reply_received",
-                 "submission.forwarded_copy",
-                 "submission.confirmed_as_project",
-                 "submission.rejected" -> true;
+                    "submission.reply_received",
+                    "submission.forwarded_copy",
+                    "submission.confirmed_as_project",
+                    "submission.refinement_requested",
+                    "submission.closed_with_reason",
+                    "submission.rejected" -> true;
             default -> false;
         };
     }
