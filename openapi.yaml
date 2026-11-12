@@ -23,14 +23,15 @@ info:
 
     ## Authentication
 
-    1. Call `POST /auth/login` with an administrator-provisioned email and password.
+    1. Call `POST /auth/login` with your email and password. Submitters create their own
+       account with `POST /auth/signup`, which also returns a token.
     2. Send the returned `accessToken` on every protected request as
        `Authorization: Bearer <accessToken>`.
     3. Tokens are short-lived (default 15 minutes, exposed as `expiresAt`). There is no refresh
        endpoint; log in again before expiry.
 
-    Public signup is disabled. Accounts are created by an Administrator with
-    `POST /admin/users`.
+    Students, members of the public and organisations sign up with `POST /auth/signup`.
+    Staff accounts are created by an Administrator with `POST /admin/users`.
 
     ## Roles
 
@@ -128,8 +129,8 @@ paths:
       tags: [Authentication]
       operationId: login
       x-required-roles: []
-      summary: Exchange administrator-provisioned credentials for a bearer token
-      description: Public account registration is disabled. Login failures return the same response for unknown, disabled, or invalid credentials.
+      summary: Exchange email and password for a bearer token
+      description: Login failures return the same response for unknown, disabled, or invalid credentials.
       security: []
       requestBody:
         required: true
@@ -198,6 +199,63 @@ paths:
       responses:
         '204':
           description: Password set
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /auth/signup:
+    post:
+      tags: [Authentication]
+      operationId: signUp
+      x-required-roles: []
+      summary: Create a submitter account (student, public or organisation)
+      description: |
+        Public endpoint [AU1]. Creates a SUBMITTER account and its profile, records the
+        accepted UniPod rules version, and returns a bearer token so the user lands on
+        My submissions. Students must send studentNumber, course and universityEmail;
+        organisations must send organisationName. Missing kind-specific fields return
+        422 with one entry per field. An email or student number already in use returns 409.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignupRequest'
+      responses:
+        '201':
+          description: Account created; bearer access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /auth/forgot-password:
+    post:
+      tags: [Authentication]
+      operationId: forgotPassword
+      x-required-roles: []
+      summary: Email a one-time password reset link
+      description: |
+        Public endpoint [AU1]. Always returns 202, whether or not the email has an
+        account, so the response cannot be used to find out who is registered. For an
+        active account, emails a link for `POST /auth/set-password` that expires after
+        one hour and replaces any earlier link.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+      responses:
+        '202':
+          description: Request accepted
         '400':
           $ref: '#/components/responses/BadRequest'
         '422':
@@ -2149,6 +2207,72 @@ components:
           description: |
             True when the account was created through assisted submission and
             still uses its one-time temporary password.
+    AccountKind:
+      type: string
+      enum: [STUDENT, PUBLIC, ORGANISATION]
+    SignupRequest:
+      type: object
+      required: [accountKind, fullName, phone, email, password, rulesAccepted, rulesVersion]
+      properties:
+        accountKind:
+          $ref: '#/components/schemas/AccountKind'
+        fullName:
+          type: string
+          maxLength: 200
+        displayFirstName:
+          type: string
+          maxLength: 80
+          description: Name used in greetings, kept apart from titles in fullName.
+        phone:
+          type: string
+          pattern: '^\+?[0-9 ()-]{7,20}$'
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        password:
+          type: string
+          format: password
+          minLength: 12
+          maxLength: 72
+        studentNumber:
+          type: string
+          maxLength: 40
+          description: Required for STUDENT. Unique.
+        course:
+          type: string
+          maxLength: 200
+          description: Required for STUDENT.
+        universityEmail:
+          type: string
+          format: email
+          maxLength: 254
+          description: Required for STUDENT.
+        organisationName:
+          type: string
+          maxLength: 200
+          description: Required for ORGANISATION.
+        contactPerson:
+          type: string
+          maxLength: 200
+        mouReference:
+          type: string
+          maxLength: 100
+        rulesAccepted:
+          type: boolean
+          description: Must be true.
+        rulesVersion:
+          type: string
+          maxLength: 40
+          description: Version of the UniPod general rules the user accepted.
+    ForgotPasswordRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
     ChangePasswordRequest:
       type: object
       additionalProperties: false
@@ -2611,7 +2735,7 @@ components:
         token:
           type: string
           maxLength: 256
-          description: Single-use setup token from the assisted submission response.
+          description: Single-use token from the assisted submission response or the password reset email.
         newPassword:
           type: string
           format: password
