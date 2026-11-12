@@ -102,6 +102,24 @@ class PartnerStatusPolicyTest {
     }
 
     @Test
+    void alertRecipientsMustLookLikeEmailAddresses() {
+        for (String bad : new String[] {"not-an-email", "two@@test.local", "a b@test.local", "nodot@localhost",
+                "@test.local", "x".repeat(250) + "@test.local"}) {
+            assertThrows(IllegalArgumentException.class,
+                    () -> new PartnerMouProperties(60, 30, Set.of(), Set.of(bad)), bad);
+        }
+        PartnerMouProperties valid = new PartnerMouProperties(60, 30, Set.of(), Set.of("ok.name+tag@sub.test.local"));
+        assertEquals(Set.of("ok.name+tag@sub.test.local"), valid.alertRecipients());
+    }
+
+    @Test
+    void anInvalidRecipientInTheSettingsStopsBindingInsteadOfFailingLater() {
+        assertThrows(RuntimeException.class, () -> new Binder(new MapConfigurationPropertySource(Map.of(
+                "operations.partners.alert-recipients", "good@test.local,oops")))
+                .bindOrCreate("operations.partners", PartnerMouProperties.class));
+    }
+
+    @Test
     void rejectsThresholdsInTheWrongOrder() {
         assertThrows(IllegalArgumentException.class, () -> new PartnerMouProperties(10, 20, Set.of(), Set.of()));
         assertThrows(IllegalArgumentException.class, () -> new PartnerMouProperties(10, -1, Set.of(), Set.of()));

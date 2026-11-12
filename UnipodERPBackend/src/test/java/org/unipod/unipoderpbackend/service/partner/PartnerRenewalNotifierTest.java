@@ -20,6 +20,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.scheduling.annotation.ScheduledAnnotationBeanPostProcessor;
@@ -61,6 +62,9 @@ class PartnerRenewalNotifierTest {
 
     @Autowired
     private ScheduledAnnotationBeanPostProcessor scheduler;
+
+    @Autowired
+    private Environment environment;
 
     private final String recipient = "alerts-" + UUID.randomUUID() + "@test.local";
 
@@ -120,8 +124,9 @@ class PartnerRenewalNotifierTest {
         Partner reloaded = partners.findById(partner.getId()).orElseThrow();
         reloaded.renewMou(TODAY.plusDays(400), "MOU-NEXT", MORNING);
         partners.saveAndFlush(reloaded);
+        // The new date has its own warnings, so the old announcement is forgotten straight away.
+        assertNull(storedStatus(partner));
         runAt(TODAY);
-        assertEquals(PartnerStatus.ACTIVE, storedStatus(partner));
         assertEquals(1, notificationsFor(partner));
 
         runAt(TODAY.plusDays(400 - 40));
@@ -210,12 +215,14 @@ class PartnerRenewalNotifierTest {
 
     @Test
     void theDailyJobIsRegisteredWithTheScheduler() {
+        // Whatever the deployment sets for the schedule, the job must be registered with it.
+        String expectedCron = environment.getProperty("operations.partners.alert-cron", "0 0 7 * * *");
         boolean registered = scheduler.getScheduledTasks().stream()
                 .map(task -> task.getTask())
                 .filter(CronTask.class::isInstance)
                 .map(CronTask.class::cast)
                 .anyMatch(cron -> cron.getRunnable().toString().contains("PartnerRenewalJob")
-                        && "0 0 7 * * *".equals(cron.getExpression()));
+                        && expectedCron.equals(cron.getExpression()));
 
         assertTrue(registered, "PartnerRenewalJob is not registered with the scheduler.");
     }
@@ -224,9 +231,11 @@ class PartnerRenewalNotifierTest {
     void onlyOneCallerCanClaimAStatus() {
         Partner partner = seed("Claim", TODAY.plusDays(45));
 
-        assertEquals(1, partners.claimNotification(partner.getId(), PartnerStatus.RENEWAL_DUE));
-        assertEquals(0, partners.claimNotification(partner.getId(), PartnerStatus.RENEWAL_DUE));
-        assertEquals(1, partners.claimNotification(partner.getId(), PartnerStatus.EXPIRING_SOON));
+        LocalDate date = partner.getRenewalDate();
+
+        assertEquals(1, partners.claimNotification(partner.getId(), PartnerStatus.RENEWAL_DUE, date));
+        assertEquals(0, partners.claimNotification(partner.getId(), PartnerStatus.RENEWAL_DUE, date));
+        assertEquals(1, partners.claimNotification(partner.getId(), PartnerStatus.EXPIRING_SOON, date));
     }
 
     @Test
@@ -237,8 +246,8 @@ class PartnerRenewalNotifierTest {
                 .toList();
         PartnerRepository secondInstanceView = mock(PartnerRepository.class);
         when(secondInstanceView.findAllByRenewalOrder()).thenReturn(staleSnapshot);
-        when(secondInstanceView.claimNotification(any(), any()))
-                .thenAnswer(call -> partners.claimNotification(call.getArgument(0), call.getArgument(1)));
+        when(secondInstanceView.claimNotification(any(), any(), any())).thenAnswer(call -> partners.claimNotification(
+                call.getArgument(0), call.getArgument(1), call.getArgument(2)));
         PartnerMouProperties properties = new PartnerMouProperties(60, 30, Set.of(), Set.of(recipient));
 
         runAt(TODAY);

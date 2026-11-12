@@ -94,8 +94,8 @@ class PartnerRenewalNotifierFailureTest {
         when(onlyOurPartners.findAllByRenewalOrder()).thenAnswer(call -> visible.stream()
                 .map(partner -> partners.findById(partner.getId()).orElseThrow())
                 .toList());
-        when(onlyOurPartners.claimNotification(any(), any()))
-                .thenAnswer(call -> partners.claimNotification(call.getArgument(0), call.getArgument(1)));
+        when(onlyOurPartners.claimNotification(any(), any(), any())).thenAnswer(call -> partners.claimNotification(
+                call.getArgument(0), call.getArgument(1), call.getArgument(2)));
         PartnerMouProperties properties = new PartnerMouProperties(
                 60, 30, Set.of(), Set.of("alerts-" + UUID.randomUUID() + "@test.local"));
         Clock clock = Clock.fixed(TODAY.atTime(7, 0).atZone(KAMPALA).toInstant(), KAMPALA);

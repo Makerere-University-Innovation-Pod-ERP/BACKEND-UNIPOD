@@ -60,6 +60,9 @@ public class PartnerRenewalNotifier {
         for (Partner partner : partners.findAllByRenewalOrder()) {
             // The list and status are read before the claim; a renewal landing in between can at worst
             // send one alert for the old status, and the claim still stops any duplicate.
+            if (partner.getRenewalDate() == null) {
+                continue;
+            }
             PartnerStatus status = statusPolicy.statusOf(partner.getRenewalDate());
             if (!needsAttention(partner.getLastNotifiedStatus(), status)) {
                 continue;
@@ -83,7 +86,7 @@ public class PartnerRenewalNotifier {
     }
 
     private int announce(Partner partner, PartnerStatus status, Set<String> recipients) {
-        if (partners.claimNotification(partner.getId(), status) == 0) {
+        if (partners.claimNotification(partner.getId(), status, partner.getRenewalDate()) == 0) {
             return 0;
         }
         if (status == PartnerStatus.ACTIVE) {

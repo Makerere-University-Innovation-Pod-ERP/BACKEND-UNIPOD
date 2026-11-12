@@ -54,6 +54,7 @@ class PartnerRepositoryTest {
     void persistsAllPartnerFields() {
         Partner partner = new Partner(UUID.randomUUID(), "Round Trip Ltd", PartnerType.FUNDER,
                 LocalDate.of(2027, 2, 3), "Jane Doe", "jane@roundtrip.test", "Some notes", NOW);
+        partner.renewMou(LocalDate.of(2027, 2, 3), "MOU-77", NOW);
         entityManager.persistAndFlush(partner);
         entityManager.clear();
 
@@ -65,6 +66,7 @@ class PartnerRepositoryTest {
         assertEquals("Jane Doe", loaded.getContactPerson());
         assertEquals("jane@roundtrip.test", loaded.getContactEmail());
         assertEquals("Some notes", loaded.getNotes());
+        assertEquals("MOU-77", loaded.getDocumentReference());
         assertEquals(NOW, loaded.getCreatedAt());
         assertEquals(0L, loaded.getVersion());
         assertNull(loaded.getLastNotifiedStatus());

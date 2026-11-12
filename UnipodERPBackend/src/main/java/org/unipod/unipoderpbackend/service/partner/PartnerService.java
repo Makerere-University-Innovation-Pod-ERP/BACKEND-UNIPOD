@@ -24,6 +24,7 @@ import org.unipod.unipoderpbackend.service.audit.AuditService;
 
 @Service
 public class PartnerService {
+    private static final String NAME_INDEX = "uq_partners_name";
     private static final String ENTITY_TYPE = "partner";
     private static final String CREATED = "partner.created";
     private static final String UPDATED = "partner.updated";
@@ -58,12 +59,12 @@ public class PartnerService {
         }
         try {
             partners.saveAndFlush(partner);
-        } catch (DataIntegrityViolationException race) {
-            // Two requests can pass the check above together; uq_partners_name is the only
-            // constraint the entity does not already guard, so it decides.
-            throw nameTaken();
+        } catch (DataIntegrityViolationException failure) {
+            // Two requests can pass the check above together; the unique index decides.
+            throw nameCollisionOrSelf(failure);
         }
-        audit.log(AuditEvent.created(actor, CREATED, ENTITY_TYPE, partner.getId(), PartnerAuditSnapshot.of(partner, false, false)));
+        audit.log(AuditEvent.created(
+                actor, CREATED, ENTITY_TYPE, partner.getId(), PartnerAuditSnapshot.of(partner, false, false)));
         return toResponse(partner);
     }
 
@@ -80,7 +81,7 @@ public class PartnerService {
         }
         PartnerAuditSnapshot before = PartnerAuditSnapshot.of(partner, false, false);
         PersonalText personalBefore = PersonalText.of(partner);
-        partner.updateDetails(
+        boolean changed = partner.updateDetails(
                 request.name(),
                 request.type(),
                 request.renewalDate(),
@@ -88,10 +89,14 @@ public class PartnerService {
                 request.contactEmail(),
                 request.notes(),
                 clock.instant());
+        if (!changed) {
+            // Nothing to write: saving would bump the version and fail other editors for no reason.
+            return toResponse(partner);
+        }
         try {
             partners.saveAndFlush(partner);
-        } catch (DataIntegrityViolationException race) {
-            throw nameTaken();
+        } catch (DataIntegrityViolationException failure) {
+            throw nameCollisionOrSelf(failure);
         } catch (ObjectOptimisticLockingFailureException concurrentEdit) {
             throw staleVersion();
         }
@@ -161,6 +166,17 @@ public class PartnerService {
 
     private static PartnerConflictException staleVersion() {
         return new PartnerConflictException("This partner was changed by someone else. Reload it and try again.");
+    }
+
+    // Only the unique name index means "name taken"; any other integrity error is a real fault.
+    private static RuntimeException nameCollisionOrSelf(DataIntegrityViolationException failure) {
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            String message = cause.getMessage();
+            if (message != null && message.contains(NAME_INDEX)) {
+                return nameTaken();
+            }
+        }
+        return failure;
     }
 
     private static PartnerConflictException nameTaken() {

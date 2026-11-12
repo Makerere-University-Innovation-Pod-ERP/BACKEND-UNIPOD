@@ -1,8 +1,10 @@
 package org.unipod.unipoderpbackend.model.partner;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -175,6 +177,57 @@ class PartnerTest {
 
         assertEquals(LocalDate.of(2028, 3, 1), partner.getRenewalDate());
         assertEquals("MOU-1", partner.getDocumentReference());
+    }
+
+    @Test
+    void updateReportsWhetherAnythingChangedAndLeavesAnUnchangedPartnerAlone() {
+        Partner partner = new Partner(UUID.randomUUID(), "Acme Ltd", PartnerType.FUNDER,
+                LocalDate.of(2027, 3, 1), "Jane Doe", "jane@acme.test", "A note", NOW);
+
+        boolean nothing = partner.updateDetails(null, null, null, null, null, null, NOW.plusSeconds(60));
+        boolean sameValues = partner.updateDetails(
+                " Acme Ltd ", PartnerType.FUNDER, LocalDate.of(2027, 3, 1), "Jane Doe", "jane@acme.test", "A note",
+                NOW.plusSeconds(60));
+        boolean changed = partner.updateDetails(null, null, null, null, null, "A new note", NOW.plusSeconds(120));
+
+        assertFalse(nothing);
+        assertFalse(sameValues);
+        assertTrue(changed);
+        assertEquals(NOW.plusSeconds(120), partner.getUpdatedAt());
+    }
+
+    @Test
+    void renewalDatesOutsideTheSupportedRangeAreRejected() {
+        assertThrows(InvalidPartnerException.class, () -> new Partner(UUID.randomUUID(), "Acme Ltd",
+                PartnerType.FUNDER, LocalDate.of(1899, 12, 31), null, null, null, NOW));
+        assertThrows(InvalidPartnerException.class, () -> new Partner(UUID.randomUUID(), "Acme Ltd",
+                PartnerType.FUNDER, LocalDate.of(3000, 1, 1), null, null, null, NOW));
+        Partner partner = partner("Acme Ltd");
+        assertThrows(InvalidPartnerException.class,
+                () -> partner.updateDetails(null, null, LocalDate.of(3000, 1, 1), null, null, null, NOW));
+        assertThrows(InvalidPartnerException.class, () -> partner.renewMou(LocalDate.of(1899, 12, 31), null, NOW));
+        assertNull(partner.getRenewalDate());
+    }
+
+    @Test
+    void theSupportedRangeIncludesItsEndpoints() {
+        Partner partner = partner("Acme Ltd");
+
+        partner.renewMou(LocalDate.of(1900, 1, 1), null, NOW);
+        assertEquals(LocalDate.of(1900, 1, 1), partner.getRenewalDate());
+        partner.renewMou(LocalDate.of(2999, 12, 31), null, NOW);
+        assertEquals(LocalDate.of(2999, 12, 31), partner.getRenewalDate());
+    }
+
+    @Test
+    void textContainingANullCharacterIsRejected() {
+        char nul = (char) 0;
+
+        assertThrows(InvalidPartnerException.class, () -> partner("Acme" + nul + "Ltd"));
+        assertThrows(InvalidPartnerException.class, () -> new Partner(UUID.randomUUID(), "Acme Ltd",
+                PartnerType.FUNDER, null, null, null, "note" + nul, NOW));
+        Partner partner = partner("Acme Ltd");
+        assertThrows(InvalidPartnerException.class, () -> partner.renewMou(LocalDate.of(2030, 1, 1), "ref" + nul, NOW));
     }
 
     private static Partner partner(String name) {

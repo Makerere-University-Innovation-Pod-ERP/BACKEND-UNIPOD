@@ -9,12 +9,20 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.Objects;
 import java.util.UUID;
+import org.hibernate.annotations.DynamicUpdate;
 import org.unipod.unipoderpbackend.exception.partner.InvalidPartnerException;
 
+// Only changed columns are written, so an edit never overwrites last_notified_status, which the
+// daily job updates on its own (see PartnerRepository.claimNotification).
 @Entity
+@DynamicUpdate
 @Table(name = "partners")
 public class Partner {
+    // Keeps dates inside what the database can store and what staff could plausibly enter.
+    private static final LocalDate EARLIEST_RENEWAL = LocalDate.of(1900, 1, 1);
+    private static final LocalDate LATEST_RENEWAL = LocalDate.of(2999, 12, 31);
     private static final int NAME_MAX = 255;
     private static final int PERSON_MAX = 255;
     private static final int EMAIL_MAX = 254;
@@ -80,7 +88,7 @@ public class Partner {
         this.id = id;
         this.name = requiredText(name, "Partner name", NAME_MAX);
         this.type = type;
-        this.renewalDate = renewalDate;
+        this.renewalDate = checkedRenewalDate(renewalDate);
         this.contactPerson = optionalText(contactPerson, "Contact person", PERSON_MAX);
         this.contactEmail = optionalText(contactEmail, "Contact email", EMAIL_MAX);
         this.notes = optionalText(notes, "Notes", NOTES_MAX);
@@ -89,10 +97,13 @@ public class Partner {
     }
 
     /**
-     * Applies only the details that are present. A blank contact person, email or note clears it.
+     * Applies only the details that are present and returns whether anything changed; when nothing
+     * did, the partner is left exactly as it was. A blank contact person, email or note clears it.
      * The renewal date can be replaced but not cleared, because an omitted value means "unchanged".
+     * A different renewal date forgets the status already announced, so the new date gets its own
+     * warnings.
      */
-    public void updateDetails(
+    public boolean updateDetails(
             String name,
             PartnerType type,
             LocalDate renewalDate,
@@ -101,32 +112,61 @@ public class Partner {
             String notes,
             Instant now) {
         String newName = name == null ? this.name : requiredText(name, "Partner name", NAME_MAX);
+        PartnerType newType = type == null ? this.type : type;
+        LocalDate newRenewalDate = renewalDate == null ? this.renewalDate : checkedRenewalDate(renewalDate);
         String newContactPerson = contactPerson == null
                 ? this.contactPerson : optionalText(contactPerson, "Contact person", PERSON_MAX);
         String newContactEmail = contactEmail == null
                 ? this.contactEmail : optionalText(contactEmail, "Contact email", EMAIL_MAX);
         String newNotes = notes == null ? this.notes : optionalText(notes, "Notes", NOTES_MAX);
+        boolean unchanged = Objects.equals(newName, this.name)
+                && newType == this.type
+                && Objects.equals(newRenewalDate, this.renewalDate)
+                && Objects.equals(newContactPerson, this.contactPerson)
+                && Objects.equals(newContactEmail, this.contactEmail)
+                && Objects.equals(newNotes, this.notes);
+        if (unchanged) {
+            return false;
+        }
+        if (!Objects.equals(newRenewalDate, this.renewalDate)) {
+            this.lastNotifiedStatus = null;
+        }
         this.name = newName;
+        this.type = newType;
+        this.renewalDate = newRenewalDate;
         this.contactPerson = newContactPerson;
         this.contactEmail = newContactEmail;
         this.notes = newNotes;
-        if (type != null) {
-            this.type = type;
-        }
-        if (renewalDate != null) {
-            this.renewalDate = renewalDate;
-        }
         this.updatedAt = now;
+        return true;
     }
 
-    /** Records a renewed MOU. The document reference is replaced, so omitting it clears the old one. */
+    /**
+     * Records a renewed MOU. The document reference is replaced, so omitting it clears the old one.
+     * A different renewal date forgets the status already announced, so the new date gets its own
+     * warnings.
+     */
     public void renewMou(LocalDate renewalDate, String documentReference, Instant now) {
         if (renewalDate == null) {
             throw new InvalidPartnerException("Renewal date is required.");
         }
-        this.documentReference = optionalText(documentReference, "Document reference", DOCUMENT_REFERENCE_MAX);
-        this.renewalDate = renewalDate;
+        String newDocumentReference = optionalText(documentReference, "Document reference", DOCUMENT_REFERENCE_MAX);
+        LocalDate newRenewalDate = checkedRenewalDate(renewalDate);
+        if (!newRenewalDate.equals(this.renewalDate)) {
+            this.lastNotifiedStatus = null;
+        }
+        this.documentReference = newDocumentReference;
+        this.renewalDate = newRenewalDate;
         this.updatedAt = now;
+    }
+
+    private static LocalDate checkedRenewalDate(LocalDate date) {
+        if (date != null && (date.isBefore(EARLIEST_RENEWAL) || date.isAfter(LATEST_RENEWAL))) {
+            throw new InvalidPartnerException(
+                    "Renewal date must be between " + EARLIEST_RENEWAL.getYear() + " and "
+                            + LATEST_RENEWAL.getYear() + ".");
+        }
+        return date;
     }
 
     // Blank optional text is stored as null so "no value" has one representation.
@@ -140,6 +180,9 @@ public class Partner {
     private static String requiredText(String value, String field, int maxLength) {
         if (value == null || value.isBlank()) {
             throw new InvalidPartnerException(field + " is required.");
+        }
+        if (value.indexOf('\0') >= 0) {
+            throw new InvalidPartnerException(field + " must not contain null characters.");
         }
         String trimmed = value.strip();
         if (trimmed.length() > maxLength) {

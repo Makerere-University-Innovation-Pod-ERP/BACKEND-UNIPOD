@@ -8,6 +8,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.Clock;
+import java.time.LocalDate;
+import java.util.Locale;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,9 +33,14 @@ class PartnerCreateApiIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
 
+    @Autowired
+    private Clock clock;
+
     @Test
     void createsPartnerWithAllDetails() throws Exception {
         String name = uniqueName("Full Details Ltd");
+        // Far enough ahead to stay ACTIVE whatever day the test runs.
+        LocalDate renewal = LocalDate.now(clock).plusDays(400);
 
         mockMvc.perform(post("/operations/partners")
                         .with(manager())
@@ -41,17 +49,17 @@ class PartnerCreateApiIntegrationTest {
                                 {
                                   "name": "%s",
                                   "type": "INDUSTRY_PARTNER",
-                                  "renewalDate": "2027-03-01",
+                                  "renewalDate": "%s",
                                   "contactPerson": "Jane Doe",
                                   "contactEmail": "jane@partner.test",
                                   "notes": "Prefers email"
                                 }
-                                """.formatted(name)))
+                                """.formatted(name, renewal)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").isNotEmpty())
                 .andExpect(jsonPath("$.name").value(name))
                 .andExpect(jsonPath("$.type").value("INDUSTRY_PARTNER"))
-                .andExpect(jsonPath("$.renewalDate").value("2027-03-01"))
+                .andExpect(jsonPath("$.renewalDate").value(renewal.toString()))
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
                 .andExpect(jsonPath("$.contactPerson").value("Jane Doe"))
                 .andExpect(jsonPath("$.contactEmail").value("jane@partner.test"))
@@ -178,9 +186,21 @@ class PartnerCreateApiIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"name": " %s ", "type": "INDUSTRY_PARTNER"}
-                                """.formatted(name.toUpperCase())))
+                                """.formatted(name.toUpperCase(Locale.ROOT))))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail").value("A partner with this name already exists."));
+    }
+
+    @Test
+    void renewalDatesOutsideTheSupportedRangeAreRejectedWithBadRequest() throws Exception {
+        mockMvc.perform(post("/operations/partners")
+                        .with(manager())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name": "%s", "type": "FUNDER", "renewalDate": "+999999999-12-31"}
+                                """.formatted(uniqueName("Far Future"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("Renewal date must be between 1900 and 2999."));
     }
 
     private static String uniqueName(String prefix) {

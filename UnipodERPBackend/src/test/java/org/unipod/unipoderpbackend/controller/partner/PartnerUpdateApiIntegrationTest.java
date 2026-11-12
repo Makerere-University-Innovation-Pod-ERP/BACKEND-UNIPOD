@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.Clock;
 import java.time.LocalDate;
+import java.util.Locale;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,16 +46,18 @@ class PartnerUpdateApiIntegrationTest {
     void updatesOnlyTheSentFieldsAndBumpsTheVersion() throws Exception {
         Partner partner = seed(uniqueName("Before"));
         String newName = uniqueName("After");
+        // Far enough ahead to stay ACTIVE whatever day the test runs.
+        LocalDate newRenewal = LocalDate.now(clock).plusDays(500);
 
         patch(partner, """
-                {"version": 0, "name": "%s", "type": "ACADEMIC_PARTNER", "renewalDate": "2028-05-06",
+                {"version": 0, "name": "%s", "type": "ACADEMIC_PARTNER", "renewalDate": "%s",
                  "notes": "Updated note"}
-                """.formatted(newName))
+                """.formatted(newName, newRenewal))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(partner.getId().toString()))
                 .andExpect(jsonPath("$.name").value(newName))
                 .andExpect(jsonPath("$.type").value("ACADEMIC_PARTNER"))
-                .andExpect(jsonPath("$.renewalDate").value("2028-05-06"))
+                .andExpect(jsonPath("$.renewalDate").value(newRenewal.toString()))
                 .andExpect(jsonPath("$.notes").value("Updated note"))
                 .andExpect(jsonPath("$.contactPerson").value("Jane Doe"))
                 .andExpect(jsonPath("$.contactEmail").value("jane@partner.test"))
@@ -93,9 +96,9 @@ class PartnerUpdateApiIntegrationTest {
 
         patch(partner, """
                 {"version": 0, "name": "%s"}
-                """.formatted(name.toUpperCase()))
+                """.formatted(name.toUpperCase(Locale.ROOT)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.name").value(name.toUpperCase()));
+                .andExpect(jsonPath("$.name").value(name.toUpperCase(Locale.ROOT)));
     }
 
     @Test
@@ -151,12 +154,60 @@ class PartnerUpdateApiIntegrationTest {
     }
 
     @Test
-    void blankNameIsRejectedByTheDomainWithBadRequest() throws Exception {
+    void blankNameIsAFieldLevelValidationError() throws Exception {
         Partner partner = seed(uniqueName("Blank"));
 
-        patch(partner, "{\"version\": 0, \"name\": \"   \"}")
+        patch(partner, """
+                {"version": 0, "name": "   "}
+                """)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[*].field", hasItem("name")));
+    }
+
+    @Test
+    void aNameWithLineBreaksInsideTextIsNotBlank() throws Exception {
+        Partner partner = seed(uniqueName("Lines"));
+
+        patch(partner, "{\"version\": 0, \"name\": \"Multi\\nLine Name\"}")
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void aRequestThatChangesNothingKeepsTheVersion() throws Exception {
+        Partner partner = seed(uniqueName("Unchanged"));
+
+        patch(partner, "{\"version\": 0}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(0));
+        patch(partner, "{\"version\": 0, \"type\": \"FUNDER\", \"notes\": \"Original note\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(0));
+
+        // The version was not spent, so an editor still holding it can save.
+        patch(partner, "{\"version\": 0, \"notes\": \"a real change\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(1));
+    }
+
+    @Test
+    void renewalDatesOutsideTheSupportedRangeAreRejectedByTheDomain() throws Exception {
+        Partner partner = seed(uniqueName("Range"));
+
+        patch(partner, "{\"version\": 0, \"renewalDate\": \"+999999999-12-31\"}")
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.detail").value("Partner name is required."));
+                .andExpect(jsonPath("$.detail").value("Renewal date must be between 1900 and 2999."));
+        patch(partner, "{\"version\": 0, \"renewalDate\": \"1850-01-01\"}")
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void nullCharactersAreRejectedInsteadOfReachingTheDatabase() throws Exception {
+        Partner partner = seed(uniqueName("Nul"));
+
+        patch(partner, "{\"version\": 0, \"notes\": \"bad\\u0000text\"}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("Notes must not contain null characters."));
     }
 
     @Test
@@ -207,7 +258,7 @@ class PartnerUpdateApiIntegrationTest {
 
         patch(partner, """
                 {"version": 0, "name": "  %s  "}
-                """.formatted(taken.toLowerCase()))
+                """.formatted(taken.toLowerCase(Locale.ROOT)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail").value("A partner with this name already exists."));
     }

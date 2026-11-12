@@ -158,6 +158,17 @@ class PartnerMouRenewalApiIntegrationTest {
                 .andExpect(status().isBadRequest());
     }
 
+    @Test
+    void renewalDatesOutsideTheSupportedRangeAreRejectedWithBadRequest() throws Exception {
+        Partner partner = seed(null);
+
+        mockMvc.perform(put(partner.getId(), """
+                        {"renewalDate": "+999999999-12-31"}
+                        """, manager()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("Renewal date must be between 1900 and 2999."));
+    }
+
     private static RequestBuilder put(UUID id, String body, RequestPostProcessor principal) {
         return MockMvcRequestBuilders.put("/operations/partners/{id}/mou", id)
                 .with(principal)

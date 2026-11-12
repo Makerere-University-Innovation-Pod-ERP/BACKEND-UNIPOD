@@ -1,6 +1,8 @@
 package org.unipod.unipoderpbackend.controller.partner;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -84,6 +86,40 @@ class PartnerOpenApiContractTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void patchSchemaAllowsTheNullsAndTheEmptyEmailThatItDocuments() {
+        Map<String, Object> properties = (Map<String, Object>) schema("UpdatePartnerRequest").get("properties");
+
+        properties.forEach((field, definition) -> {
+            if (!"version".equals(field)) {
+                assertTrue(allowsNull(definition), field + " must allow null");
+            }
+        });
+        List<Map<String, Object>> emailAlternatives =
+                (List<Map<String, Object>>) ((Map<String, Object>) properties.get("contactEmail")).get("anyOf");
+        assertTrue(emailAlternatives.stream().anyMatch(alternative ->
+                "string".equals(alternative.get("type")) && Integer.valueOf(0).equals(alternative.get("maxLength"))),
+                "contactEmail must allow the empty string");
+    }
+
+    @Test
+    void patchActuallyAcceptsWhatTheSchemaAllows() throws Exception {
+        RequestPostProcessor admin = user("contract-" + UUID.randomUUID() + "@test.local").roles("ADMINISTRATOR");
+        String created = body(MockMvcRequestBuilders.post("/operations/partners").with(admin)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\": \"Contract Nulls " + UUID.randomUUID() + "\", \"type\": \"FUNDER\", "
+                        + "\"contactEmail\": \"someone@partner.test\"}"), 201);
+        String id = JsonPath.read(created, "$.id");
+
+        String patched = body(MockMvcRequestBuilders.patch("/operations/partners/{id}", id).with(admin)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"version\": 0, \"name\": null, \"type\": null, \"renewalDate\": null, "
+                        + "\"contactPerson\": null, \"contactEmail\": \"\", \"notes\": null}"), 200);
+
+        assertNull(JsonPath.<Object>read(patched, "$.contactEmail"));
+    }
+
+    @Test
     void responseSchemasListExactlyTheFieldsTheApiReturns() throws Exception {
         RequestPostProcessor admin = user("contract-" + UUID.randomUUID() + "@test.local").roles("ADMINISTRATOR");
         String created = body(MockMvcRequestBuilders.post("/operations/partners").with(admin)
@@ -109,6 +145,22 @@ class PartnerOpenApiContractTest {
             throws Exception {
         return mockMvc.perform(request).andExpect(status().is(expectedStatus)).andReturn().getResponse()
                 .getContentAsString();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static boolean allowsNull(Object definition) {
+        Map<String, Object> schema = (Map<String, Object>) definition;
+        Object type = schema.get("type");
+        if ("null".equals(type) || (type instanceof List<?> types && types.contains("null"))) {
+            return true;
+        }
+        for (String combinator : List.of("oneOf", "anyOf")) {
+            Object alternatives = schema.get(combinator);
+            if (alternatives instanceof List<?> list && list.stream().anyMatch(PartnerOpenApiContractTest::allowsNull)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static Set<String> keys(String json, String path) {

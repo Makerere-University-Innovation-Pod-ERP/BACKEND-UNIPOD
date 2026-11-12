@@ -118,7 +118,8 @@ tags:
       SUBMITTER; writes need ADMINISTRATOR or DEPARTMENT_COORDINATOR. Dates are `YYYY-MM-DD`,
       enums are upper case, and a missing date is `null`. A value that fails validation (blank,
       too long, missing) is `422`. A broken body, an unknown field or a bad enum or date value is
-      `400`, and so is a rule the request shape cannot express, such as a blank `name` on PATCH.
+      `400`, and so is a rule the request shape cannot express, such as a renewal date outside the
+      years 1900 to 2999.
 x-cors:
   allowedOrigins:
     - http://localhost:5173
@@ -2180,9 +2181,12 @@ paths:
       description: |
         Send the `version` you last read plus only the fields you want to change; an omitted or
         `null` field is left as it is. An empty string clears `contactPerson`, `contactEmail` or
-        `notes`. `renewalDate` can be replaced but not cleared. A stale `version`, or a `name`
-        already used by another partner, returns `409`. A PATCH that changes nothing audited does
-        not write an audit entry. Recorded in the audit log as `partner.updated`; contact details
+        `notes`. A blank `name` is refused with `422` and a field error naming `name`, the same as
+        on create. `renewalDate` can be replaced but not cleared. A stale `version`, or a `name`
+        already used by another partner, returns `409`. A PATCH that changes nothing is a no-op:
+        the `version` stays as it was and no audit entry is written. A different `renewalDate`
+        starts the warning cycle again, so its next warning is announced even if one was already
+        sent for the old date. Recorded in the audit log as `partner.updated`; contact details
         and notes are never copied into it, only whether they changed.
       parameters:
         - $ref: '#/components/parameters/PartnerId'
@@ -2222,8 +2226,8 @@ paths:
         clears the previous one. The reference is stored but is not part of the `Partner`
         response. The new date may be in the past. No `version` is needed; if two renewals race,
         the loser gets `409`. Renewing a partner that was due or expired returns it to `ACTIVE`
-        when the new date is far enough away; once the daily job has seen it as `ACTIVE`, its next
-        warning is announced again. Recorded in the audit log as `partner.mou_renewed`.
+        when the new date is far enough away. A different date starts the warning cycle again, so its
+        next warning is announced even if one was already sent for the old date. Recorded in the audit log as `partner.mou_renewed`.
       parameters:
         - $ref: '#/components/parameters/PartnerId'
       requestBody:
@@ -3974,6 +3978,7 @@ components:
         renewalDate:
           type: [string, 'null']
           format: date
+          description: Between 1900 and 2999
         contactPerson:
           type: [string, 'null']
           maxLength: 255
@@ -3988,31 +3993,38 @@ components:
       type: object
       additionalProperties: false
       required: [version]
-      description: Only `version` is required. Fields left out are not changed.
+      description: Only `version` is required. A field that is left out, or sent as `null`, is not changed.
       properties:
         version:
           type: integer
           format: int64
         name:
-          type: string
+          type: [string, 'null']
           maxLength: 255
+          description: Must not be blank when present
         type:
-          $ref: '#/components/schemas/PartnerType'
+          oneOf:
+            - $ref: '#/components/schemas/PartnerType'
+            - type: 'null'
         renewalDate:
-          type: string
+          type: [string, 'null']
           format: date
-          description: Replaces the current date. It cannot be cleared.
+          description: Replaces the current date (between 1900 and 2999). It cannot be cleared.
         contactPerson:
-          type: string
+          type: [string, 'null']
           maxLength: 255
           description: An empty string clears it
         contactEmail:
-          type: string
-          format: email
-          maxLength: 254
-          description: An empty string clears it
+          description: An email address, or an empty string to clear it
+          anyOf:
+            - type: string
+              format: email
+              maxLength: 254
+            - type: string
+              maxLength: 0
+            - type: 'null'
         notes:
-          type: string
+          type: [string, 'null']
           maxLength: 2000
           description: An empty string clears it
     RecordMouRenewalRequest:
@@ -4023,6 +4035,7 @@ components:
         renewalDate:
           type: string
           format: date
+          description: Between 1900 and 2999
         documentReference:
           type: [string, 'null']
           maxLength: 500
