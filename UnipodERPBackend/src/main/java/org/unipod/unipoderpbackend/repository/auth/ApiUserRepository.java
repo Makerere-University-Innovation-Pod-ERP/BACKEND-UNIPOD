@@ -1,6 +1,8 @@
 package org.unipod.unipoderpbackend.repository.auth;
 
 import java.time.Instant;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -14,6 +16,8 @@ import org.unipod.unipoderpbackend.model.auth.ApiUserRole;
 
 public interface ApiUserRepository extends JpaRepository<ApiUser, UUID> {
     Optional<ApiUser> findByEmailIgnoreCase(String email);
+
+    List<ApiUser> findAllByRoleInAndEnabledTrue(Collection<ApiUserRole> roles);
 
     Optional<ApiUser> findByPasswordSetupTokenHash(String passwordSetupTokenHash);
 

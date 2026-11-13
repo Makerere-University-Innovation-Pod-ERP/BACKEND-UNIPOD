@@ -154,7 +154,8 @@ class AuditLogIntegrationTest {
                                 "category", "GENERAL",
                                 "title", "Audited brief",
                                 "purpose", "Purpose",
-                                "problemAddressed", "Problem"
+                                "problemAddressed", "Problem",
+                                "acceptedRulesVersion", "2026-01"
                         ))))
                 .andExpect(status().isCreated())
                 .andReturn()

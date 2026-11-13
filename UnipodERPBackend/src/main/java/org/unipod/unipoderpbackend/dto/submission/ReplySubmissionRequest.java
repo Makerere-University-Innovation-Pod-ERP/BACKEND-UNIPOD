@@ -1,6 +1,7 @@
 package org.unipod.unipoderpbackend.dto.submission;
 
 import jakarta.validation.constraints.Size;
+import java.time.Instant;
 import org.unipod.unipoderpbackend.model.submission.RecommendationLetterStatus;
 
 /**
@@ -19,6 +20,7 @@ public record ReplySubmissionRequest(
         @Size(max = 255) String serviceRequested,
         @Size(max = 255) String department,
         @Size(max = 5000) String expectedResult,
+        Instant preferredAt,
         @Size(max = 2000) String note
 ) {
 }

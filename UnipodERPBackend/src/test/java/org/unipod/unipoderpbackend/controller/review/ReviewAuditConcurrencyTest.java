@@ -92,7 +92,7 @@ class ReviewAuditConcurrencyTest {
 
     @RepeatedTest(3)
     void concurrentFirstDraftsGiveOneSuccessAndOneAuditRow() throws Exception {
-        UUID brief = brief(SubmissionStage.FACT_FINDING, false);
+        UUID brief = brief(SubmissionStage.IN_FACT_FINDING, false);
         Callable<Integer> save = () -> mockMvc.perform(put("/cases/{id}/fact-finding", brief)
                         .with(user(OFFICER).roles("FACT_FINDING_OFFICER"))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -106,7 +106,7 @@ class ReviewAuditConcurrencyTest {
 
     @RepeatedTest(3)
     void concurrentAssignmentsOfTheSameReviewerGiveOneSuccessAndOneAuditRow() throws Exception {
-        UUID brief = brief(SubmissionStage.UNDER_REVIEW, true);
+        UUID brief = brief(SubmissionStage.IN_REVIEW, true);
         String reviewer = reviewer();
         Callable<Integer> assign = () -> mockMvc.perform(post("/cases/{id}/reviewers", brief)
                         .with(user(COORDINATOR).roles("INNOVATION_COORDINATOR"))
@@ -121,7 +121,7 @@ class ReviewAuditConcurrencyTest {
 
     @RepeatedTest(3)
     void concurrentSubmitsBySameReviewerGiveOneSuccessAndOneAuditRow() throws Exception {
-        UUID brief = brief(SubmissionStage.UNDER_REVIEW, true);
+        UUID brief = brief(SubmissionStage.IN_REVIEW, true);
         String reviewer = reviewer();
         transactions.executeWithoutResult(status ->
                 assignments.save(new ReviewAssignment(brief, 1, reviewer, null, 1, COORDINATOR)));
@@ -179,11 +179,12 @@ class ReviewAuditConcurrencyTest {
                     UUID.randomUUID(), SubmissionCategory.GENERAL, "Audit race brief", "Purpose", "Problem",
                     "receptionist@example.test", "submitter@example.test", null, null, null, null,
                     Instant.parse("2026-11-01T08:00:00Z"));
+            brief.applyIntakeDetails(null, null, null, null, null, null, "2026-01");
             brief.register("CASE-AR-" + UUID.randomUUID().toString().substring(0, 8),
                     Instant.parse("2026-11-01T09:00:00Z"), "receptionist@example.test");
             Instant time = Instant.parse("2026-11-01T10:00:00Z");
             for (SubmissionStage stage : List.of(
-                    SubmissionStage.REGISTERED, SubmissionStage.FACT_FINDING, SubmissionStage.UNDER_REVIEW)) {
+                    SubmissionStage.FORWARDED, SubmissionStage.IN_FACT_FINDING, SubmissionStage.IN_REVIEW)) {
                 brief.transitionTo(stage, time);
                 if (stage == target) {
                     break;
