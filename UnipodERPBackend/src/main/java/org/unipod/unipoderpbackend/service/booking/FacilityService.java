@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -53,10 +54,32 @@ public class FacilityService {
                 actor,
                 now
         );
-        facilities.saveAndFlush(facility);
+        try {
+            facilities.saveAndFlush(facility);
+        } catch (DataIntegrityViolationException exception) {
+            if (isDuplicateName(exception)) {
+                throw new BookingConflictException("A facility with this name already exists.");
+            }
+            throw exception;
+        }
         auditTrail.record(actor, "facility.created", "facility", facility.getId(), null,
                 AuditTrail.details("name", facility.getName(), "status", facility.getStatus().name()));
         return FacilityResponse.from(facility);
+    }
+
+    private static boolean isDuplicateName(Throwable exception) {
+        for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+            String message = cause.getMessage();
+            if (message == null) {
+                continue;
+            }
+            if (message.contains("uq_facilities_name_lower")
+                    || message.contains("uq_facilities_name")
+                    || message.contains("duplicate key value")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Transactional

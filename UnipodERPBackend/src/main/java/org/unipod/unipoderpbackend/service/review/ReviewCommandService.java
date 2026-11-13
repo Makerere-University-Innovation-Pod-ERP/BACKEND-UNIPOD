@@ -1,6 +1,7 @@
 package org.unipod.unipoderpbackend.service.review;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
@@ -28,11 +29,13 @@ import org.unipod.unipoderpbackend.model.auth.ApiUserRole;
 import org.unipod.unipoderpbackend.model.review.ReviewAssignment;
 import org.unipod.unipoderpbackend.model.review.ReviewAssignmentStatus;
 import org.unipod.unipoderpbackend.model.review.ReviewSettings;
+import org.unipod.unipoderpbackend.model.submission.CaseStageHistory;
 import org.unipod.unipoderpbackend.model.submission.Submission;
 import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
 import org.unipod.unipoderpbackend.repository.auth.ApiUserRepository;
 import org.unipod.unipoderpbackend.repository.review.ReviewAssignmentRepository;
 import org.unipod.unipoderpbackend.repository.review.ReviewSettingsRepository;
+import org.unipod.unipoderpbackend.repository.submission.CaseStageHistoryRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
 import org.unipod.unipoderpbackend.service.submission.SubmissionVisibility;
 
@@ -72,6 +75,7 @@ public class ReviewCommandService {
     private final ReviewPanelQueryService panels;
     private final Clock clock;
     private final ReviewAudit audit;
+    private final CaseStageHistoryRepository stageHistory;
 
     @Autowired
     public ReviewCommandService(
@@ -81,7 +85,8 @@ public class ReviewCommandService {
             ApiUserRepository users,
             ReviewPanelQueryService panels,
             Clock clock,
-            ReviewAudit audit
+            ReviewAudit audit,
+            CaseStageHistoryRepository stageHistory
     ) {
         this.submissions = submissions;
         this.settings = settings;
@@ -90,6 +95,7 @@ public class ReviewCommandService {
         this.panels = panels;
         this.clock = clock;
         this.audit = audit;
+        this.stageHistory = stageHistory;
     }
 
     /** For unit tests of the rejection and conversion paths only; successful writes need the audit. */
@@ -99,9 +105,10 @@ public class ReviewCommandService {
             ReviewAssignmentRepository assignments,
             ApiUserRepository users,
             ReviewPanelQueryService panels,
-            Clock clock
+            Clock clock,
+            CaseStageHistoryRepository stageHistory
     ) {
-        this(submissions, settings, assignments, users, panels, clock, null);
+        this(submissions, settings, assignments, users, panels, clock, null, stageHistory);
     }
 
     @Transactional
@@ -249,7 +256,17 @@ public class ReviewCommandService {
         Submission brief = submissions.findVisibleByIdForUpdate(briefId, scope, authentication.getName())
                 .orElseThrow(() -> new SubmissionNotFoundException(briefId));
         if (brief.getStage() == SubmissionStage.READY_FOR_REVIEW) {
-            brief.transitionTo(SubmissionStage.IN_REVIEW, clock.instant());
+            Instant now = clock.instant();
+            brief.transitionTo(SubmissionStage.IN_REVIEW, now);
+            stageHistory.save(new CaseStageHistory(
+                    UUID.randomUUID(),
+                    briefId,
+                    SubmissionStage.READY_FOR_REVIEW,
+                    SubmissionStage.IN_REVIEW,
+                    authentication.getName(),
+                    null,
+                    now
+            ));
         }
         if (brief.getStage() != SubmissionStage.IN_REVIEW) {
             throw new SubmissionConflictException(STAGE_REQUIRED);

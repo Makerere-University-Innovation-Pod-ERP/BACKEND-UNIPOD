@@ -101,7 +101,7 @@ class SubmitterInvoicesBookingsApiIntegrationTest {
         MockMultipartFile proofFile = new MockMultipartFile(
                 "file", "proof.pdf", "application/pdf", "%PDF-1.4 W3 proof".getBytes(StandardCharsets.UTF_8)
         );
-        mockMvc.perform(multipart("/me/invoices/{id}/proof", invoiceId)
+        String proofResponse = mockMvc.perform(multipart("/me/invoices/{id}/proof", invoiceId)
                         .file(proofFile)
                         .param("reference", "BANK-REF-7788")
                         .param("amount", "250000")
@@ -110,7 +110,11 @@ class SubmitterInvoicesBookingsApiIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("WAITING_FOR_CHECK"))
                 .andExpect(jsonPath("$.paymentProof.reference").value("BANK-REF-7788"))
-                .andExpect(jsonPath("$.paymentProof.status").value("PENDING"));
+                .andExpect(jsonPath("$.paymentProof.status").value("PENDING"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String proofId = objectMapper.readTree(proofResponse).get("paymentProof").get("id").asText();
 
         MvcResult proofDownload = mockMvc.perform(get("/me/invoices/{id}/proof/file", invoiceId)
                         .header("Authorization", "Bearer " + submitterToken))
@@ -125,6 +129,7 @@ class SubmitterInvoicesBookingsApiIntegrationTest {
                 .andExpect(status().isNotFound());
 
         mockMvc.perform(post("/invoices/{id}/verify", invoiceId)
+                        .param("proofId", proofId)
                         .header("Authorization", "Bearer " + financeToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("PAID"));

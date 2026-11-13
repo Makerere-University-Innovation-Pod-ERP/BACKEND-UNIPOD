@@ -160,7 +160,7 @@ public class BookingService {
         Booking booking = lockBooking(id);
         booking.reject(cleanReason, clock.instant());
         bookings.saveAndFlush(booking);
-        notifyRequester(booking, NotificationType.BOOKING_APPROVED,
+        notifyRequester(booking, NotificationType.BOOKING_REJECTED,
                 "Booking rejected: " + booking.getReference(),
                 "Your booking was rejected. Reason: " + cleanReason);
         auditTrail.record(actor, "booking.rejected", "booking", id,
@@ -179,7 +179,7 @@ public class BookingService {
         Instant previousStart = booking.getStartsAt();
         booking.reschedule(startsAt, endsAt, clock.instant());
         bookings.saveAndFlush(booking);
-        notifyRequester(booking, NotificationType.BOOKING_APPROVED,
+        notifyRequester(booking, NotificationType.BOOKING_RESCHEDULED,
                 "Booking rescheduled: " + booking.getReference(),
                 "Your booking for " + facility.getName() + " has been rescheduled.");
         auditTrail.record(actor, "booking.rescheduled", "booking", id,
@@ -218,10 +218,11 @@ public class BookingService {
         if (!booking.getRequesterId().equals(requesterId)) {
             throw new BookingNotFoundException(id);
         }
+        BookingStatus previousStatus = booking.getStatus();
         booking.cancel(clock.instant());
         bookings.saveAndFlush(booking);
         auditTrail.record(requesterId, "booking.cancelled", "booking", id,
-                AuditTrail.details("status", booking.getStatus().name()),
+                AuditTrail.details("status", previousStatus.name()),
                 AuditTrail.details("status", BookingStatus.CANCELLED.name()));
         return BookingResponse.from(booking);
     }

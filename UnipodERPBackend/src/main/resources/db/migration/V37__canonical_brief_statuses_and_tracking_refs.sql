@@ -57,6 +57,36 @@ WHERE from_stage IN (
         'REFINEMENT_REQUESTED', 'FURTHER_HANDLING', 'REJECTED'
     );
 
+CREATE TABLE submission_code_aliases (
+    submission_id UUID        NOT NULL,
+    alias         VARCHAR(32) NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT pk_submission_code_aliases PRIMARY KEY (submission_id, alias),
+    CONSTRAINT fk_submission_code_aliases_submission
+        FOREIGN KEY (submission_id) REFERENCES submissions (id) ON DELETE CASCADE
+);
+
+CREATE INDEX ix_submission_code_aliases_alias ON submission_code_aliases (upper(alias));
+
+-- Preserve every issued reference that the BRF renumbering below replaces so the
+-- application can still resolve it.
+WITH ranked AS (
+    SELECT id,
+        code AS legacy_code,
+        EXTRACT(YEAR FROM COALESCE(submitted_at, created_at))::int AS code_year,
+        row_number() OVER (
+            PARTITION BY EXTRACT(YEAR FROM COALESCE(submitted_at, created_at))
+            ORDER BY COALESCE(submitted_at, created_at), id
+        ) AS sequence
+    FROM submissions
+    WHERE code IS NOT NULL
+)
+INSERT INTO submission_code_aliases (submission_id, alias)
+SELECT id, legacy_code
+FROM ranked
+WHERE legacy_code <> 'BRF-' || code_year || '-' || lpad(sequence::text, 6, '0')
+ON CONFLICT DO NOTHING;
+
 WITH ranked AS (
     SELECT id,
         EXTRACT(YEAR FROM COALESCE(submitted_at, created_at))::int AS code_year,
@@ -98,7 +128,6 @@ ALTER TABLE submissions
     )),
     ADD CONSTRAINT ck_submission_receipt_state CHECK (
         (stage = 'DRAFT'
-            AND code IS NULL
             AND received_at IS NULL
             AND receiving_officer IS NULL
             AND responsible_sector_id IS NULL

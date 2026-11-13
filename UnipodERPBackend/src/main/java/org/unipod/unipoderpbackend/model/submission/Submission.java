@@ -317,6 +317,11 @@ public class Submission {
         this.briefVersion = Math.max(1, this.briefVersion) + 1;
         this.submittedAt = time;
         this.stage = improvementReply ? SubmissionStage.RESUBMITTED : SubmissionStage.SUBMITTED;
+        if (improvementReply) {
+            // The improvement decision stays in the stage history and audit trail;
+            // reopening the outcome lets the next review round record its decision.
+            this.outcomeStatus = OutcomeStatus.IN_PROGRESS;
+        }
         this.updatedAt = time;
         clearInformationRequest();
     }

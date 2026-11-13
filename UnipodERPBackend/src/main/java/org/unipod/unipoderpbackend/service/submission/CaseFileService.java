@@ -142,6 +142,11 @@ public class CaseFileService {
             Authentication authentication
     ) {
         Submission submission = mutableCase(id, request.version());
+        if (request.toStage() == CaseStage.CONFIRMED_AS_PROJECT) {
+            throw new SubmissionConflictException(
+                    "Project confirmation is recorded through the outcome, not a lifecycle transition."
+            );
+        }
         List<CaseStage> allowed = allowedTransitionsFor(submission.getStage(), authentication);
         if (!allowed.contains(request.toStage())) {
             if (isOperator(authentication)) {
@@ -158,7 +163,8 @@ public class CaseFileService {
         if ((nextStage == SubmissionStage.READY_FOR_REVIEW
                 || nextStage == SubmissionStage.IN_REVIEW)
                 && (previousStage == SubmissionStage.IN_FACT_FINDING
-                        || previousStage == SubmissionStage.FORWARDED)
+                        || previousStage == SubmissionStage.FORWARDED
+                        || previousStage == SubmissionStage.RESUBMITTED)
                 && !factFindingGuard.isComplete(id)) {
             throw new SubmissionConflictException(FACT_FINDING_REQUIRED);
         }
@@ -449,7 +455,7 @@ public class CaseFileService {
 
     private static List<CaseStage> nextStages(SubmissionStage stage) {
         return switch (stage) {
-            case SUBMITTED -> List.of(CaseStage.FORWARDED);
+            case SUBMITTED -> List.of();
             case FORWARDED -> List.of(CaseStage.IN_FACT_FINDING);
             case IN_FACT_FINDING -> List.of(
                     CaseStage.READY_FOR_REVIEW,
@@ -463,7 +469,6 @@ public class CaseFileService {
             );
             case IN_REVIEW -> List.of(
                     CaseStage.IMPROVEMENT_REQUESTED,
-                    CaseStage.CONFIRMED_AS_PROJECT,
                     CaseStage.AWAITING_PAYMENT,
                     CaseStage.CLOSED
             );

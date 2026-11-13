@@ -36,6 +36,7 @@ import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
 import org.unipod.unipoderpbackend.repository.auth.ApiUserRepository;
 import org.unipod.unipoderpbackend.repository.review.ReviewAssignmentRepository;
 import org.unipod.unipoderpbackend.repository.review.ReviewSettingsRepository;
+import org.unipod.unipoderpbackend.repository.submission.CaseStageHistoryRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
 
 /** Constraint and optimistic-lock conversion, as in FactFindingCommandServiceTest. */
@@ -48,9 +49,11 @@ class ReviewCommandServiceTest {
     private final ReviewAssignmentRepository assignments = mock(ReviewAssignmentRepository.class);
     private final ApiUserRepository users = mock(ApiUserRepository.class);
     private final ReviewPanelQueryService panels = mock(ReviewPanelQueryService.class);
+    private final CaseStageHistoryRepository stageHistory = mock(CaseStageHistoryRepository.class);
     private final ReviewCommandService service = new ReviewCommandService(
             submissions, settings, assignments, users, panels,
-            Clock.fixed(Instant.parse("2026-11-12T08:00:00Z"), ZoneId.of("Africa/Kampala")));
+            Clock.fixed(Instant.parse("2026-11-12T08:00:00Z"), ZoneId.of("Africa/Kampala")),
+            stageHistory);
 
     private final Submission brief = underReviewBrief();
 

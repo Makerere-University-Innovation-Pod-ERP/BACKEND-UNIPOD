@@ -24,7 +24,7 @@ public class PipelineMetricsRepository {
         String query = """
                 SELECT count(*) AS total,
                     count(*) FILTER (
-                        WHERE s.stage IN ('READY_FOR_REVIEW', 'IN_REVIEW')
+                        WHERE s.stage IN ('READY_FOR_REVIEW', 'IN_REVIEW', 'RESUBMITTED')
                     ) AS waiting_for_review,
                     count(*) FILTER (
                         WHERE s.stage = 'IMPROVEMENT_REQUESTED'
@@ -44,7 +44,7 @@ public class PipelineMetricsRepository {
                         WHERE s.stage IN ('FORWARDED', 'IN_FACT_FINDING')
                     ) AS fact_finding,
                     count(*) FILTER (
-                        WHERE s.stage IN ('READY_FOR_REVIEW', 'IN_REVIEW')
+                        WHERE s.stage IN ('READY_FOR_REVIEW', 'IN_REVIEW', 'RESUBMITTED')
                     ) AS under_review,
                     count(*) FILTER (
                         WHERE s.stage = 'IMPROVEMENT_REQUESTED'

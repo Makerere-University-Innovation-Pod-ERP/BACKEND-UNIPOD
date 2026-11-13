@@ -3390,11 +3390,18 @@ paths:
       operationId: verifyInvoicePayment
       x-required-roles: [ADMINISTRATOR, FINANCE_OFFICER]
       summary: Verify the payment proof
-      description: Moves an invoice in `WAITING_FOR_CHECK` to `PAID`.
+      description: Moves an invoice in `WAITING_FOR_CHECK` to `PAID` when the proof covers the invoice amount.
       parameters:
         - name: id
           in: path
           required: true
+          schema:
+            type: string
+            format: uuid
+        - name: proofId
+          in: query
+          required: true
+          description: The payment proof the reviewer inspected; a newer proof makes the request conflict.
           schema:
             type: string
             format: uuid
@@ -4431,12 +4438,14 @@ components:
       enum:
         - ADMINISTRATOR
         - INNOVATION_COORDINATOR
+        - DEPARTMENT_COORDINATOR
         - RECEPTIONIST
         - FACT_FINDING_OFFICER
         - REVIEWER
         - SECTOR_OFFICER
         - IP_LIAISON
         - SUBMITTER
+        - FINANCE_OFFICER
         - OBSERVER
     CreateSubmissionRequest:
       type: object
@@ -5120,7 +5129,7 @@ components:
           format: uuid
         type:
           type: string
-          enum: [BRIEF_SUBMITTED, DOCUMENT_REQUESTED, BRIEF_FORWARDED, REVIEWER_ASSIGNED, REVIEW_SUBMITTED, IMPROVEMENT_REQUESTED, NEW_VERSION_RECEIVED, PROJECT_CONFIRMED, PAYMENT_PROOF_UPLOADED, PAYMENT_CONFIRMED, PAYMENT_REJECTED, BOOKING_APPROVED, EQUIPMENT_APPROVAL_REQUESTED, FAULT_REPORTED, LOW_STOCK, AGREEMENT_EXPIRING]
+          enum: [BRIEF_SUBMITTED, DOCUMENT_REQUESTED, BRIEF_FORWARDED, REVIEWER_ASSIGNED, REVIEW_SUBMITTED, IMPROVEMENT_REQUESTED, NEW_VERSION_RECEIVED, PROJECT_CONFIRMED, PAYMENT_PROOF_UPLOADED, PAYMENT_CONFIRMED, PAYMENT_REJECTED, BOOKING_APPROVED, BOOKING_REJECTED, BOOKING_RESCHEDULED, EQUIPMENT_APPROVAL_REQUESTED, FAULT_REPORTED, LOW_STOCK, AGREEMENT_EXPIRING]
         title:
           type: string
         body:
@@ -5665,7 +5674,7 @@ components:
           format: uuid
         code:
           type: [string, 'null']
-          pattern: '^(STU|GEN|SRV)-[0-9]{4}-[0-9]{6,19}$'
+          pattern: '^(BRF|STU|GEN|SRV)-[0-9]{4}-[0-9]{6,19}$'
         category:
           type: string
           enum: [student, general, service_request]
@@ -6060,8 +6069,12 @@ components:
           maxLength: 64
     RejectPaymentRequest:
       type: object
-      required: [reason]
+      required: [proofId, reason]
       properties:
+        proofId:
+          type: string
+          format: uuid
+          description: The payment proof the reviewer inspected; a newer proof makes the request conflict.
         reason:
           type: string
           maxLength: 500

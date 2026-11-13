@@ -940,7 +940,8 @@ Request body:
   "studentNumber": "TEST-0001",
   "programme": "Engineering",
   "supervisor": "Test Supervisor",
-  "recommendationLetterStatus": "submitted"
+  "recommendationLetterStatus": "submitted",
+  "acceptedRulesVersion": "2026-01"
 }
 ```
 

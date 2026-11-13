@@ -17,6 +17,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
@@ -221,11 +222,16 @@ public class InvoiceService {
     }
 
     @Transactional
-    public InvoiceResponse verifyPayment(UUID invoiceId, String actor) {
+    public InvoiceResponse verifyPayment(UUID invoiceId, UUID proofId, String actor) {
         Instant now = clock.instant();
         Invoice invoice = lockInvoice(invoiceId, null);
         requireStatus(invoice, InvoiceStatus.WAITING_FOR_CHECK);
         InvoicePaymentProof proof = latestProof(invoiceId);
+        requireReviewedProof(proof, proofId);
+        if (proof.getAmount() != invoice.getAmount()) {
+            throw new InvoiceConflictException(
+                    "The payment proof amount must match the invoice amount before it can be verified.");
+        }
         proof.verify(actor, now);
         invoice.paymentVerified(now);
         proofs.saveAndFlush(proof);
@@ -240,7 +246,7 @@ public class InvoiceService {
     }
 
     @Transactional
-    public InvoiceResponse rejectPayment(UUID invoiceId, String reason, String actor) {
+    public InvoiceResponse rejectPayment(UUID invoiceId, UUID proofId, String reason, String actor) {
         String cleanReason = clean(reason);
         if (cleanReason == null || cleanReason.length() > 500) {
             throw new InvalidInvoiceException("A rejection reason is required.");
@@ -249,6 +255,7 @@ public class InvoiceService {
         Invoice invoice = lockInvoice(invoiceId, null);
         requireStatus(invoice, InvoiceStatus.WAITING_FOR_CHECK);
         InvoicePaymentProof proof = latestProof(invoiceId);
+        requireReviewedProof(proof, proofId);
         proof.reject(actor, cleanReason, now);
         invoice.paymentRejected(now);
         proofs.saveAndFlush(proof);
@@ -348,7 +355,7 @@ public class InvoiceService {
         return new ReceiptDocument(receipt.getReceiptNumber() + ".txt", content);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public FinanceSummaryResponse summary() {
         long waitingForProof = invoices.countByStatus(InvoiceStatus.WAITING_FOR_PROOF);
         long waitingForCheck = invoices.countByStatus(InvoiceStatus.WAITING_FOR_CHECK);
@@ -381,6 +388,13 @@ public class InvoiceService {
         return proofs.findFirstByInvoiceIdOrderByUploadedAtDescIdDesc(invoiceId)
                 .orElseThrow(() -> new InvoiceConflictException(
                         "The invoice does not have payment proof to review."));
+    }
+
+    private static void requireReviewedProof(InvoicePaymentProof proof, UUID proofId) {
+        if (proofId == null || !proof.getId().equals(proofId)) {
+            throw new InvoiceConflictException(
+                    "The payment proof changed while it was under review. Reload the invoice and try again.");
+        }
     }
 
     private InvoicePaymentProof latestProofOrNull(UUID invoiceId) {

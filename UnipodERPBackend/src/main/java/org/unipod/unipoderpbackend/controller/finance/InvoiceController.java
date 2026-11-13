@@ -87,8 +87,12 @@ public class InvoiceController {
 
     @PostMapping("/{id}/verify")
     @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'FINANCE_OFFICER')")
-    public InvoiceResponse verify(@PathVariable UUID id, Authentication authentication) {
-        return invoices.verifyPayment(id, authentication.getName());
+    public InvoiceResponse verify(
+            @PathVariable UUID id,
+            @RequestParam UUID proofId,
+            Authentication authentication
+    ) {
+        return invoices.verifyPayment(id, proofId, authentication.getName());
     }
 
     @PostMapping("/{id}/reject")
@@ -98,7 +102,7 @@ public class InvoiceController {
             @Valid @RequestBody RejectPaymentRequest request,
             Authentication authentication
     ) {
-        return invoices.rejectPayment(id, request.reason(), authentication.getName());
+        return invoices.rejectPayment(id, request.proofId(), request.reason(), authentication.getName());
     }
 
     @PostMapping("/{id}/receipt")

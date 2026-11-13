@@ -725,7 +725,7 @@ class WaluubeApiIntegrationTest {
         mockMvc.perform(get("/cases/{id}/transitions/allowed", id)
                         .with(user("coordinator").roles("INNOVATION_COORDINATOR")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.allowedTransitions[0]").value("FORWARDED"));
+                .andExpect(jsonPath("$.allowedTransitions").isEmpty());
         mockMvc.perform(post("/cases/{id}/transitions", id)
                         .with(user("officer").roles("FACT_FINDING_OFFICER"))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -734,15 +734,25 @@ class WaluubeApiIntegrationTest {
                                 """))
                 .andExpect(status().isForbidden());
 
-        mockMvc.perform(post("/cases/{id}/transitions", id)
-                        .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
+        var forwardSector = sectors.create(new SectorRequest(
+                "Case file forward " + UUID.randomUUID(),
+                "case-file-forward@example.invalid",
+                true
+        ));
+        completeReceptionChecklist(id, receptionist);
+        mockMvc.perform(post("/submissions/{id}/forward", id)
+                        .with(receptionist)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"to_stage":"FORWARDED","note":"Intake checked","version":3}
-                                """))
+                        .content("{\"sectorId\":\"" + forwardSector.id()
+                                + "\",\"note\":\"Intake checked\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stage").value("FORWARDED"))
+                .andExpect(jsonPath("$.version").value(4));
+
+        mockMvc.perform(get("/cases/{id}", id)
+                        .with(user("coordinator").roles("INNOVATION_COORDINATOR")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.currentStage").value("FORWARDED"))
-                .andExpect(jsonPath("$.submission.version").value(4))
                 .andExpect(jsonPath("$.stageHistory[-1:].note").value("Intake checked"));
 
         mockMvc.perform(patch("/cases/{id}/documents/{documentId}", id, documentId)
@@ -876,14 +886,19 @@ class WaluubeApiIntegrationTest {
         mockMvc.perform(post("/submissions/{id}/register", id).with(intake))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.version").value(1));
-        mockMvc.perform(post("/cases/{id}/transitions", id)
-                        .with(manager)
+        var attentionSector = sectors.create(new SectorRequest(
+                "Dashboard attention sector " + UUID.randomUUID(),
+                "dashboard-attention@example.invalid",
+                true
+        ));
+        completeReceptionChecklist(id, intake);
+        mockMvc.perform(post("/submissions/{id}/forward", id)
+                        .with(intake)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"to_stage":"FORWARDED","version":1}
-                                """))
+                        .content("{\"sectorId\":\"" + attentionSector.id() + "\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.submission.version").value(2));
+                .andExpect(jsonPath("$.stage").value("FORWARDED"))
+                .andExpect(jsonPath("$.version").value(2));
         mockMvc.perform(post("/cases/{id}/transitions", id)
                         .with(manager)
                         .contentType(MediaType.APPLICATION_JSON)
