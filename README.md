@@ -14,7 +14,7 @@ group feature-specific classes inside each application layer:
   `repository.submission`, and `dto.submission` — submission workflow.
 * `controller.reception` and `dto.reception` — reception queue.
 * `controller.dashboard`, `service.dashboard`, `repository.dashboard`, and
-  `dto.dashboard` — composed, role-scoped dashboard overview.
+  `dto.dashboard` — manager overview dashboard.
 * `controller.sector`, `dto.sector`, `model.sector`, `repository.sector`, and
   `service.sector` — sector catalog and membership.
 * `exception.submission`, `exception.sector`, and `exception.storage` contain
@@ -161,7 +161,7 @@ Drafts are private to their owner and do not appear in the queue. The list is or
 | POST   | `/api/auth/change-password`         | Changes the authenticated account's password.           |
 | POST   | `/api/auth/set-password`            | Sets a password using a one-time setup token.           |
 | GET    | `/api/queues/reception`            | Returns the reception queue and counters.               |
-| GET    | `/api/dashboard/overview`          | Returns dashboard statistics.                           |
+| GET    | `/api/dashboard/overview`          | Returns the manager overview dashboard.                 |
 
 ### W4 Case File
 
@@ -239,23 +239,22 @@ Student Projects, General Innovations, and Service Requests use the same list en
 
 `GET /api/dashboard/overview`
 
-The response combines Waluube database metrics with the Operations (Fidel),
-Finance and audit (David) module tiles. Results are cached for 30 seconds and
-workflow aggregates respect each caller's submission visibility scope:
+The M1 manager overview is available only to Administrators and Innovation
+Coordinators. It reports across all non-draft briefs and is cached for 30 seconds:
 
-* All authenticated roles may view role-scoped Waluube dashboard metrics.
-* Only Administrators and Innovation Coordinators receive operations and finance tiles.
-* Submitters, reviewers, and sector officers see only workflow cases within
-  their existing row-level visibility scope.
-* Workflow metrics include category totals, awaiting review (Fact-Finding and
-  Forwarded), refinement requested, six grouped pipeline counts, and up to five
-  oldest open cases with an attention reason.
+* **Total non-draft briefs**, **waiting for review** (`FACT_FINDING` and `FORWARDED`),
+  **needing improvement** (`REFINEMENT_REQUESTED`), and **completed this month**.
+* **Pipeline**: six grouped lifecycle counts.
+* **Needs attention**: up to five open cases that have not changed for more than
+  14 days.
+* **Overdue equipment returns** from the Fidel integration and **recent activity**
+  from the David audit integration.
 
-The Operations, Finance, and audit modules are not connected in this backend.
-Their tiles return `NOT_CONFIGURED` with empty metric values until provider
-contracts and endpoints are configured; no external values are fabricated.
-Any audit provider must scope its feed using the supplied visibility scope and
-principal.
+The Fidel equipment-returns and David audit modules are not connected in this
+backend. Their tiles return `NOT_CONFIGURED` with empty metric values until
+provider contracts and endpoints are configured; no external values are
+fabricated.
+
 The six pipeline groups are:
 
 * **Intake**: `SUBMITTED`, `AWAITING_INFORMATION`, `RECEIVED`, and `REGISTERED`.

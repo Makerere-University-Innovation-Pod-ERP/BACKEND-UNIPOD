@@ -14,7 +14,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.unipod.unipoderpbackend.dto.dashboard.DashboardOverviewResponse;
 import org.unipod.unipoderpbackend.dto.reception.ReceptionQueueResponse;
 import org.unipod.unipoderpbackend.dto.sector.SectorRequest;
 import org.unipod.unipoderpbackend.dto.sector.SectorResponse;
@@ -409,15 +408,11 @@ class SubmissionRegistrationIntegrationTest {
                 "receptionist-queue-test",
                 PageRequest.of(0, 10)
         );
-        DashboardOverviewResponse overview = submissions.overview();
 
         assertTrue(queue.items().stream().anyMatch(item -> item.id().equals(draft.id())));
         assertTrue(queue.inQueueCount() >= 1);
         assertTrue(queue.recentlyUpdatedCount() >= 1);
         assertEquals(1, mine.getTotalElements());
-        assertTrue(overview.totalSubmissions() >= 1);
-        assertTrue(overview.generalSubmissions() >= 1);
-        assertTrue(overview.byStage().get(SubmissionStage.SUBMITTED) >= 1);
     }
 
     @Test
