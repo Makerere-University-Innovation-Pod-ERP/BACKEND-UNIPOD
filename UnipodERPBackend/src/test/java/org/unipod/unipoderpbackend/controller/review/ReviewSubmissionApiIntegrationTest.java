@@ -249,7 +249,7 @@ class ReviewSubmissionApiIntegrationTest {
 
     @Test
     void briefNotUnderReviewIsAConflict() throws Exception {
-        Submission brief = briefInStage(SubmissionStage.FACT_FINDING);
+        Submission brief = briefInStage(SubmissionStage.IN_FACT_FINDING);
         reviewerAccount(REVIEWER);
         settings.saveAndFlush(new ReviewSettings(brief.getId(), 1, ReviewMode.PARALLEL, 1, null, COORDINATOR));
         ReviewAssignment assignment = assignments.saveAndFlush(
@@ -260,7 +260,7 @@ class ReviewSubmissionApiIntegrationTest {
                 .andExpect(jsonPath("$.title").value("Submission conflict"))
                 .andExpect(jsonPath("$.detail").value(containsString("under review")));
         assertEquals(0, countReviews(brief));
-        assertEquals("FACT_FINDING", storedStage(brief));
+        assertEquals("IN_FACT_FINDING", storedStage(brief));
     }
 
     // ---- ordering ----------------------------------------------------------------------
@@ -463,7 +463,7 @@ class ReviewSubmissionApiIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.quorum.met").value(true));
 
-        assertEquals("UNDER_REVIEW", storedStage(brief));
+        assertEquals("IN_REVIEW", storedStage(brief));
         assertEquals(historyBefore, historyCount(brief));
     }
 
@@ -658,7 +658,7 @@ class ReviewSubmissionApiIntegrationTest {
     }
 
     private Submission underReviewBrief() {
-        return briefInStage(SubmissionStage.UNDER_REVIEW);
+        return briefInStage(SubmissionStage.IN_REVIEW);
     }
 
     private Submission briefInStage(SubmissionStage target) {
@@ -676,11 +676,12 @@ class ReviewSubmissionApiIntegrationTest {
                 null,
                 Instant.parse("2026-11-01T08:00:00Z")
         );
+        brief.applyIntakeDetails(null, null, null, null, null, null, "2026-01");
         brief.register("CASE-RS-" + UUID.randomUUID().toString().substring(0, 8),
                 Instant.parse("2026-11-01T09:00:00Z"), "receptionist@example.test");
         Instant time = Instant.parse("2026-11-01T10:00:00Z");
         for (SubmissionStage stage : List.of(
-                SubmissionStage.REGISTERED, SubmissionStage.FACT_FINDING, SubmissionStage.UNDER_REVIEW)) {
+                SubmissionStage.FORWARDED, SubmissionStage.IN_FACT_FINDING, SubmissionStage.IN_REVIEW)) {
             brief.transitionTo(stage, time);
             if (stage == target) {
                 break;

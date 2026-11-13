@@ -47,7 +47,7 @@ public class ReviewQueueService {
     /** Every row the query returns is already released, so canSubmit depends only on status and stage. */
     private static ReviewQueueRow rowOf(ReviewQueueEntry entry) {
         boolean canSubmit = entry.status() == ReviewAssignmentStatus.NOT_STARTED
-                && entry.stage() == SubmissionStage.UNDER_REVIEW;
+                && entry.stage() == SubmissionStage.IN_REVIEW;
         return new ReviewQueueRow(
                 entry.briefId(),
                 entry.title(),

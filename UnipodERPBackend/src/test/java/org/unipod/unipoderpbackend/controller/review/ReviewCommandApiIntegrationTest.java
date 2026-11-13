@@ -226,7 +226,7 @@ class ReviewCommandApiIntegrationTest {
 
     @Test
     void settingsRequireABriefUnderReview() throws Exception {
-        Submission brief = briefInStage(SubmissionStage.FACT_FINDING);
+        Submission brief = briefInStage(SubmissionStage.IN_FACT_FINDING);
 
         putSettings(brief, settingsBody("PARALLEL", 1, null, null))
                 .andExpect(status().isConflict())
@@ -341,7 +341,7 @@ class ReviewCommandApiIntegrationTest {
 
     @Test
     void assigningRequiresABriefUnderReview() throws Exception {
-        Submission brief = briefInStage(SubmissionStage.REGISTERED);
+        Submission brief = briefInStage(SubmissionStage.FORWARDED);
 
         assign(brief, reviewerAccount("stage@example.test"), null)
                 .andExpect(status().isConflict())
@@ -558,15 +558,15 @@ class ReviewCommandApiIntegrationTest {
 
         String afterSettings = body(putSettings(brief, settingsBody("PARALLEL", 1, null, null)));
         assertEquals(json(afterSettings), json(body(getPanel(brief))));
-        assertEquals("UNDER_REVIEW", storedStage(brief));
+        assertEquals("IN_REVIEW", storedStage(brief));
 
         String afterAssign = body(assign(brief, reviewer, "Science").andExpect(status().isCreated()));
         assertEquals(json(afterAssign), json(body(getPanel(brief))));
-        assertEquals("UNDER_REVIEW", storedStage(brief));
+        assertEquals("IN_REVIEW", storedStage(brief));
 
         String afterRemove = body(remove(brief, reviewer).andExpect(status().isOk()));
         assertEquals(json(afterRemove), json(body(getPanel(brief))));
-        assertEquals("UNDER_REVIEW", storedStage(brief));
+        assertEquals("IN_REVIEW", storedStage(brief));
     }
 
     // ---- helpers -------------------------------------------------------------------------
@@ -678,7 +678,7 @@ class ReviewCommandApiIntegrationTest {
     }
 
     private Submission underReviewBrief() {
-        return briefInStage(SubmissionStage.UNDER_REVIEW);
+        return briefInStage(SubmissionStage.IN_REVIEW);
     }
 
     private Submission briefInStage(SubmissionStage target) {
@@ -696,11 +696,12 @@ class ReviewCommandApiIntegrationTest {
                 null,
                 Instant.parse("2026-11-01T08:00:00Z")
         );
+        brief.applyIntakeDetails(null, null, null, null, null, null, "2026-01");
         brief.register("CASE-RC-" + UUID.randomUUID().toString().substring(0, 8),
                 Instant.parse("2026-11-01T09:00:00Z"), "receptionist@example.test");
         Instant time = Instant.parse("2026-11-01T10:00:00Z");
         for (SubmissionStage stage : List.of(
-                SubmissionStage.REGISTERED, SubmissionStage.FACT_FINDING, SubmissionStage.UNDER_REVIEW)) {
+                SubmissionStage.FORWARDED, SubmissionStage.IN_FACT_FINDING, SubmissionStage.IN_REVIEW)) {
             brief.transitionTo(stage, time);
             if (stage == target) {
                 break;

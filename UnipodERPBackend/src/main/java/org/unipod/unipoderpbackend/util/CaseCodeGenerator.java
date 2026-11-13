@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class CaseCodeGenerator {
+    private static final String TRACKING_PREFIX = "BRF";
     private static final String NEXT_SEQUENCE_SQL = """
             INSERT INTO code_sequences (prefix, code_year, last_value)
             VALUES (?, ?, 1)
@@ -20,17 +21,18 @@ public class CaseCodeGenerator {
         this.jdbcTemplate = jdbcTemplate;
     }
 
+    /** Allocates the immutable tracking reference issued when a brief is submitted. */
     public String next(SubmissionCategory category, int year) {
-        return format(prefixFor(category), year, nextSequence(prefixFor(category), year));
+        return format(TRACKING_PREFIX, year, nextSequence(TRACKING_PREFIX, year));
     }
 
     /**
      * Allocates the reference used when an intake brief is confirmed as a
-     * project. Project references use the same student/general category prefix
-     * as the brief and the same yearly sequence table as case references.
+     * project. Project references use the student/general category prefix and a
+     * separate yearly sequence from tracking references.
      */
     public String nextProject(SubmissionCategory category, int year) {
-        return next(category, year);
+        return format(prefixFor(category), year, nextSequence(prefixFor(category), year));
     }
 
     private long nextSequence(String prefix, int year) {

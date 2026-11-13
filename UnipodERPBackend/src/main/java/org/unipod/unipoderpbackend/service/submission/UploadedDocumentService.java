@@ -203,7 +203,7 @@ public class UploadedDocumentService {
             );
         }
         SubmissionStage stage = submission.getStage();
-        if (stage == SubmissionStage.COMPLETED || stage == SubmissionStage.REJECTED) {
+        if (stage == SubmissionStage.COMPLETED || stage == SubmissionStage.CLOSED) {
             throw new SubmissionConflictException("The submission cannot be changed in its current state.");
         }
         if (submitter

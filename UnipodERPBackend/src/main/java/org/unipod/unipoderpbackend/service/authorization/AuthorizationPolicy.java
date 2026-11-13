@@ -58,10 +58,7 @@ public class AuthorizationPolicy {
                 CASE_VIEW, Scope.ALL,
                 AUDIT_VIEW, Scope.ALL
         ));
-        rules.put(ApiUserRole.IP_LIAISON, Map.of(
-                CASE_VIEW, Scope.ALL
-        ));
-        rules.put(ApiUserRole.DEPARTMENT_HEAD, Map.of(
+        rules.put(ApiUserRole.DEPARTMENT_COORDINATOR, Map.of(
                 CASE_VIEW, Scope.DEPARTMENT
         ));
         rules.put(ApiUserRole.FINANCE_OFFICER, Map.of());

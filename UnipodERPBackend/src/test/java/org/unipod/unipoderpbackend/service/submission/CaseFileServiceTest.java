@@ -75,7 +75,7 @@ class CaseFileServiceTest {
                 CASE_ID, SubmissionCategory.GENERAL, "Title", "Purpose", "Problem",
                 "owner", "owner", null, null, null, null, NOW.minusSeconds(60)
         );
-        ReflectionTestUtils.setField(submission, "stage", SubmissionStage.FACT_FINDING);
+        ReflectionTestUtils.setField(submission, "stage", SubmissionStage.IN_FACT_FINDING);
         ReflectionTestUtils.setField(submission, "version", 4L);
         when(enrichment.reviewPanel(CASE_ID)).thenReturn(
                 new CaseFileEnrichmentProvider.ReviewPanel(
@@ -98,12 +98,12 @@ class CaseFileServiceTest {
 
         var result = service.transition(
                 CASE_ID,
-                new CaseTransitionRequest(CaseStage.UNDER_REVIEW, "Checklist complete", 4L),
+                new CaseTransitionRequest(CaseStage.IN_REVIEW, "Checklist complete", 4L),
                 coordinator
         );
 
-        assertEquals(SubmissionStage.UNDER_REVIEW, result.submission().stage());
-        assertEquals(CaseStage.UNDER_REVIEW, result.currentStage());
+        assertEquals(SubmissionStage.IN_REVIEW, result.submission().stage());
+        assertEquals(CaseStage.IN_REVIEW, result.currentStage());
         assertEquals(NOW, result.submission().updatedAt());
         var savedHistory = forClass(org.unipod.unipoderpbackend.model.submission.CaseStageHistory.class);
         verify(history).save(savedHistory.capture());
@@ -120,13 +120,13 @@ class CaseFileServiceTest {
         SubmissionConflictException exception = assertThrows(SubmissionConflictException.class,
                 () -> service.transition(
                         CASE_ID,
-                        new CaseTransitionRequest(CaseStage.UNDER_REVIEW, null, 4L),
+                        new CaseTransitionRequest(CaseStage.IN_REVIEW, null, 4L),
                         coordinator
                 ));
 
         assertEquals("A completed fact-finding check is required before moving this case to review.",
                 exception.getMessage());
-        assertEquals(SubmissionStage.FACT_FINDING, submission.getStage());
+        assertEquals(SubmissionStage.IN_FACT_FINDING, submission.getStage());
         verify(submissions, org.mockito.Mockito.never()).flush();
     }
 
@@ -137,22 +137,57 @@ class CaseFileServiceTest {
 
         var result = service.transition(
                 CASE_ID,
-                new CaseTransitionRequest(CaseStage.REFINEMENT_REQUESTED, "Need more detail", 4L),
+                new CaseTransitionRequest(CaseStage.IMPROVEMENT_REQUESTED, "Need more detail", 4L),
                 coordinator
         );
 
-        assertEquals(SubmissionStage.REFINEMENT_REQUESTED, result.submission().stage());
-        assertEquals(CaseStage.REFINEMENT_REQUESTED, result.currentStage());
+        assertEquals(SubmissionStage.IMPROVEMENT_REQUESTED, result.submission().stage());
+        assertEquals(CaseStage.IMPROVEMENT_REQUESTED, result.currentStage());
         verify(factFindingGuard, org.mockito.Mockito.never()).isComplete(any());
     }
 
     @Test
-    void factFindingOfficerCannotMoveCaseOutOfFactFinding() {
+    void factFindingOfficerCanMarkCaseReadyForReviewAfterCompletedCheck() {
         Authentication officer = authentication("officer", "ROLE_FACT_FINDING_OFFICER");
+        when(submissions.findByIdForUpdate(CASE_ID)).thenReturn(Optional.of(submission));
+        when(factFindingGuard.isComplete(CASE_ID)).thenReturn(true);
+
+        var result = service.transition(
+                CASE_ID,
+                new CaseTransitionRequest(CaseStage.READY_FOR_REVIEW, "Check complete", 4L),
+                officer
+        );
+
+        assertEquals(SubmissionStage.READY_FOR_REVIEW, result.submission().stage());
+        assertEquals(CaseStage.READY_FOR_REVIEW, result.currentStage());
+        verify(history).save(any());
+        verify(submissions).flush();
+    }
+
+    @Test
+    void factFindingOfficerCanRequestMoreInformation() {
+        Authentication officer = authentication("officer", "ROLE_FACT_FINDING_OFFICER");
+        when(submissions.findByIdForUpdate(CASE_ID)).thenReturn(Optional.of(submission));
+
+        var result = service.transition(
+                CASE_ID,
+                new CaseTransitionRequest(CaseStage.IMPROVEMENT_REQUESTED, "Missing evidence", 4L),
+                officer
+        );
+
+        assertEquals(SubmissionStage.IMPROVEMENT_REQUESTED, result.submission().stage());
+        verify(factFindingGuard, org.mockito.Mockito.never()).isComplete(any());
+    }
+
+    @Test
+    void factFindingOfficerCannotMoveCaseFromOtherStages() {
+        Authentication officer = authentication("officer", "ROLE_FACT_FINDING_OFFICER");
+        ReflectionTestUtils.setField(submission, "stage", SubmissionStage.SUBMITTED);
+        when(submissions.findByIdForUpdate(CASE_ID)).thenReturn(Optional.of(submission));
 
         assertThrows(AccessDeniedException.class, () -> service.transition(
                 CASE_ID,
-                new CaseTransitionRequest(CaseStage.UNDER_REVIEW, null, 4L),
+                new CaseTransitionRequest(CaseStage.FORWARDED, null, 4L),
                 officer
         ));
     }
@@ -198,10 +233,38 @@ class CaseFileServiceTest {
                 result.outcome().status()
         );
         assertEquals("Needs more improvement", result.outcome().decision());
-        assertEquals(SubmissionStage.REFINEMENT_REQUESTED, result.submission().stage());
+        assertEquals(SubmissionStage.IMPROVEMENT_REQUESTED, result.submission().stage());
         assertEquals("coordinator", result.outcome().decidedBy());
         assertEquals(NOW, result.outcome().decidedAt());
         verify(history).save(any());
+    }
+
+    @Test
+    void outcomeSaveIsLockedAfterADecisionHasBeenSaved() {
+        Authentication coordinator = authentication("coordinator", "ROLE_INNOVATION_COORDINATOR");
+        ReflectionTestUtils.setField(
+                submission,
+                "outcomeStatus",
+                org.unipod.unipoderpbackend.model.submission.OutcomeStatus.DECIDED
+        );
+        when(submissions.findByIdForUpdate(CASE_ID)).thenReturn(Optional.of(submission));
+        when(enrichment.reviewPanel(CASE_ID)).thenReturn(
+                new CaseFileEnrichmentProvider.ReviewPanel(
+                        CaseFileEnrichmentProvider.Availability.AVAILABLE,
+                        List.of("reviewer"), true, true
+                )
+        );
+
+        SubmissionConflictException exception = assertThrows(SubmissionConflictException.class,
+                () -> service.saveOutcome(
+                        CASE_ID,
+                        new OutcomeUpdateRequest(
+                                "Needs more improvement", "Second change attempt", null, 4L
+                        ),
+                        coordinator
+                ));
+
+        assertEquals("The outcome cannot be changed in the current case stage.", exception.getMessage());
     }
 
     @Test
@@ -270,12 +333,15 @@ class CaseFileServiceTest {
                 .thenReturn(Optional.of(submission));
         when(submissions.findByIdForUpdate(CASE_ID)).thenReturn(Optional.of(submission));
 
-        assertEquals(List.of(), service.allowedTransitions(CASE_ID, coordinator).allowedTransitions());
+        assertEquals(
+                List.of(CaseStage.AWAITING_PAYMENT, CaseStage.IN_PROGRESS),
+                service.allowedTransitions(CASE_ID, coordinator).allowedTransitions()
+        );
         SubmissionConflictException exception = assertThrows(
                 SubmissionConflictException.class,
                 () -> service.transition(
                         CASE_ID,
-                        new CaseTransitionRequest(CaseStage.FACT_FINDING, null, 4L),
+                        new CaseTransitionRequest(CaseStage.IN_FACT_FINDING, null, 4L),
                         coordinator
                 )
         );
@@ -308,7 +374,7 @@ class CaseFileServiceTest {
                 "A destination department is required to confirm a project.",
                 exception.getMessage()
         );
-        assertEquals(SubmissionStage.FACT_FINDING, submission.getStage());
+        assertEquals(SubmissionStage.IN_FACT_FINDING, submission.getStage());
         verify(notificationOutbox, org.mockito.Mockito.never()).recordForwarded(any());
     }
 
@@ -332,7 +398,7 @@ class CaseFileServiceTest {
                 coordinator
         );
 
-        assertEquals(SubmissionStage.COMPLETED, result.submission().stage());
+        assertEquals(SubmissionStage.CLOSED, result.submission().stage());
         assertEquals("Closed with a reason", result.outcome().decision());
         verify(history).save(any());
         verify(notificationOutbox).recordSubmitterNotification(
@@ -420,7 +486,7 @@ class CaseFileServiceTest {
         SubmissionConflictException exception = assertThrows(SubmissionConflictException.class,
                 () -> service.transition(
                         CASE_ID,
-                        new CaseTransitionRequest(CaseStage.UNDER_REVIEW, null, 3L),
+                        new CaseTransitionRequest(CaseStage.IN_REVIEW, null, 3L),
                         coordinator
                 ));
 
@@ -438,8 +504,10 @@ class CaseFileServiceTest {
         assertFalse(capabilities.nextStep().enabled());
         assertFalse(capabilities.saveOutcome().enabled());
         assertFalse(capabilities.updateDocumentStatus().enabled());
-        assertEquals("Only an Administrator or Innovation Coordinator can change this case.",
-                capabilities.nextStep().reason());
+        assertEquals(
+                "Only an Administrator, Innovation Coordinator or Fact-Finding Officer can change this case.",
+                capabilities.nextStep().reason()
+        );
         assertEquals(List.of(), service.allowedTransitions(CASE_ID, reviewer).allowedTransitions());
         verify(submissions, times(2))
                 .findVisibleById(CASE_ID, "REVIEWER", "reviewer");

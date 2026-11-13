@@ -124,7 +124,7 @@ public class ReviewSubmissionService {
         CallerAssignment caller = callerAssignment(briefId, authentication);
         ReviewAssignment assignment = caller.assignment();
 
-        if (brief.getStage() != SubmissionStage.UNDER_REVIEW) {
+        if (brief.getStage() != SubmissionStage.IN_REVIEW) {
             throw new SubmissionConflictException(STAGE_REQUIRED);
         }
         if (assignment.getStatus() == ReviewAssignmentStatus.SUBMITTED) {
@@ -220,7 +220,7 @@ public class ReviewSubmissionService {
                 .orElseThrow(() -> new SubmissionNotFoundException(briefId));
         ReviewAssignment assignment = callerAssignment(briefId, authentication).assignment();
 
-        if (brief.getStage() != SubmissionStage.UNDER_REVIEW) {
+        if (brief.getStage() != SubmissionStage.IN_REVIEW) {
             throw new SubmissionConflictException(FOLLOW_UP_STAGE_REQUIRED);
         }
         Review review = assignment.getStatus() == ReviewAssignmentStatus.SUBMITTED

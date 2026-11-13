@@ -1,5 +1,6 @@
 package org.unipod.unipoderpbackend.service.submission;
 
+import java.time.Instant;
 import java.time.ZoneId;
 import java.util.HashSet;
 import java.util.List;
@@ -18,11 +19,15 @@ import org.unipod.unipoderpbackend.dto.reception.ReceptionQueueResponse;
 import org.unipod.unipoderpbackend.dto.sector.SectorRequest;
 import org.unipod.unipoderpbackend.dto.sector.SectorResponse;
 import org.unipod.unipoderpbackend.dto.submission.CaseFileResponse;
+import org.unipod.unipoderpbackend.dto.submission.ConfirmProjectRequest;
 import org.unipod.unipoderpbackend.dto.submission.CreateDocumentRequest;
 import org.unipod.unipoderpbackend.dto.submission.CreateSubmissionRequest;
 import org.unipod.unipoderpbackend.dto.submission.DocumentResponse;
+import org.unipod.unipoderpbackend.dto.submission.ReceptionCheckItemRequest;
+import org.unipod.unipoderpbackend.dto.submission.ReceptionCheckUpdateRequest;
 import org.unipod.unipoderpbackend.dto.submission.RequestInformationRequest;
 import org.unipod.unipoderpbackend.dto.submission.SubmissionResponse;
+import org.springframework.security.access.AccessDeniedException;
 import org.unipod.unipoderpbackend.exception.submission.InvalidSubmissionException;
 import org.unipod.unipoderpbackend.exception.submission.SubmissionConflictException;
 import org.unipod.unipoderpbackend.model.submission.DocumentStatus;
@@ -57,6 +62,9 @@ class SubmissionRegistrationIntegrationTest {
     @Autowired
     private SectorService sectors;
 
+    @Autowired
+    private ReceptionChecklistService checklists;
+
     @Test
     void createsDraftAndRegistersStudentWithCaseCodeAndHistory() {
         SubmissionResponse draft = submissions.create(
@@ -65,23 +73,33 @@ class SubmissionRegistrationIntegrationTest {
                         "Irrigation monitor",
                         "Build a soil moisture monitor",
                         "Farmers lack soil moisture information",
+                        null,
                         "2026001234",
                         "Agricultural Engineering",
                         "Dr Example",
-                        RecommendationLetterStatus.SUBMITTED
+                        RecommendationLetterStatus.SUBMITTED,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "2026-01"
                 ),
                 "receptionist-1"
         );
 
         assertEquals(SubmissionStage.DRAFT, draft.stage());
         int createdYear = draft.createdAt().atZone(ZoneId.of("Africa/Kampala")).getYear();
-        assertTrue(draft.code().matches("STU-" + createdYear + "-\\d{6,}"));
+        assertTrue(draft.code().matches("BRF-" + createdYear + "-\\d{6,}"));
         assertEquals(1, stageHistory.countBySubmissionId(draft.id()));
 
         SubmissionResponse registered = submissions.register(draft.id(), "receptionist-2");
 
-        assertEquals(SubmissionStage.RECEIVED, registered.stage());
-        assertTrue(registered.code().matches("STU-" + createdYear + "-\\d{6,}"));
+        assertEquals(SubmissionStage.SUBMITTED, registered.stage());
+        assertTrue(registered.code().matches("BRF-" + createdYear + "-\\d{6,}"));
         assertEquals(draft.code(), registered.code());
         assertEquals("receptionist-1", registered.registeredBy());
         assertEquals("receptionist-2", registered.receivingOfficer());
@@ -121,15 +139,25 @@ class SubmissionRegistrationIntegrationTest {
                         null,
                         null,
                         null,
-                        null
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "2026-01"
                 ),
                 "receptionist-1"
         );
 
         SubmissionResponse registered = submissions.register(draft.id(), "receptionist-2");
 
-        assertTrue(registered.code().startsWith("GEN-"));
-        assertEquals(SubmissionStage.RECEIVED, registered.stage());
+        assertTrue(registered.code().startsWith("BRF-"));
+        assertEquals(SubmissionStage.SUBMITTED, registered.stage());
     }
 
     @Test
@@ -165,14 +193,23 @@ class SubmissionRegistrationIntegrationTest {
                         null,
                         null,
                         null,
-                        null
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "2026-01"
                 ),
                 submitter,
                 true
         );
 
         assertEquals(SubmissionStage.DRAFT, created.stage());
-        assertTrue(created.code().startsWith("GEN-"));
+        assertTrue(created.code().startsWith("BRF-"));
         assertEquals(submitter, created.registeredBy());
         assertEquals(submitter, created.submitterId());
 
@@ -228,7 +265,7 @@ class SubmissionRegistrationIntegrationTest {
     }
 
     @Test
-    void staffDraftEditsPreserveOutstandingInformationRequests() {
+    void staffCannotEditAnotherUsersDraft() {
         SubmissionResponse created = submissions.create(
                 new CreateSubmissionRequest(
                         SubmissionCategory.GENERAL,
@@ -250,20 +287,23 @@ class SubmissionRegistrationIntegrationTest {
                 new TestingAuthenticationToken("receptionist-1", "n/a", "ROLE_RECEPTIONIST")
         );
 
-        submissions.updateDraft(
-                created.id(),
-                new CreateSubmissionRequest(
-                        SubmissionCategory.GENERAL,
-                        "Updated public innovation",
-                        "Improve access",
-                        "Current access is limited",
-                        null,
-                        null,
-                        null,
-                        null
-                ),
-                "receptionist-2",
-                false
+        assertThrows(
+                AccessDeniedException.class,
+                () -> submissions.updateDraft(
+                        created.id(),
+                        new CreateSubmissionRequest(
+                                SubmissionCategory.GENERAL,
+                                "Updated public innovation",
+                                "Improve access",
+                                "Current access is limited",
+                                null,
+                                null,
+                                null,
+                                null
+                        ),
+                        "receptionist-2",
+                        false
+                )
         );
 
         assertEquals("Please attach a project brief.", jdbcTemplate.queryForObject(
@@ -316,7 +356,17 @@ class SubmissionRegistrationIntegrationTest {
                         null,
                         null,
                         null,
-                        null
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "2026-01"
                 ),
                 "receptionist-1"
         );
@@ -336,6 +386,7 @@ class SubmissionRegistrationIntegrationTest {
                 "sector@example.invalid",
                 true
         ));
+        completeReceptionChecklist(draft.id(), "receptionist-2");
         var forwarded = submissions.forward(
                 draft.id(),
                 sector.id(),
@@ -359,6 +410,7 @@ class SubmissionRegistrationIntegrationTest {
                 )
         );
 
+        submissions.confirmAsProject(draft.id(), new ConfirmProjectRequest(null), "coordinator-1");
         submissions.advance(draft.id(), SubmissionStage.IN_PROGRESS, "coordinator-1");
         SubmissionResponse completed = submissions.advance(
                 draft.id(),
@@ -369,7 +421,7 @@ class SubmissionRegistrationIntegrationTest {
 
         assertEquals(SubmissionStage.COMPLETED, completed.stage());
         assertEquals(document.id(), caseFile.documents().getFirst().id());
-        assertEquals(5, caseFile.stageHistory().size());
+        assertEquals(6, caseFile.stageHistory().size());
         assertEquals(SubmissionStage.COMPLETED, caseFile.stageHistory().getLast().toStage());
         assertThrows(
                 SubmissionConflictException.class,
@@ -395,7 +447,14 @@ class SubmissionRegistrationIntegrationTest {
                         null,
                         null,
                         "queue-submitter@example.test",
-                        null
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "2026-01"
                 ),
                 "receptionist-queue-test"
         );
@@ -438,13 +497,142 @@ class SubmissionRegistrationIntegrationTest {
     }
 
     @Test
+    void registrationRequiresAcceptedRules() {
+        SubmissionResponse draft = submissions.create(generalRequest("Rules required", null), "receptionist-1");
+
+        InvalidSubmissionException exception = assertThrows(
+                InvalidSubmissionException.class,
+                () -> submissions.register(draft.id(), "receptionist-2")
+        );
+
+        assertEquals("Accept the submission rules before submitting the brief.", exception.getMessage());
+    }
+
+    @Test
+    void serviceRequestRegistrationRequiresPreferredDateAndPersistsIt() {
+        SubmissionResponse missingDate = submissions.create(
+                serviceRequest(null, null, "2026-01"),
+                "receptionist-1"
+        );
+        assertThrows(
+                InvalidSubmissionException.class,
+                () -> submissions.register(missingDate.id(), "receptionist-2")
+        );
+
+        Instant preferredAt = Instant.parse("2026-12-01T09:30:00Z");
+        SubmissionResponse draft = submissions.create(
+                serviceRequest(preferredAt, null, "2026-01"),
+                "receptionist-1"
+        );
+        SubmissionResponse registered = submissions.register(draft.id(), "receptionist-2");
+
+        assertEquals(preferredAt, registered.preferredAt());
+    }
+
+    @Test
+    void generalIntakeDefaultsDepartmentToInnovation() {
+        SubmissionResponse draft = submissions.create(
+                generalRequest("Department suggestion", "2026-01"),
+                "receptionist-1"
+        );
+
+        assertEquals("Innovation", draft.department());
+    }
+
+    @Test
+    void forwardFromDraftRequiresACompleteReceptionChecklist() {
+        SubmissionResponse draft = submissions.create(
+                generalRequest("Checklist gate", "2026-01"),
+                "receptionist-1"
+        );
+        SectorResponse sector = sectors.create(new SectorRequest(
+                "Checklist gate sector",
+                "checklist-gate@example.invalid",
+                true
+        ));
+
+        assertThrows(
+                SubmissionConflictException.class,
+                () -> submissions.forward(draft.id(), sector.id(), "receptionist-1")
+        );
+
+        completeReceptionChecklist(draft.id(), "receptionist-1");
+        SubmissionResponse forwarded = submissions.forward(draft.id(), sector.id(), "receptionist-1");
+
+        assertEquals(SubmissionStage.FORWARDED, forwarded.stage());
+    }
+
+    private static CreateSubmissionRequest generalRequest(String title, String acceptedRulesVersion) {
+        return new CreateSubmissionRequest(
+                SubmissionCategory.GENERAL,
+                title,
+                "Verify intake rules",
+                "The intake rules need to be enforced",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                acceptedRulesVersion
+        );
+    }
+
+    private static CreateSubmissionRequest serviceRequest(
+            Instant preferredAt,
+            String department,
+            String acceptedRulesVersion
+    ) {
+        return new CreateSubmissionRequest(
+                SubmissionCategory.SERVICE_REQUEST,
+                "Service request",
+                "Request support",
+                "The lab needs support",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                "Prototype build",
+                null,
+                department,
+                "A working prototype",
+                preferredAt,
+                acceptedRulesVersion
+        );
+    }
+
+    private void completeReceptionChecklist(java.util.UUID submissionId, String actor) {
+        checklists.update(
+                submissionId,
+                new ReceptionCheckUpdateRequest(List.of(
+                        new ReceptionCheckItemRequest("DETAILS_COMPLETE", true, null),
+                        new ReceptionCheckItemRequest("DOCUMENTS_COMPLETE", true, null),
+                        new ReceptionCheckItemRequest("FILES_READABLE", true, null),
+                        new ReceptionCheckItemRequest("CORRECT_TYPE", true, null)
+                )),
+                new TestingAuthenticationToken(actor, "n/a", "ROLE_RECEPTIONIST")
+        );
+    }
+
+    @Test
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     void allocatesDistinctCaseCodesForConcurrentRequests() throws Exception {
         int testYear = 9999;
         int existingSequence = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM code_sequences WHERE prefix = ? AND code_year = ?",
                 Integer.class,
-                "GEN",
+                "BRF",
                 testYear
         );
         assumeTrue(existingSequence == 0, "Reserved integration-test sequence is already in use.");
@@ -467,7 +655,7 @@ class SubmissionRegistrationIntegrationTest {
             }
 
             assertEquals(requestCount, codes.size());
-            assertTrue(codes.contains("GEN-9999-000001"));
+            assertTrue(codes.contains("BRF-9999-000001"));
         } finally {
             executor.shutdownNow();
             if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
@@ -475,7 +663,7 @@ class SubmissionRegistrationIntegrationTest {
             }
             jdbcTemplate.update(
                     "DELETE FROM code_sequences WHERE prefix = ? AND code_year = ?",
-                    "GEN",
+                    "BRF",
                     testYear
             );
         }

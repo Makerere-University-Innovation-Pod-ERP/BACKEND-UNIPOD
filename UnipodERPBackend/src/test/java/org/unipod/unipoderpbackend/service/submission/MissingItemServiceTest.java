@@ -124,12 +124,16 @@ class MissingItemServiceTest {
     @Test
     void closedSubmissionRejectsNewMissingItems() {
         Submission submission = submission("submitter@example.test");
+        submission.applyIntakeDetails(null, null, null, null, null, null, "2026-01");
         submission.register("GEN-2026-000001", NOW, "receptionist-1");
-        submission.transitionTo(org.unipod.unipoderpbackend.model.submission.SubmissionStage.REGISTERED, NOW);
-        submission.transitionTo(org.unipod.unipoderpbackend.model.submission.SubmissionStage.FACT_FINDING, NOW);
-        submission.transitionTo(org.unipod.unipoderpbackend.model.submission.SubmissionStage.UNDER_REVIEW, NOW);
-        submission.transitionTo(org.unipod.unipoderpbackend.model.submission.SubmissionStage.REFINEMENT_REQUESTED, NOW);
-        submission.transitionTo(org.unipod.unipoderpbackend.model.submission.SubmissionStage.FURTHER_HANDLING, NOW);
+        submission.transitionTo(org.unipod.unipoderpbackend.model.submission.SubmissionStage.FORWARDED, NOW);
+        submission.transitionTo(org.unipod.unipoderpbackend.model.submission.SubmissionStage.IN_FACT_FINDING, NOW);
+        submission.transitionTo(org.unipod.unipoderpbackend.model.submission.SubmissionStage.IN_REVIEW, NOW);
+        submission.transitionTo(org.unipod.unipoderpbackend.model.submission.SubmissionStage.IMPROVEMENT_REQUESTED, NOW);
+        submission.transitionTo(org.unipod.unipoderpbackend.model.submission.SubmissionStage.RESUBMITTED, NOW);
+        submission.transitionTo(org.unipod.unipoderpbackend.model.submission.SubmissionStage.IN_REVIEW, NOW);
+        submission.transitionTo(org.unipod.unipoderpbackend.model.submission.SubmissionStage.CONFIRMED_AS_PROJECT, NOW);
+        submission.transitionTo(org.unipod.unipoderpbackend.model.submission.SubmissionStage.IN_PROGRESS, NOW);
         submission.transitionTo(org.unipod.unipoderpbackend.model.submission.SubmissionStage.COMPLETED, NOW);
         when(submissions.findVisibleByIdForUpdate(any(), any(), any())).thenReturn(Optional.of(submission));
 
