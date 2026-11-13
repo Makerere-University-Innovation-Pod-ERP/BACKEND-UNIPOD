@@ -17,9 +17,14 @@ public record SectorRequest(
         )
         String notificationEmail,
         @NotNull Boolean active,
-        Long version
+        Long version,
+        @Size(max = 500) String whatsappGroupUrl
 ) {
     public SectorRequest(String name, String notificationEmail, Boolean active) {
-        this(name, notificationEmail, active, null);
+        this(name, notificationEmail, active, null, null);
+    }
+
+    public SectorRequest(String name, String notificationEmail, Boolean active, Long version) {
+        this(name, notificationEmail, active, version, null);
     }
 }

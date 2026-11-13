@@ -284,6 +284,7 @@ public class Submission {
         if (stage != SubmissionStage.DRAFT) {
             throw new SubmissionConflictException("Only a draft submission can be submitted.");
         }
+        requireBriefContent();
         requireStudentDetails();
         requireServiceRequestDetails();
         requireContactDetails();
@@ -497,6 +498,83 @@ public class Submission {
         this.programme = programme;
         this.supervisor = supervisor;
         this.recommendationLetterStatus = recommendationLetterStatus;
+        this.updatedAt = time;
+    }
+
+    /**
+     * Applies the fields present in an autosave request. Only non-null values are
+     * applied, so the editor can send the single field that changed.
+     */
+    public void patchDraft(
+            String title,
+            String purpose,
+            String problemAddressed,
+            String studentNumber,
+            String programme,
+            String supervisor,
+            RecommendationLetterStatus recommendationLetterStatus,
+            String submitterPhone,
+            String serviceRequested,
+            ServiceRequester serviceRequester,
+            String department,
+            String expectedResult,
+            Instant preferredAt,
+            String acceptedRulesVersion,
+            String submitterEmail,
+            String submitterName,
+            Instant time
+    ) {
+        if (stage != SubmissionStage.DRAFT) {
+            throw new SubmissionConflictException("Only a draft submission can be updated.");
+        }
+        if (title != null) {
+            this.title = title.trim();
+        }
+        if (purpose != null) {
+            this.purpose = purpose.trim();
+        }
+        if (problemAddressed != null) {
+            this.problemAddressed = problemAddressed.trim();
+        }
+        if (studentNumber != null) {
+            this.studentNumber = clean(studentNumber);
+        }
+        if (programme != null) {
+            this.programme = clean(programme);
+        }
+        if (supervisor != null) {
+            this.supervisor = clean(supervisor);
+        }
+        if (recommendationLetterStatus != null) {
+            this.recommendationLetterStatus = recommendationLetterStatus;
+        }
+        if (submitterPhone != null) {
+            this.submitterPhone = clean(submitterPhone);
+        }
+        if (serviceRequested != null) {
+            this.serviceRequested = clean(serviceRequested);
+        }
+        if (serviceRequester != null) {
+            this.serviceRequester = serviceRequester;
+        }
+        if (department != null) {
+            this.department = clean(department);
+        }
+        if (expectedResult != null) {
+            this.expectedResult = clean(expectedResult);
+        }
+        if (preferredAt != null) {
+            this.preferredAt = preferredAt;
+        }
+        if (acceptedRulesVersion != null) {
+            this.acceptedRulesVersion = clean(acceptedRulesVersion);
+        }
+        if (submitterEmail != null) {
+            this.submitterEmail = clean(submitterEmail);
+        }
+        if (submitterName != null) {
+            this.submitterName = clean(submitterName);
+        }
         this.updatedAt = time;
     }
 
@@ -819,6 +897,10 @@ public class Submission {
         return responsibleSector == null ? null : responsibleSector.getName();
     }
 
+    public String getResponsibleSectorWhatsappGroupUrl() {
+        return responsibleSector == null ? null : responsibleSector.getWhatsappGroupUrl();
+    }
+
     public SubmissionStage getStage() {
         return stage;
     }
@@ -901,6 +983,18 @@ public class Submission {
                 || recommendationLetterStatus == null)) {
             throw new InvalidSubmissionException(
                     "Student submissions require student number, programme, supervisor, and recommendation-letter status."
+            );
+        }
+    }
+
+    /**
+     * The intake form requires a title, purpose and problem statement before a
+     * draft can be submitted. Drafts may be saved without them.
+     */
+    private void requireBriefContent() {
+        if (isBlank(title) || isBlank(purpose) || isBlank(problemAddressed)) {
+            throw new InvalidSubmissionException(
+                    "Add the title, purpose and problem addressed before submitting the brief."
             );
         }
     }

@@ -59,6 +59,7 @@ public class SectorService {
                     UUID.randomUUID(),
                     name,
                     request.notificationEmail().trim(),
+                    request.whatsappGroupUrl(),
                     request.active(),
                     now,
                     now
@@ -79,7 +80,13 @@ public class SectorService {
         if (sectors.existsByNameIgnoreCaseAndIdNot(name, id)) {
             throw new SectorConflictException();
         }
-        sector.update(name, request.notificationEmail().trim(), request.active(), Instant.now());
+        sector.update(
+                name,
+                request.notificationEmail().trim(),
+                request.whatsappGroupUrl(),
+                request.active(),
+                Instant.now()
+        );
         try {
             sectors.flush();
             return SectorResponse.from(sector);

@@ -15,19 +15,23 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import org.unipod.unipoderpbackend.dto.PageResponse;
+import org.unipod.unipoderpbackend.dto.submission.SubmissionsSummaryResponse;
 import org.unipod.unipoderpbackend.dto.submission.SubmitterCapabilitiesResponse;
 import org.unipod.unipoderpbackend.dto.submission.SubmitterSubmissionResponse;
 import org.unipod.unipoderpbackend.dto.submission.SubmitterTab;
 import org.unipod.unipoderpbackend.service.submission.SubmissionService;
+import org.unipod.unipoderpbackend.service.submission.SubmitterSummaryService;
 
 @RestController
 @RequestMapping("/me")
 @Validated
 public class MySubmissionsController {
     private final SubmissionService submissions;
+    private final SubmitterSummaryService summary;
 
-    public MySubmissionsController(SubmissionService submissions) {
+    public MySubmissionsController(SubmissionService submissions, SubmitterSummaryService summary) {
         this.submissions = submissions;
+        this.summary = summary;
     }
 
     @GetMapping("/submissions")
@@ -56,6 +60,17 @@ public class MySubmissionsController {
     @PreAuthorize("hasRole('SUBMITTER')")
     public SubmitterCapabilitiesResponse capabilities() {
         return SubmitterCapabilitiesResponse.forSubmitter();
+    }
+
+    /**
+     * Tab counts and the "waiting for you" banners shown on the submitter
+     * home: open information requests, improvement requests, unpaid invoices
+     * and upcoming bookings or training sessions.
+     */
+    @GetMapping("/submissions-summary")
+    @PreAuthorize("hasRole('SUBMITTER')")
+    public SubmissionsSummaryResponse submissionsSummary(Authentication authentication) {
+        return summary.summary(authentication.getName());
     }
 
     private static SubmitterTab parseTab(String value) {

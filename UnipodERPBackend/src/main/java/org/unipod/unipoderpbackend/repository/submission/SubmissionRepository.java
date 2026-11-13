@@ -2,6 +2,7 @@ package org.unipod.unipoderpbackend.repository.submission;
 
 import jakarta.persistence.LockModeType;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -54,6 +55,16 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
     Optional<Submission> findByIdAndSubmitterId(UUID id, String submitterId);
 
     boolean existsByProjectCode(String projectCode);
+
+    long countBySubmitterId(String submitterId);
+
+    long countBySubmitterIdAndCategoryNot(String submitterId, SubmissionCategory category);
+
+    long countBySubmitterIdAndCategory(String submitterId, SubmissionCategory category);
+
+    long countBySubmitterIdAndStage(String submitterId, SubmissionStage stage);
+
+    long countBySubmitterIdAndStageIn(String submitterId, Collection<SubmissionStage> stages);
 
     @EntityGraph(attributePaths = "responsibleSector")
     Page<Submission> findAllByOrderByUpdatedAtDescIdAsc(Pageable pageable);

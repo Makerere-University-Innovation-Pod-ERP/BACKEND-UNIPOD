@@ -11,7 +11,8 @@ public record SectorResponse(
         boolean active,
         long version,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        String whatsappGroupUrl
 ) {
     public static SectorResponse from(Sector sector) {
         return new SectorResponse(
@@ -21,7 +22,8 @@ public record SectorResponse(
                 sector.isActive(),
                 sector.getVersion(),
                 sector.getCreatedAt(),
-                sector.getUpdatedAt()
+                sector.getUpdatedAt(),
+                sector.getWhatsappGroupUrl()
         );
     }
 }

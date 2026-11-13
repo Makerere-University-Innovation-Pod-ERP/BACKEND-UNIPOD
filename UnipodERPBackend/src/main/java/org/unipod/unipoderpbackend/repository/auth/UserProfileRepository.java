@@ -6,4 +6,6 @@ import org.unipod.unipoderpbackend.model.auth.UserProfile;
 
 public interface UserProfileRepository extends JpaRepository<UserProfile, UUID> {
     boolean existsByStudentNumberIgnoreCase(String studentNumber);
+
+    java.util.Optional<UserProfile> findFirstByPhone(String phone);
 }

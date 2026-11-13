@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.unipod.unipoderpbackend.dto.submission.ReceptionCheckItemRequest;
 import org.unipod.unipoderpbackend.dto.submission.ReceptionCheckItemResponse;
+import org.unipod.unipoderpbackend.dto.submission.ReceptionCheckLinesRequest;
 import org.unipod.unipoderpbackend.dto.submission.ReceptionCheckResponse;
 import org.unipod.unipoderpbackend.dto.submission.ReceptionCheckUpdateRequest;
 import org.unipod.unipoderpbackend.exception.submission.InvalidSubmissionException;
@@ -89,6 +90,39 @@ public class ReceptionChecklistService {
                 "complete", response.complete()
         ));
         return response;
+    }
+
+    /**
+     * Applies the four named frontend verification lines, delegating to the
+     * stored checklist so the forward gate and audit trail stay in one place.
+     */
+    @Transactional
+    public ReceptionCheckResponse updateLines(
+            UUID submissionId,
+            ReceptionCheckLinesRequest request,
+            Authentication authentication
+    ) {
+        if (request == null || !request.hasAnyLine()) {
+            throw new InvalidSubmissionException(
+                    "Provide at least one reception check line."
+            );
+        }
+        List<ReceptionCheckItemRequest> items = new java.util.ArrayList<>(4);
+        addLine(items, ReceptionCheckItem.DETAILS_COMPLETE, request.detailsComplete());
+        addLine(items, ReceptionCheckItem.DOCUMENTS_COMPLETE, request.documentsComplete());
+        addLine(items, ReceptionCheckItem.FILES_READABLE, request.filesReadable());
+        addLine(items, ReceptionCheckItem.CORRECT_TYPE, request.correctType());
+        return update(submissionId, new ReceptionCheckUpdateRequest(items), authentication);
+    }
+
+    private static void addLine(
+            List<ReceptionCheckItemRequest> items,
+            ReceptionCheckItem item,
+            ReceptionCheckLinesRequest.Line line
+    ) {
+        if (line != null) {
+            items.add(new ReceptionCheckItemRequest(item.name(), line.checked(), line.note()));
+        }
     }
 
     /**

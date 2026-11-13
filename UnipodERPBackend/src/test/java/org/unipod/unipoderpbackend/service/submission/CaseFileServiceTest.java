@@ -40,6 +40,7 @@ import org.unipod.unipoderpbackend.util.CaseCodeGenerator;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -511,6 +512,45 @@ class CaseFileServiceTest {
         assertEquals(List.of(), service.allowedTransitions(CASE_ID, reviewer).allowedTransitions());
         verify(submissions, times(2))
                 .findVisibleById(CASE_ID, "REVIEWER", "reviewer");
+    }
+
+    @Test
+    void draftOwnerCanEditOnlyTheirOwnDraft() {
+        ReflectionTestUtils.setField(submission, "stage", SubmissionStage.DRAFT);
+        Authentication owner = authentication("owner", "ROLE_SUBMITTER");
+        when(submissions.findVisibleById(CASE_ID, "SUBMITTER", "owner"))
+                .thenReturn(Optional.of(submission));
+
+        var capabilities = service.capabilities(CASE_ID, owner);
+
+        assertTrue(capabilities.canEditDraft());
+        assertFalse(capabilities.canRespondInfo());
+        assertEquals(
+                "This brief is not awaiting information.",
+                capabilities.lockReasons().get("canRespondInfo")
+        );
+        assertFalse(capabilities.canReceptionForward());
+        assertEquals(
+                "Only reception can forward a brief.",
+                capabilities.lockReasons().get("canReceptionForward")
+        );
+    }
+
+    @Test
+    void receptionCanForwardASubmittedBriefButCannotEditIt() {
+        ReflectionTestUtils.setField(submission, "stage", SubmissionStage.SUBMITTED);
+        Authentication receptionist = authentication("desk", "ROLE_RECEPTIONIST");
+        when(submissions.findVisibleById(CASE_ID, "ALL", "desk"))
+                .thenReturn(Optional.of(submission));
+
+        var capabilities = service.capabilities(CASE_ID, receptionist);
+
+        assertTrue(capabilities.canReceptionForward());
+        assertFalse(capabilities.canEditDraft());
+        assertEquals(
+                "This brief is no longer a draft.",
+                capabilities.lockReasons().get("canEditDraft")
+        );
     }
 
     private static Authentication authentication(String subject, String role) {

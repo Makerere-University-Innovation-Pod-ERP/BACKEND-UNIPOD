@@ -224,6 +224,121 @@ class SubmissionTest {
     }
 
     @Test
+    void submitRequiresBriefContent() {
+        Instant createdAt = Instant.parse("2026-11-04T00:00:00Z");
+        Submission submission = new Submission(
+                UUID.randomUUID(),
+                SubmissionCategory.GENERAL,
+                "",
+                "",
+                "",
+                "submitter@example.test",
+                "submitter@example.test",
+                null,
+                null,
+                null,
+                null,
+                createdAt
+        );
+        submission.applyIntakeDetails(null, null, null, null, null, null, "2026-01");
+
+        assertThrows(
+                InvalidSubmissionException.class,
+                () -> submission.submit("GEN-2026-000001", createdAt.plusSeconds(60))
+        );
+        assertEquals(SubmissionStage.DRAFT, submission.getStage());
+    }
+
+    @Test
+    void patchDraftUpdatesOnlySuppliedFields() {
+        Instant createdAt = Instant.parse("2026-11-04T00:00:00Z");
+        Submission submission = new Submission(
+                UUID.randomUUID(),
+                SubmissionCategory.GENERAL,
+                "",
+                "",
+                "",
+                "submitter@example.test",
+                "submitter@example.test",
+                null,
+                null,
+                null,
+                null,
+                createdAt
+        );
+
+        submission.patchDraft(
+                "Working title",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                "+256700000000",
+                null,
+                null,
+                null,
+                null,
+                null,
+                "2026-01",
+                "submitter@example.test",
+                null,
+                createdAt.plusSeconds(60)
+        );
+
+        assertEquals("Working title", submission.getTitle());
+        assertEquals("", submission.getPurpose());
+        assertEquals("+256700000000", submission.getSubmitterPhone());
+        assertEquals("2026-01", submission.getAcceptedRulesVersion());
+        assertEquals(SubmissionStage.DRAFT, submission.getStage());
+    }
+
+    @Test
+    void patchDraftRejectsBriefThatHasLeftDraft() {
+        Instant createdAt = Instant.parse("2026-11-04T00:00:00Z");
+        Submission submission = new Submission(
+                UUID.randomUUID(),
+                SubmissionCategory.GENERAL,
+                "Public idea",
+                "Improve access",
+                "Current access is limited",
+                "submitter@example.test",
+                "submitter@example.test",
+                null,
+                null,
+                null,
+                null,
+                createdAt
+        );
+        submission.applyIntakeDetails("+256700000000", null, null, null, null, null, "2026-01");
+        submission.submit("GEN-2026-000001", createdAt.plusSeconds(60));
+
+        assertThrows(
+                SubmissionConflictException.class,
+                () -> submission.patchDraft(
+                        "Changed after submit",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        createdAt.plusSeconds(120)
+                )
+        );
+    }
+
+    @Test
     void reviewerAssignmentUpdatesTimestampAndNormalizesSubject() {
         Instant createdAt = Instant.parse("2026-11-04T00:00:00Z");
         Instant assignedAt = Instant.parse("2026-11-04T01:00:00Z");

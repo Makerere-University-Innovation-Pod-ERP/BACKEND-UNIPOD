@@ -4,7 +4,9 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import org.springframework.security.core.Authentication;
@@ -74,6 +76,27 @@ public class CaseFileService {
             "Only an Administrator or Innovation Coordinator can save an outcome.";
     private static final String DOCUMENT_OPERATOR_REQUIRED =
             "Only an Administrator or Innovation Coordinator can change document status.";
+    private static final String REVIEWER_CANNOT_ASSIGN_REASON =
+            "Reviewers cannot assign reviewers to a case.";
+    private static final String DRAFT_LOCKED_REASON = "This brief is no longer a draft.";
+    private static final String DRAFT_OWNER_REASON = "Only the submitter can edit this draft.";
+    private static final String RESPOND_INFO_STAGE_REASON = "This brief is not awaiting information.";
+    private static final String RESPOND_INFO_OWNER_REASON = "Only the submitter can answer this request.";
+    private static final String UPLOAD_REVISION_STAGE_REASON = "No revision has been requested for this brief.";
+    private static final String UPLOAD_REVISION_OWNER_REASON = "Only the submitter can upload a revision.";
+    private static final String RECEPTION_FORWARD_ROLE_REASON = "Only reception can forward a brief.";
+    private static final String RECEPTION_FORWARD_STAGE_REASON = "This brief is not waiting at reception.";
+    private static final String FACT_FIND_ROLE_REASON =
+            "Fact-finding is only available to fact-finding officers.";
+    private static final String FACT_FIND_STAGE_REASON = "This case is not in fact-finding.";
+    private static final String ASSIGN_REVIEWERS_ROLE_REASON =
+            "Only an Administrator or Innovation Coordinator can assign reviewers.";
+    private static final String ASSIGN_REVIEWERS_STAGE_REASON =
+            "Reviewers can only be assigned while the brief is under review.";
+    private static final String DEPARTMENT_RESPOND_ROLE_REASON =
+            "Only the receiving department can respond to this case.";
+    private static final String DEPARTMENT_RESPOND_STAGE_REASON =
+            "This case has not been forwarded to a department yet.";
     private static final String FACT_FINDING_REQUIRED =
             "A completed fact-finding check is required before moving this case to review.";
     private static final String REFINEMENT_NOTE_REQUIRED =
@@ -397,8 +420,14 @@ public class CaseFileService {
             CaseFileEnrichmentProvider.ReviewPanel review
     ) {
         boolean operator = isOperator(authentication);
+        boolean receptionist = hasRole(authentication, "RECEPTIONIST");
+        boolean reception = operator || receptionist;
+        boolean reviewer = hasRole(authentication, "REVIEWER");
         boolean factFindingOfficer = isFactFindingOfficer(authentication);
-        List<CaseStage> allowed = allowedTransitionsFor(submission.getStage(), authentication);
+        boolean sectorOfficer = hasRole(authentication, "SECTOR_OFFICER");
+        SubmissionStage stage = submission.getStage();
+        boolean owner = isOwner(submission, authentication);
+        List<CaseStage> allowed = allowedTransitionsFor(stage, authentication);
         String nextReason = !allowed.isEmpty()
                 ? null
                 : operator ? "There are no allowed next stages from the current stage."
@@ -406,23 +435,100 @@ public class CaseFileService {
                 : WRITE_REQUIRED;
         String quorumReason = review.quorumAvailable() && review.quorumMet() ? null : QUORUM_REQUIRED;
         boolean outcomeLocked = submission.getOutcomeStatus() == OutcomeStatus.DECIDED;
-        boolean outcomeStageOpen = submission.getStage() != SubmissionStage.DRAFT
-                && submission.getStage() != SubmissionStage.CLOSED
-                && submission.getStage() != SubmissionStage.COMPLETED
-                && submission.getStage() != SubmissionStage.CONFIRMED_AS_PROJECT;
-        boolean documentsOpen = submission.getStage() != SubmissionStage.CLOSED
-                && submission.getStage() != SubmissionStage.COMPLETED;
+        boolean outcomeStageOpen = stage != SubmissionStage.DRAFT
+                && stage != SubmissionStage.CLOSED
+                && stage != SubmissionStage.COMPLETED
+                && stage != SubmissionStage.CONFIRMED_AS_PROJECT;
+        boolean documentsOpen = stage != SubmissionStage.CLOSED
+                && stage != SubmissionStage.COMPLETED;
+        Capability saveOutcome = capability(
+                operator && outcomeStageOpen && !outcomeLocked && quorumReason == null,
+                !operator ? OUTCOME_OPERATOR_REQUIRED
+                        : outcomeLocked ? "The outcome has already been saved and is locked."
+                        : !outcomeStageOpen ? "Outcome cannot be changed in the current case stage."
+                        : quorumReason);
+        boolean canEditDraft = stage == SubmissionStage.DRAFT && (owner || reception);
+        boolean canRespondInfo = stage == SubmissionStage.AWAITING_INFORMATION && owner;
+        boolean canUploadRevision = stage == SubmissionStage.IMPROVEMENT_REQUESTED && owner;
+        boolean canReceptionForward = reception && stage == SubmissionStage.SUBMITTED;
+        boolean canFactFind = factFindingOfficer && isFactFindingStage(stage);
+        boolean canAssignReviewers = operator && stage == SubmissionStage.IN_REVIEW;
+        boolean canRecordDecision = saveOutcome.enabled();
+        boolean canDepartmentRespond = sectorOfficer
+                && (stage == SubmissionStage.FORWARDED || stage == SubmissionStage.IN_FACT_FINDING);
+        Map<String, String> lockReasons = new LinkedHashMap<>();
+        if (!canEditDraft) {
+            lockReasons.put(
+                    "canEditDraft",
+                    stage == SubmissionStage.DRAFT ? DRAFT_OWNER_REASON : DRAFT_LOCKED_REASON
+            );
+        }
+        if (!canRespondInfo) {
+            lockReasons.put(
+                    "canRespondInfo",
+                    stage == SubmissionStage.AWAITING_INFORMATION
+                            ? RESPOND_INFO_OWNER_REASON
+                            : RESPOND_INFO_STAGE_REASON
+            );
+        }
+        if (!canUploadRevision) {
+            lockReasons.put(
+                    "canUploadRevision",
+                    stage == SubmissionStage.IMPROVEMENT_REQUESTED
+                            ? UPLOAD_REVISION_OWNER_REASON
+                            : UPLOAD_REVISION_STAGE_REASON
+            );
+        }
+        if (!canReceptionForward) {
+            lockReasons.put(
+                    "canReceptionForward",
+                    reception ? RECEPTION_FORWARD_STAGE_REASON : RECEPTION_FORWARD_ROLE_REASON
+            );
+        }
+        if (!canFactFind) {
+            lockReasons.put(
+                    "canFactFind",
+                    factFindingOfficer ? FACT_FIND_STAGE_REASON : FACT_FIND_ROLE_REASON
+            );
+        }
+        if (!canAssignReviewers) {
+            lockReasons.put(
+                    "canAssignReviewers",
+                    reviewer && !operator ? REVIEWER_CANNOT_ASSIGN_REASON
+                            : !operator ? ASSIGN_REVIEWERS_ROLE_REASON
+                            : ASSIGN_REVIEWERS_STAGE_REASON
+            );
+        }
+        if (!canRecordDecision) {
+            lockReasons.put("canRecordDecision", saveOutcome.reason());
+        }
+        if (!canDepartmentRespond) {
+            lockReasons.put(
+                    "canDepartmentRespond",
+                    sectorOfficer ? DEPARTMENT_RESPOND_STAGE_REASON : DEPARTMENT_RESPOND_ROLE_REASON
+            );
+        }
         return new Capabilities(
                 capability(!allowed.isEmpty(), nextReason),
-                capability(operator && outcomeStageOpen && !outcomeLocked && quorumReason == null,
-                        !operator ? OUTCOME_OPERATOR_REQUIRED
-                                : outcomeLocked ? "The outcome has already been saved and is locked."
-                                : !outcomeStageOpen ? "Outcome cannot be changed in the current case stage."
-                                : quorumReason),
+                saveOutcome,
                 capability(operator && documentsOpen,
                         !operator ? DOCUMENT_OPERATOR_REQUIRED
-                                : !documentsOpen ? "Closed cases cannot be changed." : null)
+                                : !documentsOpen ? "Closed cases cannot be changed." : null),
+                canEditDraft,
+                canRespondInfo,
+                canUploadRevision,
+                canReceptionForward,
+                canFactFind,
+                canAssignReviewers,
+                canRecordDecision,
+                canDepartmentRespond,
+                lockReasons
         );
+    }
+
+    private static boolean isOwner(Submission submission, Authentication authentication) {
+        String submitterId = submission.getSubmitterId();
+        return submitterId != null && submitterId.equalsIgnoreCase(authentication.getName());
     }
 
     private static List<CaseStepResponse> stepper(SubmissionStage stage) {

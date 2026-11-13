@@ -8,6 +8,7 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import jakarta.mail.internet.AddressException;
@@ -28,10 +29,16 @@ import org.unipod.unipoderpbackend.dto.submission.ConfirmProjectRequest;
 import org.unipod.unipoderpbackend.dto.submission.CreateDocumentRequest;
 import org.unipod.unipoderpbackend.dto.submission.CreateSubmissionRequest;
 import org.unipod.unipoderpbackend.dto.submission.DocumentResponse;
+import org.unipod.unipoderpbackend.dto.submission.DraftSubmissionRequest;
 import org.unipod.unipoderpbackend.dto.submission.MissingItemRequest;
+import org.unipod.unipoderpbackend.dto.submission.MissingItemResponse;
+import org.unipod.unipoderpbackend.dto.submission.MissingDocsQueueItem;
+import org.unipod.unipoderpbackend.dto.submission.MissingDocsQueueResponse;
 import org.unipod.unipoderpbackend.dto.submission.RejectSubmissionRequest;
 import org.unipod.unipoderpbackend.dto.submission.ReplySubmissionRequest;
+import org.unipod.unipoderpbackend.dto.submission.RequestInfoAliasRequest;
 import org.unipod.unipoderpbackend.dto.submission.RequestInformationRequest;
+import org.unipod.unipoderpbackend.dto.submission.SubmissionConfirmationResponse;
 import org.unipod.unipoderpbackend.dto.submission.SubmissionResponse;
 import org.unipod.unipoderpbackend.dto.submission.SubmitterPendingAction;
 import org.unipod.unipoderpbackend.dto.submission.SubmitterSubmissionResponse;
@@ -47,6 +54,7 @@ import org.unipod.unipoderpbackend.model.submission.MissingItem;
 import org.unipod.unipoderpbackend.model.submission.MissingItemKind;
 import org.unipod.unipoderpbackend.model.submission.MissingItemStatus;
 import org.unipod.unipoderpbackend.model.submission.RecommendationLetterStatus;
+import org.unipod.unipoderpbackend.model.submission.ServiceRequester;
 import org.unipod.unipoderpbackend.model.submission.Submission;
 import org.unipod.unipoderpbackend.model.submission.SubmissionCategory;
 import org.unipod.unipoderpbackend.model.submission.SubmissionDocument;
@@ -167,6 +175,119 @@ public class SubmissionService {
                 "stage", submission.getStage().name(),
                 "category", submission.getCategory().name(),
                 "code", submission.getCode()
+        ));
+        return SubmissionResponse.from(submission);
+    }
+
+    /**
+     * Saves a new brief as a draft. Drafts carry no tracking reference, are not
+     * visible in the reception queue, and may have empty content until the
+     * submitter completes the form.
+     */
+    @Transactional
+    public SubmissionResponse createDraft(DraftSubmissionRequest request, String actor, boolean submitter) {
+        if (request.category() == null) {
+            throw new InvalidSubmissionException("Choose a submission category to start a draft.");
+        }
+        requireDraftCategoryDetails(
+                request.category(),
+                request.studentNumber(),
+                request.programme(),
+                request.supervisor(),
+                request.recommendationLetterStatus(),
+                request.serviceRequested(),
+                request.serviceRequester(),
+                request.department(),
+                request.expectedResult()
+        );
+        Instant now = clock.instant();
+        String submitterId = submitter || clean(request.submitterId()) == null
+                ? actor
+                : request.submitterId().trim();
+        String submitterEmail = submitter
+                ? actor
+                : clean(request.submitterEmail()) == null
+                        ? emailFromSubmitterId(request.submitterId())
+                        : request.submitterEmail().trim();
+        Submission submission = new Submission(
+                UUID.randomUUID(),
+                request.category(),
+                valueOrEmpty(request.title()),
+                valueOrEmpty(request.purpose()),
+                valueOrEmpty(request.problemAddressed()),
+                actor,
+                submitterId,
+                clean(request.studentNumber()),
+                clean(request.programme()),
+                clean(request.supervisor()),
+                request.recommendationLetterStatus(),
+                submitterEmail,
+                submitter ? null : clean(request.submitterName()),
+                now
+        );
+        applyIntakeDetails(submission, request);
+        submissions.save(submission);
+        stageHistory.save(new CaseStageHistory(
+                UUID.randomUUID(),
+                submission.getId(),
+                null,
+                SubmissionStage.DRAFT,
+                actor,
+                now
+        ));
+        auditTrail.record(actor, "submission.draft_created", submission.getId(), null, AuditTrail.details(
+                "stage", submission.getStage().name(),
+                "category", submission.getCategory().name()
+        ));
+        return SubmissionResponse.from(submission);
+    }
+
+    /**
+     * Applies an autosave request to a draft. Only fields present in the request
+     * are changed; a draft that has already been submitted returns 409.
+     */
+    @Transactional
+    public SubmissionResponse patchDraft(UUID id, DraftSubmissionRequest request, String actor, boolean submitter) {
+        Submission submission = submissions.findByIdForUpdate(id)
+                .orElseThrow(() -> new SubmissionNotFoundException(id));
+        requireDraftOwner(submission, actor);
+        if (request.category() != null && submission.getCategory() != request.category()) {
+            throw new InvalidSubmissionException("The submission category cannot be changed after creation.");
+        }
+        requireDraftCategoryDetails(
+                submission.getCategory(),
+                request.studentNumber(),
+                request.programme(),
+                request.supervisor(),
+                request.recommendationLetterStatus(),
+                request.serviceRequested(),
+                request.serviceRequester(),
+                request.department(),
+                request.expectedResult()
+        );
+        Instant now = clock.instant();
+        submission.patchDraft(
+                request.title(),
+                request.purpose(),
+                request.problemAddressed(),
+                clean(request.studentNumber()),
+                clean(request.programme()),
+                clean(request.supervisor()),
+                request.recommendationLetterStatus(),
+                clean(request.submitterPhone()),
+                clean(request.serviceRequested()),
+                request.serviceRequester(),
+                clean(request.department()),
+                clean(request.expectedResult()),
+                request.preferredAt(),
+                clean(request.acceptedRulesVersion()),
+                clean(request.submitterEmail()),
+                clean(request.submitterName()),
+                now
+        );
+        submissions.flush();
+        auditTrail.record(actor, "submission.draft_updated", submission.getId(), null, AuditTrail.details(
+                "stage", submission.getStage().name()
         ));
         return SubmissionResponse.from(submission);
     }
@@ -579,6 +700,61 @@ public class SubmissionService {
         return summary.length() <= 2000 ? summary : summary.substring(0, 2000);
     }
 
+    /**
+     * Frontend aliases for the request-more-information action. Each label in
+     * {@code missing_items} becomes one requested line; the shared reason, due
+     * date and message are applied to every line.
+     */
+    @Transactional
+    public SubmissionResponse requestInformation(
+            UUID id,
+            RequestInfoAliasRequest request,
+            org.springframework.security.core.Authentication authentication
+    ) {
+        Instant dueAt = request.dueDate() == null
+                ? null
+                : request.dueDate().atTime(23, 59).atZone(CASE_CODE_ZONE).toInstant();
+        List<MissingItemRequest> items = request.missingItems() == null
+                ? List.of()
+                : request.missingItems().stream()
+                        .filter(label -> label != null && !label.isBlank())
+                        .map(label -> new MissingItemRequest(
+                                label.trim(),
+                                null,
+                                null,
+                                clean(request.reason()),
+                                dueAt,
+                                clean(request.message())
+                        ))
+                        .toList();
+        String note = clean(request.message());
+        return requestInformation(
+                id,
+                new RequestInformationRequest(note, items, clean(request.reason())),
+                authentication
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public SubmissionConfirmationResponse confirmation(UUID id, org.springframework.security.core.Authentication authentication) {
+        Submission submission = submissions.findVisibleById(
+                        id,
+                        SubmissionVisibility.scope(authentication),
+                        authentication.getName()
+                )
+                .orElseThrow(() -> new SubmissionNotFoundException(id));
+        return new SubmissionConfirmationResponse(
+                submission.getId(),
+                submission.getCode(),
+                submission.getSubmittedAt(),
+                submission.getResponsibleSectorId(),
+                submission.getResponsibleSectorName() == null
+                        ? submission.getDepartment()
+                        : submission.getResponsibleSectorName(),
+                submission.getResponsibleSectorWhatsappGroupUrl()
+        );
+    }
+
     @Transactional
     public SubmissionResponse advance(UUID id, SubmissionStage targetStage, String actor) {
         Submission submission = submissions.findByIdForUpdate(id)
@@ -918,7 +1094,93 @@ public class SubmissionService {
         );
     }
 
+    /**
+     * Briefs waiting on the submitter after reception asked for more
+     * information, with an overdue flag and the last reminder timestamp.
+     */
+    @Transactional(readOnly = true)
+    public MissingDocsQueueResponse missingDocsQueue(Pageable pageable) {
+        Page<Submission> page = submissions.findAllByStageOrderBySubmittedAtDescIdAsc(
+                SubmissionStage.AWAITING_INFORMATION,
+                pageable
+        );
+        List<UUID> ids = page.getContent().stream().map(Submission::getId).toList();
+        Map<UUID, List<MissingItem>> openItems = ids.isEmpty()
+                ? Map.of()
+                : missingItems
+                        .findAllBySubmissionIdInAndStatusOrderByRequestedAtAscIdAsc(
+                                ids,
+                                MissingItemStatus.OPEN
+                        )
+                        .stream()
+                        .collect(Collectors.groupingBy(MissingItem::getSubmissionId));
+        Instant now = clock.instant();
+        List<MissingDocsQueueItem> items = page.getContent().stream()
+                .map(submission -> {
+                    List<MissingItem> own = openItems.getOrDefault(submission.getId(), List.of());
+                    Instant dueAt = own.stream()
+                            .map(MissingItem::getDueAt)
+                            .filter(Objects::nonNull)
+                            .min(Instant::compareTo)
+                            .orElse(null);
+                    Instant lastRemindedAt = own.stream()
+                            .map(MissingItem::getLastRemindedAt)
+                            .filter(Objects::nonNull)
+                            .max(Instant::compareTo)
+                            .orElse(null);
+                    boolean overdue = dueAt != null && dueAt.isBefore(now);
+                    return new MissingDocsQueueItem(
+                            submission.getId(),
+                            submission.getCode(),
+                            submission.getTitle(),
+                            submission.getCategory(),
+                            submission.getSubmitterName() == null
+                                    ? submission.getSubmitterEmail()
+                                    : submission.getSubmitterName(),
+                            submission.getSubmitterEmail(),
+                            submission.getSubmittedAt(),
+                            dueAt,
+                            lastRemindedAt,
+                            overdue,
+                            own.stream().map(MissingItemResponse::from).toList()
+                    );
+                })
+                .toList();
+        long overdueCount = missingItems.countOverdueSubmissions(
+                SubmissionStage.AWAITING_INFORMATION,
+                MissingItemStatus.OPEN,
+                now
+        );
+        return new MissingDocsQueueResponse(
+                items,
+                page.getNumber(),
+                page.getSize(),
+                page.getTotalElements(),
+                page.getTotalPages(),
+                overdueCount
+        );
+    }
+
     private void applyIntakeDetails(Submission submission, CreateSubmissionRequest request) {
+        String department = clean(request.department());
+        if (submission.getCategory() == SubmissionCategory.SERVICE_REQUEST && department == null) {
+            department = suggestDepartment(clean(request.serviceRequested()));
+        } else if (submission.getCategory() != SubmissionCategory.SERVICE_REQUEST
+                && department == null) {
+            department = DEFAULT_DEPARTMENT;
+        }
+        submission.applyIntakeDetails(
+                clean(request.submitterPhone()),
+                clean(request.serviceRequested()),
+                request.serviceRequester(),
+                department,
+                clean(request.expectedResult()),
+                request.preferredAt(),
+                clean(request.acceptedRulesVersion())
+        );
+    }
+
+    private void applyIntakeDetails(Submission submission, DraftSubmissionRequest request) {
         String department = clean(request.department());
         if (submission.getCategory() == SubmissionCategory.SERVICE_REQUEST && department == null) {
             department = suggestDepartment(clean(request.serviceRequested()));
@@ -1121,9 +1383,56 @@ public class SubmissionService {
                 || clean(request.expectedResult()) != null;
     }
 
+    /**
+     * A draft may be partial but must never mix fields from two categories: the
+     * submission table enforces the same rule once the draft is stored.
+     */
+    private static void requireDraftCategoryDetails(
+            SubmissionCategory category,
+            String studentNumber,
+            String programme,
+            String supervisor,
+            RecommendationLetterStatus recommendationLetterStatus,
+            String serviceRequested,
+            ServiceRequester serviceRequester,
+            String department,
+            String expectedResult
+    ) {
+        boolean studentDetails = clean(studentNumber) != null
+                || clean(programme) != null
+                || clean(supervisor) != null
+                || recommendationLetterStatus != null;
+        String cleanDepartment = clean(department);
+        boolean serviceDetails = clean(serviceRequested) != null
+                || serviceRequester != null
+                || (cleanDepartment != null && !DEFAULT_DEPARTMENT.equalsIgnoreCase(cleanDepartment))
+                || clean(expectedResult) != null;
+        if (category == SubmissionCategory.STUDENT && serviceDetails) {
+            throw new InvalidSubmissionException(
+                    "Service-request details may only be provided for service requests."
+            );
+        }
+        if (category != SubmissionCategory.STUDENT && studentDetails) {
+            throw new InvalidSubmissionException(
+                    "Student-specific details may only be provided for student submissions."
+            );
+        }
+        if (category != SubmissionCategory.SERVICE_REQUEST && serviceDetails) {
+            throw new InvalidSubmissionException(
+                    "Service-request details may only be provided for service requests."
+            );
+        }
+    }
+
+    /**
+     * A draft may be edited by its submitter and by the staff member who
+     * registered it. Anyone else cannot see the draft, so this also keeps the
+     * edit endpoint aligned with the case-file capabilities.
+     */
     private static void requireDraftOwner(Submission submission, String actor) {
-        if (!submission.getSubmitterId().equals(actor)) {
-            throw new AccessDeniedException("Only the submitter can edit the brief.");
+        if (!submission.getSubmitterId().equals(actor)
+                && !actor.equals(submission.getRegisteredBy())) {
+            throw new AccessDeniedException("Only the submitter or the staff member who registered the brief can edit it.");
         }
     }
 
@@ -1223,6 +1532,10 @@ public class SubmissionService {
 
     private static String clean(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private static String valueOrEmpty(String value) {
+        return value == null ? "" : value.trim();
     }
 
     static int caseYear(Instant receivedAt) {
