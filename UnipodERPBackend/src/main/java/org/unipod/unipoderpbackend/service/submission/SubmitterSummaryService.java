@@ -27,6 +27,16 @@ import org.unipod.unipoderpbackend.repository.training.TrainingParticipantReposi
  */
 @Service
 public class SubmitterSummaryService {
+    /**
+     * Stages where the submitter has to act before their brief can continue.
+     * Shared with the {@code ACTION_REQUIRED} tab listing so the tab count and
+     * its contents cannot drift apart.
+     */
+    public static final List<SubmissionStage> ACTION_REQUIRED_STAGES = List.of(
+            SubmissionStage.AWAITING_INFORMATION,
+            SubmissionStage.IMPROVEMENT_REQUESTED
+    );
+
     private final SubmissionRepository submissions;
     private final MissingItemRepository missingItems;
     private final InvoiceRepository invoices;
@@ -62,15 +72,14 @@ public class SubmitterSummaryService {
                 SubmissionCategory.SERVICE_REQUEST
         );
         long drafts = submissions.countBySubmitterIdAndStage(submitterId, SubmissionStage.DRAFT);
-        long awaitingInformation = submissions.countBySubmitterIdAndStage(
-                submitterId,
-                SubmissionStage.AWAITING_INFORMATION
-        );
         long improvements = submissions.countBySubmitterIdAndStage(
                 submitterId,
                 SubmissionStage.IMPROVEMENT_REQUESTED
         );
-        long actionRequired = awaitingInformation + improvements;
+        long actionRequired = submissions.countBySubmitterIdAndStageIn(
+                submitterId,
+                ACTION_REQUIRED_STAGES
+        );
 
         List<TabCount> tabs = List.of(
                 new TabCount("ALL", "All", all),
@@ -83,11 +92,14 @@ public class SubmitterSummaryService {
         Instant now = clock.instant();
         long missingDocumentBriefs = missingItems.countSubmissionsWithOpenItems(
                 submitterId,
-                MissingItemStatus.OPEN
+                MissingItemStatus.OPEN,
+                ACTION_REQUIRED_STAGES
         );
+        // Only WAITING_FOR_PROOF needs the submitter: after a proof is uploaded
+        // the invoice is WAITING_FOR_CHECK and staff own the next step.
         long unpaidInvoices = invoices.countByCustomerEmailIgnoreCaseAndStatusIn(
                 submitterId,
-                List.of(InvoiceStatus.WAITING_FOR_PROOF, InvoiceStatus.WAITING_FOR_CHECK)
+                List.of(InvoiceStatus.WAITING_FOR_PROOF)
         );
         long upcomingBookings = bookings.countUpcoming(
                 submitterId,

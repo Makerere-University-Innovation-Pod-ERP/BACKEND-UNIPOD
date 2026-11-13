@@ -75,9 +75,14 @@ public class ReceptionChecklistService {
                 ));
                 existing.put(item, check);
             }
+            // An omitted note keeps the stored one; send an empty string to
+            // clear it. Named-line saves often only flip the checkbox.
+            String note = itemRequest.note() == null
+                    ? check.getNote()
+                    : clean(itemRequest.note());
             check.update(
                     Boolean.TRUE.equals(itemRequest.checked()),
-                    clean(itemRequest.note()),
+                    note,
                     actor,
                     now
             );

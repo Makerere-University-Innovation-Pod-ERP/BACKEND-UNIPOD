@@ -14,6 +14,7 @@ import java.util.List;
 public record RequestInfoAliasRequest(
         @JsonProperty("missing_items")
         @JsonAlias({"missingItems"})
+        @Size(max = 50, message = "must contain at most 50 items")
         List<@Size(max = 255) String> missingItems,
         @Size(max = 255) String reason,
         @JsonProperty("due_date")

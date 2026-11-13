@@ -2,7 +2,8 @@ package org.unipod.unipoderpbackend.service.submission;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.util.Optional;
+import java.util.List;
+import java.util.Locale;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,14 +22,12 @@ import org.unipod.unipoderpbackend.service.auth.AuthenticationService;
 
 /**
  * Reception-assisted intake for a submitter who walks in without an account.
- * The submitter is matched by email first, then by phone; a minimal PUBLIC
- * account is created when neither is known. The brief is submitted immediately
- * so it appears in the reception queue.
+ * The submitter is matched by email first, then by phone; a minimal account is
+ * created when neither is known. The brief is submitted immediately so it
+ * appears in the reception queue.
  */
 @Service
 public class WalkInSubmissionService {
-    private static final String WALK_IN_RULES_VERSION = "walk-in";
-
     private final AuthenticationService authentication;
     private final SubmissionService submissions;
     private final ApiUserRepository users;
@@ -52,16 +51,54 @@ public class WalkInSubmissionService {
     @Transactional
     public WalkInSubmissionResponse submit(WalkInSubmissionRequest request, Authentication authenticationContext) {
         String actor = authenticationContext.getName();
+        String name = clean(request.name());
+        if (name == null) {
+            throw new InvalidSubmissionException("The submitter's name is required.");
+        }
+        String phone = clean(request.phone());
+        if (phone == null) {
+            throw new InvalidSubmissionException("The submitter's phone number is required.");
+        }
+        if (phone.replaceAll("[^0-9]", "").length() < 7) {
+            throw new InvalidSubmissionException("The submitter's phone number is too short.");
+        }
         String email = clean(request.email());
+        String acceptedRules = clean(request.acceptedRulesVersion());
+        if (acceptedRules == null) {
+            throw new InvalidSubmissionException(
+                    "Record the version of the rules the submitter accepted before receiving the brief."
+            );
+        }
+
         ApiUser user = email == null ? null : users.findByEmailIgnoreCase(email).orElse(null);
-        if (user == null) {
-            user = findByPhone(request.phone()).orElse(null);
+        List<UserProfile> phoneProfiles = profiles.findAllByNormalizedPhone(phone);
+        if (phoneProfiles.size() > 1) {
+            throw new InvalidSubmissionException(
+                    "More than one account uses this phone number; capture the submitter's email address to identify them."
+            );
+        }
+        UserProfile phoneProfile = phoneProfiles.isEmpty() ? null : phoneProfiles.get(0);
+        if (user != null) {
+            if (phoneProfile != null && !phoneProfile.getUserId().equals(user.getId())) {
+                throw new InvalidSubmissionException(
+                        "The email address and phone number belong to different accounts. Correct the details and retry."
+                );
+            }
+        } else if (phoneProfile != null) {
+            user = users.findById(phoneProfile.getUserId())
+                    .orElseThrow(() -> new InvalidSubmissionException(
+                            "The account registered with this phone number could not be loaded."
+                    ));
+            if (email != null && !user.getEmail().equalsIgnoreCase(email)) {
+                throw new InvalidSubmissionException(
+                        "The email address does not match the account registered with this phone number."
+                );
+            }
         }
 
         AssistedAccountResponse account;
-        if (user != null) {
-            account = new AssistedAccountResponse(user.getEmail(), false, null, null, null);
-        } else {
+        UserProfile profile;
+        if (user == null) {
             if (email == null) {
                 throw new InvalidSubmissionException(
                         "Provide an email address so an account can be created for this submitter."
@@ -79,10 +116,14 @@ public class WalkInSubmissionService {
                     created.setPasswordToken(),
                     created.setPasswordUrl()
             );
+            profile = null;
+        } else {
+            account = new AssistedAccountResponse(user.getEmail(), false, null, null, null);
+            profile = profiles.findById(user.getId()).orElse(null);
         }
 
-        ensureProfile(user, request);
-        String acceptedRules = clean(request.acceptedRulesVersion());
+        ensureProfile(user, profile, request, name, phone, email, acceptedRules);
+
         CreateSubmissionRequest create = new CreateSubmissionRequest(
                 request.category(),
                 request.title().trim(),
@@ -94,54 +135,81 @@ public class WalkInSubmissionService {
                 clean(request.supervisor()),
                 request.recommendationLetterStatus(),
                 user.getEmail(),
-                clean(request.name()),
-                clean(request.phone()),
+                name,
+                phone,
                 clean(request.serviceRequested()),
                 request.serviceRequester(),
                 clean(request.department()),
                 clean(request.expectedResult()),
                 request.preferredAt(),
-                acceptedRules == null ? WALK_IN_RULES_VERSION : acceptedRules
+                acceptedRules
         );
         SubmissionResponse draft = submissions.create(create, actor, false);
         SubmissionResponse submitted = submissions.submit(draft.id(), actor, false);
         return new WalkInSubmissionResponse(submitted, account);
     }
 
-    private Optional<ApiUser> findByPhone(String phone) {
-        String cleanPhone = clean(phone);
-        if (cleanPhone == null) {
-            return Optional.empty();
-        }
-        return profiles.findFirstByPhone(cleanPhone)
-                .map(UserProfile::getUserId)
-                .flatMap(users::findById);
-    }
-
-    private void ensureProfile(ApiUser user, WalkInSubmissionRequest request) {
-        if (profiles.findById(user.getId()).isPresent()) {
+    private void ensureProfile(
+            ApiUser user,
+            UserProfile existing,
+            WalkInSubmissionRequest request,
+            String name,
+            String phone,
+            String email,
+            String acceptedRules
+    ) {
+        AccountKind requestedKind = request.accountKind();
+        if (existing != null) {
+            AccountKind accountKind = requestedKind == null ? existing.getAccountKind() : requestedKind;
+            if (accountKind != existing.getAccountKind()) {
+                throw new InvalidSubmissionException(
+                        "This submitter already has a "
+                                + existing.getAccountKind().name().toLowerCase(Locale.ROOT)
+                                + " account; a walk-in cannot change the account kind."
+                );
+            }
             return;
         }
+
+        AccountKind accountKind = requestedKind == null ? AccountKind.PUBLIC : requestedKind;
         Instant now = clock.instant();
-        String name = clean(request.name());
-        String fullName = name == null
-                ? user.getEmail()
-                : name.length() <= 200 ? name : name.substring(0, 200);
-        profiles.save(new UserProfile(
+        String fullName = name.length() <= 200 ? name : name.substring(0, 200);
+        UserProfile profile = new UserProfile(
                 user.getId(),
-                request.accountKind() == null ? AccountKind.PUBLIC : request.accountKind(),
+                accountKind,
                 fullName,
                 firstName(name),
-                clean(request.phone()) == null ? "not-provided" : clean(request.phone()),
-                WALK_IN_RULES_VERSION,
+                phone,
+                acceptedRules,
                 now
-        ));
+        );
+        if (accountKind == AccountKind.STUDENT) {
+            String studentNumber = clean(request.studentNumber());
+            String programme = clean(request.programme());
+            if (studentNumber == null || programme == null || email == null) {
+                throw new InvalidSubmissionException(
+                        "A student account needs a student number, programme and university email address."
+                );
+            }
+            if (profiles.existsByStudentNumberIgnoreCase(studentNumber)) {
+                throw new InvalidSubmissionException("This student number is already registered.");
+            }
+            profile.recordStudentDetails(
+                    studentNumber,
+                    programme,
+                    email.toLowerCase(Locale.ROOT)
+            );
+        }
+        if (accountKind == AccountKind.ORGANISATION) {
+            throw new InvalidSubmissionException(
+                    "A walk-in cannot create an organisation account; capture the organisation details "
+                            + "through signup first."
+            );
+        }
+        profiles.save(profile);
     }
 
     private static String firstName(String name) {
-        if (name == null || name.isBlank()) {
-            return null;
-        }
         String trimmed = name.trim();
         int space = trimmed.indexOf(' ');
         String first = space < 0 ? trimmed : trimmed.substring(0, space);

@@ -49,12 +49,16 @@ public interface MissingItemRepository extends JpaRepository<MissingItem, UUID> 
             from MissingItem item
             where item.status = :status
               and item.submissionId in (
-                  select submission.id from Submission submission where submission.submitterId = :submitterId
+                  select submission.id
+                  from Submission submission
+                  where submission.submitterId = :submitterId
+                    and submission.stage in :stages
               )
             """)
     long countSubmissionsWithOpenItems(
             @Param("submitterId") String submitterId,
-            @Param("status") MissingItemStatus status
+            @Param("status") MissingItemStatus status,
+            @Param("stages") Collection<SubmissionStage> stages
     );
 
     @Query("""

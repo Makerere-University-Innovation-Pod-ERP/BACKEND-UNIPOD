@@ -589,12 +589,16 @@ paths:
       summary: Capture a walk-in brief for a submitter at reception
       description: |
         Receptionist-assisted intake. The submitter is matched by email first,
-        then by phone; when neither resolves to an account a minimal `PUBLIC`
-        account is created and the temporary password or set-password link is
-        returned once. `registered_by` is the receptionist and `submitter_id`
-        is the walk-in account. Unlike a draft, the brief is submitted
-        immediately and appears in the reception queue. When no account exists
-        and no email is supplied the request returns 400.
+        then by phone. When neither resolves to an account a minimal account of
+        the supplied `account_kind` (default `PUBLIC`) is created and the
+        temporary password or set-password link is returned once. `registered_by`
+        is the receptionist and `submitter_id` is the walk-in account. Unlike a
+        draft, the brief is submitted immediately and appears in the reception
+        queue. The request returns 400 when no account exists and no email is
+        supplied, when the email and phone belong to different accounts, when
+        more than one account shares the phone number, when the rules version is
+        missing, or when the account-kind details needed for the profile are
+        missing.
       security:
         - bearerAuth: []
       requestBody:
@@ -682,8 +686,11 @@ paths:
       description: |
         Returns only submissions whose `submitter_id` is the signed-in
         principal; staff-only fields are omitted. Each row includes
-        `pendingAction`, `waitingForYou`, and `waitingSince` so the home screen
-        can highlight work waiting for the submitter. Use `tab` to split the
+        `pendingAction`, `pendingActionHref`, `waitingForYou`, and
+        `waitingSince` so the home screen can highlight work waiting for the
+        submitter. `pendingActionHref` is an API path to follow for the details
+        behind the action (for example `/cases/{id}/my-improvement`); it is null
+        when no extra document is needed. Use `tab` to split the
         Briefs and Service requests tabs; Invoices and payments and Bookings are
         separate modules advertised by `GET /me/capabilities`.
       security:
@@ -701,7 +708,7 @@ paths:
             endpoint.
           schema:
             type: string
-            enum: [BRIEFS, SERVICE_REQUESTS]
+            enum: [ALL, BRIEFS, SERVICE_REQUESTS, DRAFTS, ACTION_REQUIRED]
       responses:
         '200':
           description: Submitter-owned submissions
@@ -868,11 +875,14 @@ paths:
       x-required-roles: [SUBMITTER]
       summary: Reply to an information request
       description: |
-        Available to the owning submitter while the brief is `SUBMITTED` or
-        `AWAITING_INFORMATION`. Every field is optional so the submitter can send
-        only the missing detail. Open information requests are resolved
-        automatically; the brief returns to `SUBMITTED` and a
-        `submission.reply_received` notification is published.
+        Available to the owning submitter while the brief is `SUBMITTED`,
+        `AWAITING_INFORMATION`, or `IMPROVEMENT_REQUESTED`. Every field is
+        optional so the submitter can send only the missing detail. Open
+        information requests are resolved automatically; the brief returns to
+        `SUBMITTED`, or to `RESUBMITTED` when it answers an improvement request,
+        and a `submission.reply_received` notification is published. For an
+        improvement reply the notification confirms that the improved version
+        was received rather than saying the brief went back to reception.
       security:
         - bearerAuth: []
       parameters:
@@ -1225,10 +1235,11 @@ paths:
       summary: Upload the missing files and answer an information request
       description: |
         The owning submitter uploads one or more `files` (or a single `file`)
-        together with an optional reply `note`. Uploaded files resolve the open
-        document items, the brief returns from `AWAITING_INFORMATION` to
-        `SUBMITTED`, and reception is notified. Sent as
-        `multipart/form-data`.
+        together with an optional reply `note`. Each uploaded file must name the
+        open requested item it answers through `documentItemIds`; the item
+        supplies the file's document type and is the only item the file
+        resolves. The brief returns from `AWAITING_INFORMATION` to `SUBMITTED`
+        and reception is notified. Sent as `multipart/form-data`.
       security:
         - bearerAuth: []
       parameters:
@@ -1243,6 +1254,14 @@ paths:
                 note:
                   type: string
                   maxLength: 2000
+                documentItemIds:
+                  type: array
+                  description: >-
+                    One open document item id per uploaded file, in the same
+                    order as `files`/`file`. Required when a file is uploaded.
+                  items:
+                    type: string
+                    format: uuid
                 files:
                   type: array
                   items:
@@ -1661,12 +1680,14 @@ paths:
       summary: Move a case to its next allowed stage
       description: |
         Administrator and Innovation Coordinator may perform any valid canonical
-        transition. A Fact-Finding Officer may move an `IN_FACT_FINDING` or
-        `FORWARDED` case only to `READY_FOR_REVIEW` or `IMPROVEMENT_REQUESTED`.
-        Moving to `READY_FOR_REVIEW` or `IN_REVIEW` from fact-finding requires a
-        completed fact-finding check (FR-008), and `IMPROVEMENT_REQUESTED`
-        requires a non-blank note. The current version is required to reject stale
-        writes; a stale write returns 409. A transition the actor's role cannot
+        transition. A Fact-Finding Officer may start fact-finding (`IN_FACT_FINDING`)
+        from a `FORWARDED` case, then move an `IN_FACT_FINDING` case only to
+        `READY_FOR_REVIEW` or `IMPROVEMENT_REQUESTED`. Moving to `READY_FOR_REVIEW`
+        or `IN_REVIEW` from fact-finding requires a completed fact-finding check
+        (FR-008), and `IMPROVEMENT_REQUESTED` requires a non-blank note. Asking for
+        more changes directly after a `RESUBMITTED` version is allowed, so it does
+        not need an extra accept step. The current version is required to reject
+        stale writes; a stale write returns 409. A transition the actor's role cannot
         perform returns 403.
       parameters:
         - $ref: '#/components/parameters/SubmissionId'
@@ -2343,7 +2364,8 @@ paths:
         `application/octet-stream`); anything else returns `400`. Each upload receives
         the next per-type `version` and resolves a matching open document request.
         `documentType` defaults to `OTHER` when omitted. Submitters may upload only while their
-        brief is `DRAFT`, `SUBMITTED`, or `AWAITING_INFORMATION`.
+        brief is `DRAFT`, `SUBMITTED`, `AWAITING_INFORMATION`, or
+        `IMPROVEMENT_REQUESTED`, so an improved version can carry its files.
       parameters:
         - $ref: '#/components/parameters/SubmissionId'
       requestBody:
@@ -5319,6 +5341,10 @@ components:
           description: Used first to find or create the account; required when no account matches the phone.
         account_kind:
           $ref: '#/components/schemas/AccountKind'
+          description: >-
+            Defaults to `PUBLIC` for a new account. `STUDENT` requires
+            `studentNumber`, `programme` and `email`; `ORGANISATION` cannot be
+            created through walk-in intake and must sign up first.
         category:
           type: string
           enum: [student, general, service_request]
@@ -5366,7 +5392,7 @@ components:
         acceptedRulesVersion:
           type: [string, 'null']
           maxLength: 32
-          description: Defaults to `walk-in` when omitted.
+          description: Required; the version of the rules the submitter accepted at the desk.
     WalkInSubmissionResponse:
       type: object
       required: [submission, account]
@@ -5877,6 +5903,13 @@ components:
           oneOf:
             - $ref: '#/components/schemas/SubmitterPendingAction'
             - type: 'null'
+        pendingActionHref:
+          type: [string, 'null']
+          description: |
+            Server-relative API path with the details behind the pending action,
+            appended to the API base URL. For `IMPROVEMENT_REQUESTED` this is
+            `/cases/{id}/my-improvement`, which returns the guidance, due date,
+            and requested items. Null when no extra document is needed.
         waitingForYou:
           type: [string, 'null']
           description: One-line highlight for the submitter home.
@@ -6497,7 +6530,7 @@ components:
           type: boolean
         canUploadDocuments:
           type: boolean
-          description: Uploads are allowed only while the brief is DRAFT, SUBMITTED, or AWAITING_INFORMATION.
+          description: Uploads are allowed only while the brief is DRAFT, SUBMITTED, AWAITING_INFORMATION, or IMPROVEMENT_REQUESTED.
         canUploadPaymentProof:
           type: boolean
           description: True when the invoices and payments module is available.

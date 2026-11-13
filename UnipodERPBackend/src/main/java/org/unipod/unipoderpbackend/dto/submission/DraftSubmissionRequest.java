@@ -1,6 +1,5 @@
 package org.unipod.unipoderpbackend.dto.submission;
 
-import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
 import org.unipod.unipoderpbackend.model.submission.RecommendationLetterStatus;
@@ -23,7 +22,9 @@ public record DraftSubmissionRequest(
         @Size(max = 200) String programme,
         @Size(max = 255) String supervisor,
         RecommendationLetterStatus recommendationLetterStatus,
-        @Email @Size(max = 254) String submitterEmail,
+        // Validated in the service after trimming, so a blank autosave value
+        // clears the address instead of failing bean validation.
+        @Size(max = 254) String submitterEmail,
         @Size(max = 255) String submitterName,
         @Size(max = 40) String submitterPhone,
         @Size(max = 255) String serviceRequested,

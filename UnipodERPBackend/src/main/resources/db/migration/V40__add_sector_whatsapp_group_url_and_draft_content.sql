@@ -5,6 +5,12 @@
 ALTER TABLE sectors
     ADD COLUMN whatsapp_group_url VARCHAR(500);
 
+-- Invite links are rendered as clickable links in the portal, so only accept
+-- absolute HTTPS URLs.
+ALTER TABLE sectors
+    ADD CONSTRAINT ck_sectors_whatsapp_group_url
+        CHECK (whatsapp_group_url IS NULL OR whatsapp_group_url ~ '^https://\S+$');
+
 ALTER TABLE submissions
     DROP CONSTRAINT ck_submission_title,
     DROP CONSTRAINT ck_submission_purpose,

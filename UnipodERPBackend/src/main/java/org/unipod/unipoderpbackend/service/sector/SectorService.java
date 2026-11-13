@@ -2,6 +2,7 @@ package org.unipod.unipoderpbackend.service.sector;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -39,6 +40,19 @@ public class SectorService {
                 .toList();
     }
 
+    /**
+     * Looks up the active department an intake form named, so the submitter
+     * confirmation can share that department's invite link without exposing it
+     * on the general sector directory.
+     */
+    @Transactional(readOnly = true)
+    public Optional<Sector> activeSectorByName(String name) {
+        if (name == null || name.isBlank()) {
+            return Optional.empty();
+        }
+        return sectors.findFirstByNameIgnoreCaseAndActiveTrue(name.trim());
+    }
+
     @Transactional(readOnly = true)
     public List<SectorFilterOption> filterOptions() {
         return sectors.findAllByOrderByNameAsc()
@@ -59,7 +73,7 @@ public class SectorService {
                     UUID.randomUUID(),
                     name,
                     request.notificationEmail().trim(),
-                    request.whatsappGroupUrl(),
+                    normalizeWhatsappGroupUrl(request.whatsappGroupUrl()),
                     request.active(),
                     now,
                     now
@@ -80,10 +94,15 @@ public class SectorService {
         if (sectors.existsByNameIgnoreCaseAndIdNot(name, id)) {
             throw new SectorConflictException();
         }
+        // An omitted link keeps the stored one; send an explicit empty string to
+        // remove it. This avoids clearing the invite link on unrelated edits.
+        String whatsappGroupUrl = request.whatsappGroupUrl() == null
+                ? sector.getWhatsappGroupUrl()
+                : normalizeWhatsappGroupUrl(request.whatsappGroupUrl());
         sector.update(
                 name,
                 request.notificationEmail().trim(),
-                request.whatsappGroupUrl(),
+                whatsappGroupUrl,
                 request.active(),
                 Instant.now()
         );
@@ -104,6 +123,14 @@ public class SectorService {
             throw new SectorNotFoundException(id);
         }
         return sector;
+    }
+
+    private static String normalizeWhatsappGroupUrl(String url) {
+        if (url == null) {
+            return null;
+        }
+        String trimmed = url.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private static SectorConflictException conflictIfNameConstraint(DataIntegrityViolationException exception) {

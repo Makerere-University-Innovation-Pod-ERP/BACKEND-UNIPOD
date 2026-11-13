@@ -90,10 +90,46 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
     );
 
     @EntityGraph(attributePaths = "responsibleSector")
+    Page<Submission> findAllBySubmitterIdAndStageOrderByUpdatedAtDescIdAsc(
+            String submitterId,
+            SubmissionStage stage,
+            Pageable pageable
+    );
+
+    @EntityGraph(attributePaths = "responsibleSector")
+    Page<Submission> findAllBySubmitterIdAndStageInOrderByUpdatedAtDescIdAsc(
+            String submitterId,
+            Collection<SubmissionStage> stages,
+            Pageable pageable
+    );
+
+    @EntityGraph(attributePaths = "responsibleSector")
     Page<Submission> findAllByStageOrderByUpdatedAtDescIdAsc(SubmissionStage stage, Pageable pageable);
 
     @EntityGraph(attributePaths = "responsibleSector")
     Page<Submission> findAllByStageOrderBySubmittedAtDescIdAsc(SubmissionStage stage, Pageable pageable);
+
+    /**
+     * The missing-documents queue only lists briefs that actually have an open
+     * item, so a note-only information request does not appear as an empty row.
+     */
+    @EntityGraph(attributePaths = "responsibleSector")
+    @Query("""
+            select submission
+            from Submission submission
+            where submission.stage = :stage
+              and exists (
+                  select item.id
+                  from MissingItem item
+                  where item.submissionId = submission.id
+                    and item.status = org.unipod.unipoderpbackend.model.submission.MissingItemStatus.OPEN
+              )
+            order by submission.submittedAt desc, submission.id asc
+            """)
+    Page<Submission> findAllWithOpenItemsByStage(
+            @Param("stage") SubmissionStage stage,
+            Pageable pageable
+    );
 
     @EntityGraph(attributePaths = "responsibleSector")
     @Query("""

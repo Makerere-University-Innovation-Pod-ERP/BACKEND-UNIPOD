@@ -79,7 +79,7 @@ public class MySubmissionsController {
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "The tab must be BRIEFS or SERVICE_REQUESTS."
+                    "The tab must be ALL, BRIEFS, SERVICE_REQUESTS, DRAFTS or ACTION_REQUIRED."
             );
         }
     }

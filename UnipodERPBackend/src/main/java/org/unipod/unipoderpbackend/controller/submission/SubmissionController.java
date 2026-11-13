@@ -260,13 +260,15 @@ public class SubmissionController {
     /**
      * The submitter's answer to a more-information request: upload the missing
      * files together with a reply note, returning the brief to the reception
-     * queue.
+     * queue. Each file names the open requested item it answers so the file is
+     * not typed from its upload position.
      */
     @PostMapping(path = "/{id}/respond-info", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('SUBMITTER')")
     public SubmissionResponse respondInfo(
             @PathVariable UUID id,
             @RequestParam(required = false) String note,
+            @RequestParam(name = "documentItemIds", required = false) List<UUID> documentItemIds,
             @RequestParam(name = "files", required = false) List<MultipartFile> files,
             @RequestParam(name = "file", required = false) List<MultipartFile> singleFiles,
             Authentication authentication
@@ -278,7 +280,7 @@ public class SubmissionController {
         if (singleFiles != null) {
             uploads.addAll(singleFiles);
         }
-        return informationResponses.respond(id, note, uploads, authentication);
+        return informationResponses.respond(id, note, documentItemIds, uploads, authentication);
     }
 
     /**

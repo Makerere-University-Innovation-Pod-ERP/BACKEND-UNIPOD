@@ -105,6 +105,13 @@ public class CaseFileService {
             "A note is required when requesting more information.";
     private static final List<CaseStage> FACT_FINDING_NEXT_STAGES =
             List.of(CaseStage.READY_FOR_REVIEW, CaseStage.IMPROVEMENT_REQUESTED);
+    /**
+     * A forwarded case has not been fact-found yet, so the officer's only move is
+     * to start fact-finding. Offering review or improvement here would let a case
+     * skip fact-finding, and {@link Submission#transitionTo} rejects it with 409.
+     */
+    private static final List<CaseStage> FACT_FINDING_START_STAGES =
+            List.of(CaseStage.IN_FACT_FINDING);
 
     private final SubmissionRepository submissions;
     private final SubmissionDocumentRepository documents;
@@ -426,9 +433,9 @@ public class CaseFileService {
     ) {
         boolean operator = isOperator(authentication);
         boolean receptionist = hasRole(authentication, "RECEPTIONIST");
-        boolean reception = operator || receptionist;
-        boolean reviewer = hasRole(authentication, "REVIEWER");
         boolean factFindingOfficer = isFactFindingOfficer(authentication);
+        boolean reception = operator || receptionist || factFindingOfficer;
+        boolean reviewer = hasRole(authentication, "REVIEWER");
         boolean sectorOfficer = hasRole(authentication, "SECTOR_OFFICER");
         SubmissionStage stage = submission.getStage();
         boolean owner = isOwner(submission, authentication);
@@ -455,14 +462,16 @@ public class CaseFileService {
         boolean canEditDraft = stage == SubmissionStage.DRAFT && (owner || reception);
         boolean canRespondInfo = stage == SubmissionStage.AWAITING_INFORMATION && owner;
         boolean canUploadRevision = stage == SubmissionStage.IMPROVEMENT_REQUESTED && owner;
+        boolean atReception = stage == SubmissionStage.DRAFT || stage == SubmissionStage.SUBMITTED;
         boolean receptionChecklistComplete = !reception
-                || stage != SubmissionStage.SUBMITTED
+                || !atReception
                 || receptionChecklists.isComplete(submission.getId());
         boolean canReceptionForward = reception
-                && stage == SubmissionStage.SUBMITTED
+                && atReception
                 && receptionChecklistComplete;
         boolean canFactFind = factFindingOfficer && isFactFindingStage(stage);
-        boolean canAssignReviewers = operator && stage == SubmissionStage.IN_REVIEW;
+        boolean canAssignReviewers = operator
+                && (stage == SubmissionStage.READY_FOR_REVIEW || stage == SubmissionStage.IN_REVIEW);
         boolean canRecordDecision = saveOutcome.enabled();
         boolean canDepartmentRespond = sectorOfficer
                 && (stage == SubmissionStage.FORWARDED || stage == SubmissionStage.IN_FACT_FINDING);
@@ -493,7 +502,7 @@ public class CaseFileService {
             lockReasons.put(
                     "canReceptionForward",
                     !reception ? RECEPTION_FORWARD_ROLE_REASON
-                            : stage != SubmissionStage.SUBMITTED ? RECEPTION_FORWARD_STAGE_REASON
+                            : !atReception ? RECEPTION_FORWARD_STAGE_REASON
                             : RECEPTION_CHECKLIST_INCOMPLETE_REASON
             );
         }
@@ -591,7 +600,10 @@ public class CaseFileService {
                     CaseStage.CLOSED
             );
             case IMPROVEMENT_REQUESTED -> List.of(CaseStage.RESUBMITTED);
-            case RESUBMITTED -> List.of(CaseStage.IN_REVIEW);
+            case RESUBMITTED -> List.of(
+                    CaseStage.IN_REVIEW,
+                    CaseStage.IMPROVEMENT_REQUESTED
+            );
             case CONFIRMED_AS_PROJECT -> List.of(CaseStage.AWAITING_PAYMENT, CaseStage.IN_PROGRESS);
             case AWAITING_PAYMENT -> List.of(CaseStage.IN_PROGRESS, CaseStage.CLOSED);
             case IN_PROGRESS -> List.of(CaseStage.COMPLETED, CaseStage.CLOSED);
@@ -604,7 +616,9 @@ public class CaseFileService {
             return nextStages(stage);
         }
         if (isFactFindingOfficer(authentication) && isFactFindingStage(stage)) {
-            return FACT_FINDING_NEXT_STAGES;
+            return stage == SubmissionStage.FORWARDED
+                    ? FACT_FINDING_START_STAGES
+                    : FACT_FINDING_NEXT_STAGES;
         }
         return List.of();
     }

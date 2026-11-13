@@ -186,6 +186,11 @@ public class SubmissionService {
      */
     @Transactional
     public SubmissionResponse createDraft(DraftSubmissionRequest request, String actor, boolean submitter) {
+        if (submitter) {
+            requireSubmitterRecommendationStatus(request.recommendationLetterStatus());
+        } else {
+            requireValidSubmitterEmail(request.submitterEmail());
+        }
         if (request.category() == null) {
             throw new InvalidSubmissionException("Choose a submission category to start a draft.");
         }
@@ -248,9 +253,15 @@ public class SubmissionService {
      */
     @Transactional
     public SubmissionResponse patchDraft(UUID id, DraftSubmissionRequest request, String actor, boolean submitter) {
+        if (submitter) {
+            requireSubmitterRecommendationStatus(request.recommendationLetterStatus());
+        } else {
+            requireValidSubmitterEmail(request.submitterEmail());
+        }
         Submission submission = submissions.findByIdForUpdate(id)
                 .orElseThrow(() -> new SubmissionNotFoundException(id));
         requireDraftOwner(submission, actor);
+        requireSubmitterOwnership(submission, actor, submitter);
         if (request.category() != null && submission.getCategory() != request.category()) {
             throw new InvalidSubmissionException("The submission category cannot be changed after creation.");
         }
@@ -270,19 +281,19 @@ public class SubmissionService {
                 request.title(),
                 request.purpose(),
                 request.problemAddressed(),
-                clean(request.studentNumber()),
-                clean(request.programme()),
-                clean(request.supervisor()),
+                request.studentNumber(),
+                request.programme(),
+                request.supervisor(),
                 request.recommendationLetterStatus(),
-                clean(request.submitterPhone()),
-                clean(request.serviceRequested()),
+                request.submitterPhone(),
+                request.serviceRequested(),
                 request.serviceRequester(),
-                clean(request.department()),
-                clean(request.expectedResult()),
+                request.department(),
+                request.expectedResult(),
                 request.preferredAt(),
-                clean(request.acceptedRulesVersion()),
-                clean(request.submitterEmail()),
-                clean(request.submitterName()),
+                request.acceptedRulesVersion(),
+                submitter ? null : request.submitterEmail(),
+                submitter ? null : request.submitterName(),
                 now
         );
         submissions.flush();
@@ -440,6 +451,7 @@ public class SubmissionService {
         SubmissionStage previousStage = submission.getStage();
         submission.reply(now);
         SubmissionStage resultingStage = submission.getStage();
+        boolean improvementReply = previousStage == SubmissionStage.IMPROVEMENT_REQUESTED;
         String note = clean(request.note()) == null ? "Submitter replied with the requested information." : clean(request.note());
         stageHistory.save(new CaseStageHistory(
                 UUID.randomUUID(),
@@ -454,16 +466,24 @@ public class SubmissionService {
         notifySubmitter(
                 submission,
                 "submission.reply_received",
-                "Reply received for submission " + submission.getCode(),
-                "Your reply has been received and the brief is back with reception.",
+                improvementReply
+                        ? "Improved version received for submission " + submission.getCode()
+                        : "Reply received for submission " + submission.getCode(),
+                improvementReply
+                        ? "Your improved version has been received and is ready for the next review."
+                        : "Your reply has been received and the brief is back with reception.",
                 actor,
                 now
         );
         notifyReception(
                 submission,
                 "submission.reply_received",
-                "Reply received for " + submission.getCode(),
-                "The submitter replied with the requested information; the brief is back in the reception queue.",
+                improvementReply
+                        ? "Improved version received for " + submission.getCode()
+                        : "Reply received for " + submission.getCode(),
+                improvementReply
+                        ? "The submitter uploaded an improved version; the case is ready for the next review."
+                        : "The submitter replied with the requested information; the brief is back in the reception queue.",
                 actor,
                 now
         );
@@ -747,15 +767,12 @@ public class SubmissionService {
         String destinationName = submission.getResponsibleSectorName();
         String whatsappGroupUrl = submission.getResponsibleSectorWhatsappGroupUrl();
         if (destinationId == null && clean(submission.getDepartment()) != null) {
-            SectorResponse suggested = sectorsCatalog.activeSectors().stream()
-                    .filter(sector -> sector.name() != null
-                            && sector.name().equalsIgnoreCase(submission.getDepartment().trim()))
-                    .findFirst()
+            Sector suggested = sectorsCatalog.activeSectorByName(submission.getDepartment())
                     .orElse(null);
             if (suggested != null) {
-                destinationId = suggested.id();
-                destinationName = suggested.name();
-                whatsappGroupUrl = suggested.whatsappGroupUrl();
+                destinationId = suggested.getId();
+                destinationName = suggested.getName();
+                whatsappGroupUrl = suggested.getWhatsappGroupUrl();
             }
         }
         return new SubmissionConfirmationResponse(
@@ -966,6 +983,14 @@ public class SubmissionService {
             page = submissions.findAllBySubmitterIdAndCategoryOrderByUpdatedAtDescIdAsc(
                     submitterId, SubmissionCategory.SERVICE_REQUEST, pageable
             );
+        } else if (tab == SubmitterTab.DRAFTS) {
+            page = submissions.findAllBySubmitterIdAndStageOrderByUpdatedAtDescIdAsc(
+                    submitterId, SubmissionStage.DRAFT, pageable
+            );
+        } else if (tab == SubmitterTab.ACTION_REQUIRED) {
+            page = submissions.findAllBySubmitterIdAndStageInOrderByUpdatedAtDescIdAsc(
+                    submitterId, SubmitterSummaryService.ACTION_REQUIRED_STAGES, pageable
+            );
         } else {
             page = submissions.findAllBySubmitterIdOrderByUpdatedAtDescIdAsc(submitterId, pageable);
         }
@@ -1004,6 +1029,7 @@ public class SubmissionService {
         return SubmitterSubmissionResponse.from(
                 submission,
                 pending.action(),
+                pending.href(),
                 pending.message(),
                 pending.since()
         );
@@ -1031,32 +1057,46 @@ public class SubmissionService {
                     .map(MissingItem::getRequestedAt)
                     .min(Instant::compareTo)
                     .orElse(next.getRequestedAt());
-            return new Pending(action, message, since);
+            return new Pending(action, null, message, since);
         }
         String note = clean(submission.getInformationRequestedNote());
         if (note != null) {
             Instant since = submission.getInformationRequestedAt() == null
                     ? submission.getUpdatedAt()
                     : submission.getInformationRequestedAt();
-            return new Pending(SubmitterPendingAction.PROVIDE_INFORMATION, note, since);
+            return new Pending(SubmitterPendingAction.PROVIDE_INFORMATION, null, note, since);
         }
         if (submission.getStage() == SubmissionStage.IMPROVEMENT_REQUESTED) {
+            // The request may come from a lifecycle transition, which records its
+            // guidance in the stage history rather than outcomeNote, so the action
+            // must not depend on outcomeNote being present.
             String improvementNote = clean(submission.getOutcomeNote());
-            if (improvementNote != null) {
-                Instant since = submission.getOutcomeDecidedAt() == null
-                        ? submission.getUpdatedAt()
-                        : submission.getOutcomeDecidedAt();
-                return new Pending(SubmitterPendingAction.PROVIDE_INFORMATION, improvementNote, since);
-            }
+            String message = improvementNote != null
+                    ? improvementNote
+                    : "Reviewers requested an improved version. Open the improvement request for the guidance and due date.";
+            Instant since = submission.getOutcomeDecidedAt() == null
+                    ? submission.getUpdatedAt()
+                    : submission.getOutcomeDecidedAt();
+            return new Pending(
+                    SubmitterPendingAction.PROVIDE_INFORMATION,
+                    improvementHref(submission),
+                    message,
+                    since
+            );
         }
         if (submission.getStage() == SubmissionStage.DRAFT) {
             return new Pending(
                     SubmitterPendingAction.CONTINUE_DRAFT,
+                    null,
                     "Continue your draft and submit it.",
                     submission.getCreatedAt()
             );
         }
         return Pending.NONE;
+    }
+
+    private static String improvementHref(Submission submission) {
+        return "/cases/" + submission.getId() + "/my-improvement";
     }
 
     private static boolean submitterCanAct(SubmissionStage stage) {
@@ -1066,8 +1106,13 @@ public class SubmissionService {
                 || stage == SubmissionStage.IMPROVEMENT_REQUESTED;
     }
 
-    private record Pending(SubmitterPendingAction action, String message, Instant since) {
-        private static final Pending NONE = new Pending(null, null, null);
+    private record Pending(
+            SubmitterPendingAction action,
+            String href,
+            String message,
+            Instant since
+    ) {
+        private static final Pending NONE = new Pending(null, null, null, null);
     }
 
     @Transactional(readOnly = true)
@@ -1113,7 +1158,7 @@ public class SubmissionService {
      */
     @Transactional(readOnly = true)
     public MissingDocsQueueResponse missingDocsQueue(Pageable pageable) {
-        Page<Submission> page = submissions.findAllByStageOrderBySubmittedAtDescIdAsc(
+        Page<Submission> page = submissions.findAllWithOpenItemsByStage(
                 SubmissionStage.AWAITING_INFORMATION,
                 pageable
         );
@@ -1486,15 +1531,23 @@ public class SubmissionService {
         }
         if (submission.getStage() != SubmissionStage.DRAFT
                 && submission.getStage() != SubmissionStage.SUBMITTED
-                && submission.getStage() != SubmissionStage.AWAITING_INFORMATION) {
+                && submission.getStage() != SubmissionStage.AWAITING_INFORMATION
+                && submission.getStage() != SubmissionStage.IMPROVEMENT_REQUESTED) {
             throw new AccessDeniedException(
-                    "Submitters may only attach documents before the submission is forwarded."
+                    "Submitters may only attach documents while the brief can still change."
             );
         }
     }
 
     private static String emailFromSubmitterId(String submitterId) {
         return isEmailAddress(submitterId) ? submitterId : null;
+    }
+
+    private static void requireValidSubmitterEmail(String email) {
+        String cleaned = clean(email);
+        if (cleaned != null && !isEmailAddress(cleaned)) {
+            throw new InvalidSubmissionException("The submitter email address is invalid.");
+        }
     }
 
     static boolean isEmailAddress(String email) {

@@ -18,7 +18,12 @@ public record SectorRequest(
         String notificationEmail,
         @NotNull Boolean active,
         Long version,
-        @Size(max = 500) String whatsappGroupUrl
+        @Size(max = 500)
+        @Pattern(
+                regexp = "^\\s*$|^https://\\S+$",
+                message = "must be an absolute https:// invite link"
+        )
+        String whatsappGroupUrl
 ) {
     public SectorRequest(String name, String notificationEmail, Boolean active) {
         this(name, notificationEmail, active, null, null);

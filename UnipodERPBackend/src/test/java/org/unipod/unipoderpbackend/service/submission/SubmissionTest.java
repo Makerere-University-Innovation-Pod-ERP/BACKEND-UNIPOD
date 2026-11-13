@@ -3,6 +3,7 @@ package org.unipod.unipoderpbackend.service.submission;
 import org.unipod.unipoderpbackend.exception.submission.InvalidSubmissionException;
 import org.unipod.unipoderpbackend.exception.submission.SubmissionConflictException;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.unipod.unipoderpbackend.model.submission.DocumentStatus;
 import org.unipod.unipoderpbackend.model.submission.Submission;
 import org.unipod.unipoderpbackend.model.submission.SubmissionCategory;
@@ -255,9 +256,9 @@ class SubmissionTest {
         Submission submission = new Submission(
                 UUID.randomUUID(),
                 SubmissionCategory.GENERAL,
-                "",
-                "",
-                "",
+                "Original title",
+                "Original purpose",
+                "Original problem",
                 "submitter@example.test",
                 "submitter@example.test",
                 null,
@@ -288,7 +289,8 @@ class SubmissionTest {
         );
 
         assertEquals("Working title", submission.getTitle());
-        assertEquals("", submission.getPurpose());
+        assertEquals("Original purpose", submission.getPurpose());
+        assertEquals("Original problem", submission.getProblemAddressed());
         assertEquals("+256700000000", submission.getSubmitterPhone());
         assertEquals("2026-01", submission.getAcceptedRulesVersion());
         assertEquals(SubmissionStage.DRAFT, submission.getStage());
@@ -336,6 +338,58 @@ class SubmissionTest {
                         createdAt.plusSeconds(120)
                 )
         );
+    }
+
+    @Test
+    void resubmittedCaseCanBeSentBackForMoreImprovement() {
+        Submission submission = new Submission(
+                UUID.randomUUID(),
+                SubmissionCategory.GENERAL,
+                "Public idea",
+                "Improve access",
+                "Current access is limited",
+                "staff-1",
+                null,
+                null,
+                null,
+                null,
+                Instant.parse("2026-11-04T00:00:00Z")
+        );
+        ReflectionTestUtils.setField(submission, "stage", SubmissionStage.RESUBMITTED);
+
+        submission.transitionTo(
+                SubmissionStage.IMPROVEMENT_REQUESTED,
+                Instant.parse("2026-11-04T01:00:00Z")
+        );
+
+        assertEquals(SubmissionStage.IMPROVEMENT_REQUESTED, submission.getStage());
+    }
+
+    @Test
+    void forwardedCaseCannotSkipFactFindingForAnImprovementRequest() {
+        Submission submission = new Submission(
+                UUID.randomUUID(),
+                SubmissionCategory.GENERAL,
+                "Public idea",
+                "Improve access",
+                "Current access is limited",
+                "staff-1",
+                null,
+                null,
+                null,
+                null,
+                Instant.parse("2026-11-04T00:00:00Z")
+        );
+        ReflectionTestUtils.setField(submission, "stage", SubmissionStage.FORWARDED);
+
+        assertThrows(
+                SubmissionConflictException.class,
+                () -> submission.transitionTo(
+                        SubmissionStage.IMPROVEMENT_REQUESTED,
+                        Instant.parse("2026-11-04T01:00:00Z")
+                )
+        );
+        assertEquals(SubmissionStage.FORWARDED, submission.getStage());
     }
 
     @Test

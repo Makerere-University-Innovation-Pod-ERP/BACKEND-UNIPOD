@@ -454,6 +454,138 @@ class WaluubeApiIntegrationTest {
     }
 
     @Test
+    void improvementRequestCarriesFilesNotifiesTheSubmitterAndLinksThePendingAction() throws Exception {
+        String submitter = "revision-" + UUID.randomUUID() + "@example.test";
+        var submitterUser = user(submitter).roles("SUBMITTER");
+        var receptionist = user("reception-revision-" + UUID.randomUUID()).roles("RECEPTIONIST");
+        var coordinator = user("coordinator-revision-" + UUID.randomUUID())
+                .roles("INNOVATION_COORDINATOR");
+        var officer = user("officer-revision-" + UUID.randomUUID()).roles("FACT_FINDING_OFFICER");
+
+        String created = mockMvc.perform(post("/submissions")
+                        .with(receptionist)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "category": "general",
+                                  "title": "Revision upload test",
+                                  "purpose": "Verify the improvement module integration",
+                                  "problemAddressed": "An improved version must carry files",
+                                  "submitterId": "%s",
+                                  "acceptedRulesVersion": "2026-01"
+                                }
+                                """.formatted(submitter)))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String id = idOf(created);
+
+        mockMvc.perform(post("/submissions/{id}/register", id).with(receptionist))
+                .andExpect(status().isOk());
+        completeReceptionChecklist(id, receptionist);
+        var sector = sectors.create(new SectorRequest(
+                "Revision sector " + UUID.randomUUID(),
+                "revision-sector@example.invalid",
+                true
+        ));
+        mockMvc.perform(post("/submissions/{id}/forward", id)
+                        .with(receptionist)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sectorId\":\"" + sector.id() + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stage").value("FORWARDED"));
+
+        // A fact-finding officer starts fact-finding from FORWARDED; requesting
+        // improvement before that is not offered and is rejected as a role error
+        // rather than a 409 from the domain transition map.
+        mockMvc.perform(get("/cases/{id}/transitions/allowed", id).with(officer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.allowedTransitions.length()").value(1))
+                .andExpect(jsonPath("$.allowedTransitions[0]").value("IN_FACT_FINDING"));
+        mockMvc.perform(post("/cases/{id}/transitions", id)
+                        .with(officer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"to_stage\":\"IMPROVEMENT_REQUESTED\",\"note\":"
+                                + "\"Skip fact finding\",\"version\":"
+                                + caseVersion(id, coordinator) + "}"))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/cases/{id}/transitions", id)
+                        .with(coordinator)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"to_stage\":\"IN_FACT_FINDING\",\"version\":"
+                                + caseVersion(id, coordinator) + "}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/cases/{id}/transitions", id)
+                        .with(coordinator)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"to_stage\":\"IMPROVEMENT_REQUESTED\",\"note\":"
+                                + "\"Add field data\",\"version\":"
+                                + caseVersion(id, coordinator) + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.submission.stage").value("IMPROVEMENT_REQUESTED"));
+
+        // The pending action comes from the transition path, which does not set
+        // outcomeNote, so the link is what carries the guidance and due date.
+        mockMvc.perform(get("/me/submissions/{id}", id).with(submitterUser))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stage").value("IMPROVEMENT_REQUESTED"))
+                .andExpect(jsonPath("$.pendingAction").value("PROVIDE_INFORMATION"))
+                .andExpect(jsonPath("$.pendingActionHref")
+                        .value("/cases/" + id + "/my-improvement"))
+                .andExpect(jsonPath("$.waitingForYou").value(
+                        "Reviewers requested an improved version. "
+                                + "Open the improvement request for the guidance and due date."));
+
+        mockMvc.perform(post("/submissions/{id}/documents", id)
+                        .with(submitterUser)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "Revised brief",
+                                  "documentType": "PROJECT_BRIEF",
+                                  "status": "SUBMITTED",
+                                  "fileReference": "improved_brief"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        String replied = mockMvc.perform(post("/submissions/{id}/reply", id)
+                        .with(submitterUser)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stage").value("RESUBMITTED"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        assertEquals(
+                "Your improved version has been received and is ready for the next review.",
+                jdbcTemplate.queryForObject(
+                        "SELECT payload ->> 'message' FROM notification_outbox "
+                                + "WHERE aggregate_id = ? AND event_type = 'submission.reply_received' "
+                                + "AND payload ->> 'notificationEmail' = ?",
+                        String.class,
+                        UUID.fromString(id),
+                        submitter
+                )
+        );
+
+        // Asking for more changes straight after a RESUBMITTED version needs no
+        // extra accept step.
+        mockMvc.perform(post("/cases/{id}/transitions", id)
+                        .with(coordinator)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"to_stage\":\"IMPROVEMENT_REQUESTED\",\"note\":"
+                                + "\"Still missing field data\",\"version\":"
+                                + versionOf(replied) + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.submission.stage").value("IMPROVEMENT_REQUESTED"));
+    }
+
+    @Test
     void submitterCanCompleteRequestedDraftAndReceptionCanForwardItAtomically() throws Exception {
         String submitter = "owner-" + UUID.randomUUID() + "@example.test";
         String receptionist = "reception-" + UUID.randomUUID();
@@ -1408,6 +1540,21 @@ class WaluubeApiIntegrationTest {
                 .getContentAsString();
         Matcher matcher = Pattern.compile("\"totalBriefs\":(\\d+)").matcher(body);
         assertTrue(matcher.find(), "Dashboard response should include totalBriefs.");
+        return Long.parseLong(matcher.group(1));
+    }
+
+    private long caseVersion(String id, RequestPostProcessor principal) throws Exception {
+        String body = mockMvc.perform(get("/cases/{id}", id).with(principal))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        return versionOf(body);
+    }
+
+    private static long versionOf(String response) {
+        Matcher matcher = Pattern.compile("\"version\":(\\d+)").matcher(response);
+        assertTrue(matcher.find(), "Response should include a version.");
         return Long.parseLong(matcher.group(1));
     }
 
