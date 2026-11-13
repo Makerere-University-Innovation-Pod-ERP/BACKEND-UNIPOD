@@ -14,8 +14,6 @@ public class CaseCodeGenerator {
             DO UPDATE SET last_value = code_sequences.last_value + 1
             RETURNING last_value
             """;
-    private static final String PROJECT_PREFIX = "PRJ";
-
     private final JdbcTemplate jdbcTemplate;
 
     public CaseCodeGenerator(JdbcTemplate jdbcTemplate) {
@@ -28,11 +26,11 @@ public class CaseCodeGenerator {
 
     /**
      * Allocates the reference used when an intake brief is confirmed as a
-     * project. Project references share the same yearly sequence table as case
-     * references but use their own {@code PRJ} prefix.
+     * project. Project references use the same student/general category prefix
+     * as the brief and the same yearly sequence table as case references.
      */
-    public String nextProject(int year) {
-        return format(PROJECT_PREFIX, year, nextSequence(PROJECT_PREFIX, year));
+    public String nextProject(SubmissionCategory category, int year) {
+        return next(category, year);
     }
 
     private long nextSequence(String prefix, int year) {

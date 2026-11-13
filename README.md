@@ -174,7 +174,7 @@ document status controls, and per-control capability reasons:
 | GET | `/api/cases/{id}/capabilities` | Returns `enabled` and `reason` for each mutating control. |
 | GET | `/api/cases/{id}/transitions/allowed` | Returns valid next stages for the current actor. |
 | POST | `/api/cases/{id}/transitions` | Moves to `to_stage`, recording an optional note. Requires the current `version`. |
-| PUT | `/api/cases/{id}/outcome` | Saves a decision or progress note. Requires the current `version` and reviewer quorum. |
+| PUT | `/api/cases/{id}/outcome` | Saves a decision (`Confirmed as project`, `Needs more improvement`, or `Closed with a reason`) and note. Requires the current `version` and reviewer quorum. |
 | PATCH | `/api/cases/{id}/documents/{docId}` | Updates document status. Requires the current case `version`. |
 
 The seven stepper stages are `RECEIVED`, `REGISTERED`, `FACT_FINDING`,
@@ -192,7 +192,7 @@ stale versions return `409 Conflict`. Outcome writes return `409 Conflict`
 with `Save stays disabled until the configured reviewer quorum is met` unless
 the reviewer-quorum provider is available and reports quorum met.
 
-The Mark reviewer-team/IP-panel/quorum and David activity integrations are not
+The Mark reviewer-team/quorum and David activity integrations are not
 configured in this backend. Their aggregate sections explicitly report
 `NOT_CONFIGURED` and return empty data rather than fabricating panel members or
 activity. Replace the default `CaseFileEnrichmentProvider` bean when those
