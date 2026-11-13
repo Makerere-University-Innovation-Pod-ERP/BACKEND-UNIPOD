@@ -27,7 +27,7 @@ public class CaseFileController {
             "hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'FACT_FINDING_OFFICER', "
                     + "'REVIEWER', 'SECTOR_OFFICER', 'SUBMITTER')";
     private static final String CASE_WRITE_ROLES =
-            "hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR')";
+            "hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'FACT_FINDING_OFFICER')";
 
     private final CaseFileService cases;
 

@@ -108,12 +108,12 @@ public class FactFindingCommandService {
         SubmissionStage previousStage = brief.getStage();
         check.complete(FactFindingResult.READY_FOR_REVIEW, now);
         persist(check);
-        brief.transitionTo(SubmissionStage.UNDER_REVIEW, now);
+        brief.transitionTo(SubmissionStage.READY_FOR_REVIEW, now);
         history.save(new CaseStageHistory(
                 UUID.randomUUID(),
                 briefId,
                 previousStage,
-                SubmissionStage.UNDER_REVIEW,
+                SubmissionStage.READY_FOR_REVIEW,
                 authentication.getName(),
                 "Fact-finding complete: ready for review.",
                 now
@@ -224,7 +224,7 @@ public class FactFindingCommandService {
     }
 
     private static void requireSavableStage(SubmissionStage stage) {
-        if (stage != SubmissionStage.FORWARDED && stage != SubmissionStage.FACT_FINDING) {
+        if (stage != SubmissionStage.FORWARDED && stage != SubmissionStage.IN_FACT_FINDING) {
             throw new SubmissionConflictException(
                     "Fact-finding answers can only be saved while the case is forwarded or in fact-finding."
             );
@@ -232,7 +232,7 @@ public class FactFindingCommandService {
     }
 
     private static void requireCompletableStage(SubmissionStage stage) {
-        if (stage != SubmissionStage.FORWARDED && stage != SubmissionStage.FACT_FINDING) {
+        if (stage != SubmissionStage.FORWARDED && stage != SubmissionStage.IN_FACT_FINDING) {
             throw new SubmissionConflictException(
                     "Fact-finding can only be completed while the case is forwarded or in fact-finding."
             );

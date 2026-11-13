@@ -489,6 +489,7 @@ class ReviewApiIntegrationTest {
                 null,
                 Instant.parse("2026-11-01T08:00:00Z")
         );
+        brief.applyIntakeDetails(null, null, null, null, null, null, "2026-01");
         brief.register(code, Instant.parse("2026-11-01T09:00:00Z"), "receptionist@example.test");
         return submissions.saveAndFlush(brief);
     }

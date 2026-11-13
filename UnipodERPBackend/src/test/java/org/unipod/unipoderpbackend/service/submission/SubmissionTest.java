@@ -56,11 +56,12 @@ class SubmissionTest {
                 null,
                 Instant.parse("2026-11-04T00:00:00Z")
         );
+        submission.applyIntakeDetails(null, null, null, null, null, null, "2026-01");
 
         submission.register("GEN-2026-000001", receivedAt, "staff-2");
 
         assertEquals("GEN-2026-000001", submission.getCode());
-        assertEquals(SubmissionStage.RECEIVED, submission.getStage());
+        assertEquals(SubmissionStage.SUBMITTED, submission.getStage());
         assertEquals(receivedAt, submission.getReceivedAt());
         assertEquals("staff-2", submission.getReceivingOfficer());
     }
@@ -85,11 +86,12 @@ class SubmissionTest {
         );
         submission.assignTrackingReference("GEN-2026-000001");
         submission.requestInformation("Please attach a brief.", "receptionist-1", requestedAt);
+        submission.applyIntakeDetails(null, null, null, null, null, null, "2026-01");
 
         submission.register("GEN-2026-000001", requestedAt.plusSeconds(60), "receptionist-1");
 
         assertEquals("GEN-2026-000001", submission.getCode());
-        assertEquals(SubmissionStage.RECEIVED, submission.getStage());
+        assertEquals(SubmissionStage.SUBMITTED, submission.getStage());
         assertNull(submission.getInformationRequestedNote());
         assertNull(submission.getInformationRequestedBy());
         assertNull(submission.getInformationRequestedAt());
@@ -156,6 +158,7 @@ class SubmissionTest {
                 null,
                 Instant.parse("2026-11-04T00:00:00Z")
         );
+        submission.applyIntakeDetails(null, null, null, null, null, null, "2026-01");
         submission.register("GEN-2026-000001", Instant.parse("2026-11-04T01:00:00Z"), "staff-2");
 
         assertThrows(
@@ -206,7 +209,7 @@ class SubmissionTest {
                 null,
                 createdAt
         );
-        submission.applyIntakeDetails("+256700000000", null, null, null, null, null);
+        submission.applyIntakeDetails("+256700000000", null, null, null, null, null, "2026-01");
 
         submission.submit("GEN-2026-000001", createdAt.plusSeconds(60));
 

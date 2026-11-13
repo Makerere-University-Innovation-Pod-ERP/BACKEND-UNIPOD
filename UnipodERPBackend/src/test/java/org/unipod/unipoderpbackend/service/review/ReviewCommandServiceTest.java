@@ -36,6 +36,7 @@ import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
 import org.unipod.unipoderpbackend.repository.auth.ApiUserRepository;
 import org.unipod.unipoderpbackend.repository.review.ReviewAssignmentRepository;
 import org.unipod.unipoderpbackend.repository.review.ReviewSettingsRepository;
+import org.unipod.unipoderpbackend.repository.submission.CaseStageHistoryRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
 
 /** Constraint and optimistic-lock conversion, as in FactFindingCommandServiceTest. */
@@ -48,9 +49,11 @@ class ReviewCommandServiceTest {
     private final ReviewAssignmentRepository assignments = mock(ReviewAssignmentRepository.class);
     private final ApiUserRepository users = mock(ApiUserRepository.class);
     private final ReviewPanelQueryService panels = mock(ReviewPanelQueryService.class);
+    private final CaseStageHistoryRepository stageHistory = mock(CaseStageHistoryRepository.class);
     private final ReviewCommandService service = new ReviewCommandService(
             submissions, settings, assignments, users, panels,
-            Clock.fixed(Instant.parse("2026-11-12T08:00:00Z"), ZoneId.of("Africa/Kampala")));
+            Clock.fixed(Instant.parse("2026-11-12T08:00:00Z"), ZoneId.of("Africa/Kampala")),
+            stageHistory);
 
     private final Submission brief = underReviewBrief();
 
@@ -165,11 +168,12 @@ class ReviewCommandServiceTest {
                 UUID.randomUUID(), SubmissionCategory.GENERAL, "Brief", "Purpose", "Problem",
                 "receptionist@example.test", "submitter@example.test", null, null, null, null,
                 Instant.parse("2026-11-01T08:00:00Z"));
+        brief.applyIntakeDetails(null, null, null, null, null, null, "2026-01");
         brief.register("CASE-UT-1", Instant.parse("2026-11-01T09:00:00Z"), "receptionist@example.test");
         Instant time = Instant.parse("2026-11-01T10:00:00Z");
-        brief.transitionTo(SubmissionStage.REGISTERED, time);
-        brief.transitionTo(SubmissionStage.FACT_FINDING, time);
-        brief.transitionTo(SubmissionStage.UNDER_REVIEW, time);
+        brief.transitionTo(SubmissionStage.FORWARDED, time);
+        brief.transitionTo(SubmissionStage.IN_FACT_FINDING, time);
+        brief.transitionTo(SubmissionStage.IN_REVIEW, time);
         return brief;
     }
 }

@@ -1,26 +1,23 @@
 package org.unipod.unipoderpbackend.model.submission;
 
 /**
- * The full Waluube intake and case lifecycle.
+ * The full Waluube brief lifecycle.
  *
- * <p>{@code SUBMITTED} and {@code AWAITING_INFORMATION} are the submitter-facing
- * intake stages. {@code RECEIVED} is retained for the assisted/legacy
- * registration flow. {@code CONFIRMED_AS_PROJECT} and {@code REJECTED} close the
- * intake decision.</p>
+ * <p>The values and order match the fourteen statuses in the assignment.</p>
  */
 public enum SubmissionStage {
     DRAFT,
     SUBMITTED,
     AWAITING_INFORMATION,
-    RECEIVED,
-    REGISTERED,
-    FACT_FINDING,
-    UNDER_REVIEW,
-    REFINEMENT_REQUESTED,
-    FURTHER_HANDLING,
     FORWARDED,
-    IN_PROGRESS,
+    IN_FACT_FINDING,
+    READY_FOR_REVIEW,
+    IN_REVIEW,
+    IMPROVEMENT_REQUESTED,
+    RESUBMITTED,
     CONFIRMED_AS_PROJECT,
-    REJECTED,
-    COMPLETED
+    AWAITING_PAYMENT,
+    IN_PROGRESS,
+    COMPLETED,
+    CLOSED
 }

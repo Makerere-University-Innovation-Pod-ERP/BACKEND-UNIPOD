@@ -94,8 +94,8 @@ class ReviewQueueApiIntegrationTest {
 
     @Test
     void reviewerAssignedToTwoBriefsSeesBothWithEveryField() throws Exception {
-        Submission solar = brief("Solar dryer", SubmissionCategory.STUDENT, SubmissionStage.UNDER_REVIEW);
-        Submission mill = brief("Grain mill", SubmissionCategory.GENERAL, SubmissionStage.UNDER_REVIEW);
+        Submission solar = brief("Solar dryer", SubmissionCategory.STUDENT, SubmissionStage.IN_REVIEW);
+        Submission mill = brief("Grain mill", SubmissionCategory.GENERAL, SubmissionStage.IN_REVIEW);
         settings(solar, 1, ReviewMode.PARALLEL, DUE);
         settings(mill, 1, ReviewMode.PARALLEL, DUE.plusDays(7));
         assign(solar, 1, REVIEWER, 1);
@@ -116,7 +116,7 @@ class ReviewQueueApiIntegrationTest {
                 .andExpect(jsonPath("$.rows.items[0].position").value(1))
                 .andExpect(jsonPath("$.rows.items[0].dueDate").value("2027-03-01"))
                 .andExpect(jsonPath("$.rows.items[0].status").value("NOT_STARTED"))
-                .andExpect(jsonPath("$.rows.items[0].stage").value("UNDER_REVIEW"))
+                .andExpect(jsonPath("$.rows.items[0].stage").value("IN_REVIEW"))
                 .andExpect(jsonPath("$.rows.items[0].canSubmit").value(true))
                 .andExpect(jsonPath("$.rows.items[1].briefId").value(mill.getId().toString()))
                 .andExpect(jsonPath("$.rows.items[1].title").value("Grain mill"))
@@ -129,8 +129,8 @@ class ReviewQueueApiIntegrationTest {
 
     @Test
     void submittedRowStaysButCannotBeSubmittedAgain() throws Exception {
-        Submission first = brief("First", SubmissionCategory.GENERAL, SubmissionStage.UNDER_REVIEW);
-        Submission second = brief("Second", SubmissionCategory.GENERAL, SubmissionStage.UNDER_REVIEW);
+        Submission first = brief("First", SubmissionCategory.GENERAL, SubmissionStage.IN_REVIEW);
+        Submission second = brief("Second", SubmissionCategory.GENERAL, SubmissionStage.IN_REVIEW);
         settings(first, 1, ReviewMode.PARALLEL, DUE);
         settings(second, 1, ReviewMode.PARALLEL, DUE.plusDays(1));
         assign(first, 1, REVIEWER, 1);
@@ -150,8 +150,8 @@ class ReviewQueueApiIntegrationTest {
 
     @Test
     void onlyTheCallersOwnRowsAppear() throws Exception {
-        Submission shared = brief("Shared", SubmissionCategory.GENERAL, SubmissionStage.UNDER_REVIEW);
-        Submission theirs = brief("Theirs only", SubmissionCategory.GENERAL, SubmissionStage.UNDER_REVIEW);
+        Submission shared = brief("Shared", SubmissionCategory.GENERAL, SubmissionStage.IN_REVIEW);
+        Submission theirs = brief("Theirs only", SubmissionCategory.GENERAL, SubmissionStage.IN_REVIEW);
         settings(shared, 1, ReviewMode.PARALLEL, DUE);
         settings(theirs, 1, ReviewMode.PARALLEL, DUE);
         assign(shared, 1, OTHER, 1);
@@ -173,7 +173,7 @@ class ReviewQueueApiIntegrationTest {
 
     @Test
     void onlyTheLatestRoundCounts() throws Exception {
-        Submission brief = brief("Two rounds", SubmissionCategory.GENERAL, SubmissionStage.UNDER_REVIEW);
+        Submission brief = brief("Two rounds", SubmissionCategory.GENERAL, SubmissionStage.IN_REVIEW);
         settings(brief, 1, ReviewMode.PARALLEL, DUE);
         assign(brief, 1, REVIEWER, 1);
         queue(REVIEWER).andExpect(jsonPath("$.assignedToMe").value(1));
@@ -195,7 +195,7 @@ class ReviewQueueApiIntegrationTest {
 
     @Test
     void sequentialRowsAreReleasedOnlyAfterEveryEarlierReviewerSubmits() throws Exception {
-        Submission brief = brief("In turn", SubmissionCategory.GENERAL, SubmissionStage.UNDER_REVIEW);
+        Submission brief = brief("In turn", SubmissionCategory.GENERAL, SubmissionStage.IN_REVIEW);
         settings(brief, 1, ReviewMode.SEQUENTIAL, DUE);
         assign(brief, 1, OTHER, 1);
         assign(brief, 1, REVIEWER, 2);
@@ -224,7 +224,7 @@ class ReviewQueueApiIntegrationTest {
 
     @Test
     void sequentialWithAGapReleasesTheLowestRemainingPositionImmediately() throws Exception {
-        Submission brief = brief("Gap", SubmissionCategory.GENERAL, SubmissionStage.UNDER_REVIEW);
+        Submission brief = brief("Gap", SubmissionCategory.GENERAL, SubmissionStage.IN_REVIEW);
         settings(brief, 1, ReviewMode.SEQUENTIAL, DUE);
         assign(brief, 1, REVIEWER, 2);
         assign(brief, 1, THIRD, 3);
@@ -238,7 +238,7 @@ class ReviewQueueApiIntegrationTest {
 
     @Test
     void parallelRowsAllAppearAtOnce() throws Exception {
-        Submission brief = brief("Together", SubmissionCategory.GENERAL, SubmissionStage.UNDER_REVIEW);
+        Submission brief = brief("Together", SubmissionCategory.GENERAL, SubmissionStage.IN_REVIEW);
         settings(brief, 1, ReviewMode.PARALLEL, DUE);
         assign(brief, 1, OTHER, 1);
         assign(brief, 1, REVIEWER, 2);
@@ -254,12 +254,12 @@ class ReviewQueueApiIntegrationTest {
 
     @Test
     void briefNotUnderReviewShowsItsStageAndCannotBeSubmitted() throws Exception {
-        Submission returned = brief("Returned", SubmissionCategory.GENERAL, SubmissionStage.UNDER_REVIEW);
+        Submission returned = brief("Returned", SubmissionCategory.GENERAL, SubmissionStage.IN_REVIEW);
         settings(returned, 1, ReviewMode.PARALLEL, DUE);
         assign(returned, 1, REVIEWER, 1);
-        returned.transitionTo(SubmissionStage.REFINEMENT_REQUESTED, Instant.parse("2026-11-02T10:00:00Z"));
+        returned.transitionTo(SubmissionStage.IMPROVEMENT_REQUESTED, Instant.parse("2026-11-02T10:00:00Z"));
         submissions.saveAndFlush(returned);
-        Submission open = brief("Open", SubmissionCategory.GENERAL, SubmissionStage.UNDER_REVIEW);
+        Submission open = brief("Open", SubmissionCategory.GENERAL, SubmissionStage.IN_REVIEW);
         settings(open, 1, ReviewMode.PARALLEL, DUE.plusDays(1));
         assign(open, 1, REVIEWER, 1);
 
@@ -267,7 +267,7 @@ class ReviewQueueApiIntegrationTest {
                 .andExpect(jsonPath("$.assignedToMe").value(2))
                 .andExpect(jsonPath("$.waitingForMyReview").value(1))
                 .andExpect(jsonPath("$.rows.items[0].briefId").value(returned.getId().toString()))
-                .andExpect(jsonPath("$.rows.items[0].stage").value("REFINEMENT_REQUESTED"))
+                .andExpect(jsonPath("$.rows.items[0].stage").value("IMPROVEMENT_REQUESTED"))
                 .andExpect(jsonPath("$.rows.items[0].status").value("NOT_STARTED"))
                 .andExpect(jsonPath("$.rows.items[0].canSubmit").value(false))
                 .andExpect(jsonPath("$.rows.items[1].canSubmit").value(true));
@@ -293,11 +293,11 @@ class ReviewQueueApiIntegrationTest {
     @Test
     void pagesSplitTheQueueWithoutOverlapAndCountersCoverAllRows() throws Exception {
         for (int i = 0; i < 25; i++) {
-            Submission brief = brief("Paged " + i, SubmissionCategory.GENERAL, SubmissionStage.UNDER_REVIEW);
+            Submission brief = brief("Paged " + i, SubmissionCategory.GENERAL, SubmissionStage.IN_REVIEW);
             settings(brief, 1, ReviewMode.PARALLEL, DUE.plusDays(i % 4));
             assign(brief, 1, REVIEWER, 1);
             if (i % 5 == 0) {
-                brief.transitionTo(SubmissionStage.REFINEMENT_REQUESTED, Instant.parse("2026-11-02T10:00:00Z"));
+                brief.transitionTo(SubmissionStage.IMPROVEMENT_REQUESTED, Instant.parse("2026-11-02T10:00:00Z"));
                 submissions.saveAndFlush(brief);
             }
         }
@@ -330,7 +330,7 @@ class ReviewQueueApiIntegrationTest {
 
     @Test
     void tokenEmailWithDifferentLetterCaseStillMatches() throws Exception {
-        Submission brief = brief("Case", SubmissionCategory.GENERAL, SubmissionStage.UNDER_REVIEW);
+        Submission brief = brief("Case", SubmissionCategory.GENERAL, SubmissionStage.IN_REVIEW);
         settings(brief, 1, ReviewMode.PARALLEL, DUE);
         assign(brief, 1, REVIEWER, 1);
 
@@ -415,7 +415,7 @@ class ReviewQueueApiIntegrationTest {
 
     @Test
     void queueNeverWrites() throws Exception {
-        Submission brief = brief("Untouched", SubmissionCategory.GENERAL, SubmissionStage.UNDER_REVIEW);
+        Submission brief = brief("Untouched", SubmissionCategory.GENERAL, SubmissionStage.IN_REVIEW);
         settings(brief, 1, ReviewMode.SEQUENTIAL, DUE);
         assign(brief, 1, REVIEWER, 1);
         assign(brief, 1, OTHER, 2);
@@ -432,7 +432,7 @@ class ReviewQueueApiIntegrationTest {
 
     @Test
     void jsonFieldNamesMatchTheRecordsExactly() throws Exception {
-        Submission brief = brief("Contract", SubmissionCategory.GENERAL, SubmissionStage.UNDER_REVIEW);
+        Submission brief = brief("Contract", SubmissionCategory.GENERAL, SubmissionStage.IN_REVIEW);
         settings(brief, 1, ReviewMode.PARALLEL, DUE);
         assign(brief, 1, REVIEWER, 1);
 
@@ -483,7 +483,7 @@ class ReviewQueueApiIntegrationTest {
     }
 
     private Submission queued(String title, LocalDate dueDate) {
-        Submission brief = brief(title, SubmissionCategory.GENERAL, SubmissionStage.UNDER_REVIEW);
+        Submission brief = brief(title, SubmissionCategory.GENERAL, SubmissionStage.IN_REVIEW);
         settings(brief, 1, ReviewMode.PARALLEL, dueDate);
         assign(brief, 1, REVIEWER, 1);
         return brief;
@@ -537,6 +537,7 @@ class ReviewQueueApiIntegrationTest {
         if (category == SubmissionCategory.STUDENT) {
             return studentBrief(title, target);
         }
+        brief.applyIntakeDetails(null, null, null, null, null, null, "2026-01");
         brief.register("CASE-RQ-" + UUID.randomUUID().toString().substring(0, 8),
                 Instant.parse("2026-11-01T09:00:00Z"), "receptionist@example.test");
         return advance(brief, target);
@@ -557,6 +558,7 @@ class ReviewQueueApiIntegrationTest {
                 org.unipod.unipoderpbackend.model.submission.RecommendationLetterStatus.VERIFIED,
                 Instant.parse("2026-11-01T08:00:00Z")
         );
+        brief.applyIntakeDetails(null, null, null, null, null, null, "2026-01");
         brief.register("CASE-RQ-" + UUID.randomUUID().toString().substring(0, 8),
                 Instant.parse("2026-11-01T09:00:00Z"), "receptionist@example.test");
         return advance(brief, target);
@@ -565,7 +567,7 @@ class ReviewQueueApiIntegrationTest {
     private Submission advance(Submission brief, SubmissionStage target) {
         Instant time = Instant.parse("2026-11-01T10:00:00Z");
         List<SubmissionStage> path = new ArrayList<>(List.of(
-                SubmissionStage.REGISTERED, SubmissionStage.FACT_FINDING, SubmissionStage.UNDER_REVIEW));
+                SubmissionStage.FORWARDED, SubmissionStage.IN_FACT_FINDING, SubmissionStage.IN_REVIEW));
         for (SubmissionStage stage : path) {
             brief.transitionTo(stage, time);
             if (stage == target) {

@@ -104,11 +104,10 @@ class AuthorizationServiceTest {
     }
 
     @Test
-    void ipLiaisonKeepsReadAccessLikeTheExistingCaseEndpoints() {
+    void removedIpLiaisonRoleNoLongerHasCaseAccess() {
         Actor liaison = actor("ip@unipod.ac.ug", ApiUserRole.IP_LIAISON);
 
-        assertTrue(service.check(liaison, AuthorizationAction.CASE_VIEW, submission(null, Set.of(), null)).allowed());
-        assertEquals(DenialCode.ROLE_NOT_PERMITTED, service.check(liaison, AuthorizationAction.CASE_EDIT,
+        assertEquals(DenialCode.ROLE_NOT_PERMITTED, service.check(liaison, AuthorizationAction.CASE_VIEW,
                 submission(null, Set.of(), null)).code());
     }
 

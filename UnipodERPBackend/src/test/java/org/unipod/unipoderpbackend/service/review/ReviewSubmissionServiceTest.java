@@ -158,11 +158,12 @@ class ReviewSubmissionServiceTest {
                 UUID.randomUUID(), SubmissionCategory.GENERAL, "Brief", "Purpose", "Problem",
                 "receptionist@example.test", "submitter@example.test", null, null, null, null,
                 Instant.parse("2026-11-01T08:00:00Z"));
+        brief.applyIntakeDetails(null, null, null, null, null, null, "2026-01");
         brief.register("CASE-UT-2", Instant.parse("2026-11-01T09:00:00Z"), "receptionist@example.test");
         Instant time = Instant.parse("2026-11-01T10:00:00Z");
-        brief.transitionTo(SubmissionStage.REGISTERED, time);
-        brief.transitionTo(SubmissionStage.FACT_FINDING, time);
-        brief.transitionTo(SubmissionStage.UNDER_REVIEW, time);
+        brief.transitionTo(SubmissionStage.FORWARDED, time);
+        brief.transitionTo(SubmissionStage.IN_FACT_FINDING, time);
+        brief.transitionTo(SubmissionStage.IN_REVIEW, time);
         return brief;
     }
 }

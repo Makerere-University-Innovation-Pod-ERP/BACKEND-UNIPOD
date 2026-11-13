@@ -4,6 +4,7 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import java.time.Instant;
 import org.unipod.unipoderpbackend.model.submission.RecommendationLetterStatus;
 import org.unipod.unipoderpbackend.model.submission.ServiceRequester;
 import org.unipod.unipoderpbackend.model.submission.SubmissionCategory;
@@ -30,6 +31,7 @@ public record CreateSubmissionRequest(
         ServiceRequester serviceRequester,
         @Size(max = 255) String department,
         @Size(max = 5000) String expectedResult,
+        Instant preferredAt,
         @Size(max = 32) String acceptedRulesVersion
 ) {
     public CreateSubmissionRequest(
@@ -47,7 +49,7 @@ public record CreateSubmissionRequest(
     ) {
         this(category, title, purpose, problemAddressed, submitterId, studentNumber, programme,
                 supervisor, recommendationLetterStatus, submitterEmail, submitterName,
-                null, null, null, null, null, null);
+                null, null, null, null, null, null, null);
     }
 
     public CreateSubmissionRequest(
