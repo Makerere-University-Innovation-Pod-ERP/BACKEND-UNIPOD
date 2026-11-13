@@ -6,7 +6,7 @@ import java.util.UUID;
 public class UnconfiguredCaseFileEnrichmentProvider implements CaseFileEnrichmentProvider {
     @Override
     public ReviewPanel reviewPanel(UUID caseId) {
-        return new ReviewPanel(Availability.NOT_CONFIGURED, List.of(), List.of(), false, false);
+        return new ReviewPanel(Availability.NOT_CONFIGURED, List.of(), false, false);
     }
 
     @Override

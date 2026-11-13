@@ -670,14 +670,45 @@ class WaluubeApiIntegrationTest {
         assertTrue(documentIdMatcher.find(), "Document response should include its id.");
         String documentId = documentIdMatcher.group(1);
 
+        mockMvc.perform(post("/submissions/{id}/missing-items", id)
+                        .with(user("officer").roles("FACT_FINDING_OFFICER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "items": [{
+                                    "label": "Supervisor contact",
+                                    "reason": "Missing detail",
+                                    "dueAt": "2026-11-10T09:00:00Z",
+                                    "message": "Please provide a contact number"
+                                  }]
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
         mockMvc.perform(get("/cases/{id}", id).with(user(submitter).roles("SUBMITTER")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.currentStage").value("RECEIVED"))
                 .andExpect(jsonPath("$.stepper.length()").value(7))
                 .andExpect(jsonPath("$.outcome.status").value("NOT_STARTED"))
+                .andExpect(jsonPath("$.openRequests[0].label").value("Supervisor contact"))
+                .andExpect(jsonPath("$.openRequests[0].dueAt").isNotEmpty())
                 .andExpect(jsonPath("$.reviewPanel.availability").value("NOT_CONFIGURED"))
+                .andExpect(jsonPath("$.reviewPanel.ipPanel").doesNotExist())
                 .andExpect(jsonPath("$.activity.availability").value("NOT_CONFIGURED"))
                 .andExpect(jsonPath("$.capabilities.nextStep.enabled").value(false));
+        mockMvc.perform(get("/cases/{id}", id).with(user("ip-liaison").roles("IP_LIAISON")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/cases/{id}", id).with(user("observer").roles("OBSERVER")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/cases/{id}/activity", id)
+                        .with(user(submitter).roles("SUBMITTER")))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/cases/{id}/activity", id)
+                        .with(user("ip-liaison").roles("IP_LIAISON")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/cases/{id}/activity", id)
+                        .with(user("observer").roles("OBSERVER")))
+                .andExpect(status().isForbidden());
         mockMvc.perform(get("/cases/{id}/capabilities", id)
                         .with(user(submitter).roles("SUBMITTER")))
                 .andExpect(status().isOk())
@@ -704,28 +735,28 @@ class WaluubeApiIntegrationTest {
                         .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"to_stage":"REGISTERED","note":"Intake checked","version":2}
+                                {"to_stage":"REGISTERED","note":"Intake checked","version":3}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.currentStage").value("REGISTERED"))
-                .andExpect(jsonPath("$.submission.version").value(3))
+                .andExpect(jsonPath("$.submission.version").value(4))
                 .andExpect(jsonPath("$.stageHistory[-1:].note").value("Intake checked"));
 
         mockMvc.perform(patch("/cases/{id}/documents/{documentId}", id, documentId)
                         .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"status":"VERIFIED","version":3}
+                                {"status":"VERIFIED","version":4}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.documents[0].status").value("VERIFIED"))
-                .andExpect(jsonPath("$.submission.version").value(4));
+                .andExpect(jsonPath("$.submission.version").value(5));
 
         mockMvc.perform(put("/cases/{id}/outcome", id)
                         .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"decision":"Approve","note":"Panel review complete","version":4}
+                                {"decision":"Needs more improvement","note":"Panel review complete","version":5}
                                 """))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail").value(
@@ -743,17 +774,25 @@ class WaluubeApiIntegrationTest {
                         .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"decision":"Approve","version":-1}
+                                {"decision":"Needs more improvement","version":-1}
                                 """))
                 .andExpect(status().isUnprocessableContent());
         mockMvc.perform(put("/cases/{id}/outcome", id)
                         .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"decision":" ","note":"  ","version":4}
+                                {"decision":"Approve","note":"Panel review complete","version":5}
                                 """))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.detail").value("Submission details are invalid or incomplete."));
+        mockMvc.perform(put("/cases/{id}/outcome", id)
+                        .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"decision":" ","note":"  ","version":5}
+                                """))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.detail").value("One or more request values are invalid."));
     }
 
     @Test

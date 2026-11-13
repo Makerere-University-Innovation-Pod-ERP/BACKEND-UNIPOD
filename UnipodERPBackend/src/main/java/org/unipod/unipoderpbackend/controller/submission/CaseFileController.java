@@ -25,7 +25,7 @@ import org.unipod.unipoderpbackend.service.submission.CaseFileService;
 public class CaseFileController {
     private static final String CASE_READ_ROLES =
             "hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'FACT_FINDING_OFFICER', "
-                    + "'REVIEWER', 'SECTOR_OFFICER', 'IP_LIAISON', 'SUBMITTER', 'OBSERVER')";
+                    + "'REVIEWER', 'SECTOR_OFFICER', 'SUBMITTER')";
     private static final String CASE_WRITE_ROLES =
             "hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR')";
 
