@@ -88,7 +88,7 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
     @Query("""
             select submission
             from Submission submission
-            where submission.code = :code
+            where (submission.code = :code or submission.projectCode = :code)
               and """ + SubmissionVisibilityPredicate.QUERY)
     Optional<Submission> findVisibleByCode(
             @Param("code") String code,
@@ -114,6 +114,8 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
               and (
                   coalesce(:query, '') = ''
                   or lower(submission.code) like lower(concat('%', coalesce(:query, ''), '%')) escape '\\'
+                  or lower(coalesce(submission.projectCode, ''))
+                      like lower(concat('%', coalesce(:query, ''), '%')) escape '\\'
                   or lower(submission.title) like lower(concat('%', coalesce(:query, ''), '%')) escape '\\'
                   or lower(coalesce(submission.submitterName, ''))
                       like lower(concat('%', coalesce(:query, ''), '%')) escape '\\'

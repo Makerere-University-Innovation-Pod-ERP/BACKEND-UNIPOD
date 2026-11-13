@@ -233,7 +233,7 @@ class ReviewFollowUpNoteApiIntegrationTest {
         Submission brief = submittedBrief(REVIEWER);
         addNote(brief, REVIEWER, "Before refinement.").andExpect(status().isCreated());
         Submission reloaded = submissions.findById(brief.getId()).orElseThrow();
-        reloaded.transitionTo(SubmissionStage.REFINEMENT_REQUESTED, Instant.parse("2026-11-12T10:00:00Z"));
+        reloaded.transitionTo(SubmissionStage.IMPROVEMENT_REQUESTED, Instant.parse("2026-11-12T10:00:00Z"));
         submissions.saveAndFlush(reloaded);
 
         addNote(brief, REVIEWER, "After refinement.")
@@ -351,7 +351,7 @@ class ReviewFollowUpNoteApiIntegrationTest {
 
         addNote(brief, REVIEWER, "Follow-up " + MARKER).andExpect(status().isCreated());
 
-        assertEquals("UNDER_REVIEW", jdbcTemplate.queryForObject(
+        assertEquals("IN_REVIEW", jdbcTemplate.queryForObject(
                 "SELECT stage FROM submissions WHERE id = ?", String.class, brief.getId()));
         String panelAfter = body(mockMvc.perform(get("/cases/{id}/reviewers", brief.getId()).with(coordinator()))
                 .andExpect(status().isOk()));
@@ -595,12 +595,13 @@ class ReviewFollowUpNoteApiIntegrationTest {
                 UUID.randomUUID(), SubmissionCategory.GENERAL, "Follow-up brief", "Purpose", "Problem",
                 "receptionist@example.test", "submitter@example.test", null, null, null, null,
                 Instant.parse("2026-11-01T08:00:00Z"));
+        brief.applyIntakeDetails(null, null, null, null, null, null, "2026-01");
         brief.register("CASE-FU-" + UUID.randomUUID().toString().substring(0, 8),
                 Instant.parse("2026-11-01T09:00:00Z"), "receptionist@example.test");
         Instant time = Instant.parse("2026-11-01T10:00:00Z");
-        brief.transitionTo(SubmissionStage.REGISTERED, time);
-        brief.transitionTo(SubmissionStage.FACT_FINDING, time);
-        brief.transitionTo(SubmissionStage.UNDER_REVIEW, time);
+        brief.transitionTo(SubmissionStage.FORWARDED, time);
+        brief.transitionTo(SubmissionStage.IN_FACT_FINDING, time);
+        brief.transitionTo(SubmissionStage.IN_REVIEW, time);
         return submissions.saveAndFlush(brief);
     }
 }

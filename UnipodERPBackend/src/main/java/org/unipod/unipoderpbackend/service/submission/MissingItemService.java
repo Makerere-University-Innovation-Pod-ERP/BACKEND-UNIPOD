@@ -236,7 +236,7 @@ public class MissingItemService {
 
     private static void requireOpen(Submission submission) {
         if (submission.getStage() == SubmissionStage.COMPLETED
-                || submission.getStage() == SubmissionStage.REJECTED
+                || submission.getStage() == SubmissionStage.CLOSED
                 || submission.getStage() == SubmissionStage.CONFIRMED_AS_PROJECT) {
             throw new SubmissionConflictException("Closed submissions cannot be changed.");
         }

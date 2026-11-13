@@ -109,7 +109,7 @@ class FactFindingCompleteAtomicityTest {
                 String.class,
                 brief.getId()
         );
-        assertEquals("FACT_FINDING", stage);
+        assertEquals("IN_FACT_FINDING", stage);
         assertEquals(0L, historyCount(brief.getId()));
     }
 
@@ -222,9 +222,10 @@ class FactFindingCompleteAtomicityTest {
                 null,
                 Instant.parse("2026-11-01T08:00:00Z")
         );
+        brief.applyIntakeDetails(null, null, null, null, null, null, "2026-01");
         brief.register(code, Instant.parse("2026-11-01T09:00:00Z"), "receptionist@example.test");
-        brief.transitionTo(SubmissionStage.REGISTERED, Instant.parse("2026-11-01T10:00:00Z"));
-        brief.transitionTo(SubmissionStage.FACT_FINDING, Instant.parse("2026-11-01T11:00:00Z"));
+        brief.transitionTo(SubmissionStage.FORWARDED, Instant.parse("2026-11-01T10:00:00Z"));
+        brief.transitionTo(SubmissionStage.IN_FACT_FINDING, Instant.parse("2026-11-01T11:00:00Z"));
         Submission saved = submissions.saveAndFlush(brief);
         createdBriefs.add(saved.getId());
         return saved;

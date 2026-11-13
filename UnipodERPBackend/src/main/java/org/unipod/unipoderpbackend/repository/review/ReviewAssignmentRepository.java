@@ -49,10 +49,10 @@ public interface ReviewAssignmentRepository extends JpaRepository<ReviewAssignme
             countQuery = "select count(a) " + QUEUE_FROM_WHERE)
     Page<ReviewQueueEntry> findQueue(@Param("reviewer") String reviewer, Pageable pageable);
 
-    /** How many of the caller's queue rows can be submitted now: NOT_STARTED on a brief UNDER_REVIEW. */
+    /** How many of the caller's queue rows can be submitted now: NOT_STARTED on a brief in review. */
     @Query("select count(a) " + QUEUE_FROM_WHERE + """
               and a.status = org.unipod.unipoderpbackend.model.review.ReviewAssignmentStatus.NOT_STARTED
-              and s.stage = org.unipod.unipoderpbackend.model.submission.SubmissionStage.UNDER_REVIEW
+              and s.stage = org.unipod.unipoderpbackend.model.submission.SubmissionStage.IN_REVIEW
             """)
     long countQueueWaiting(@Param("reviewer") String reviewer);
 }

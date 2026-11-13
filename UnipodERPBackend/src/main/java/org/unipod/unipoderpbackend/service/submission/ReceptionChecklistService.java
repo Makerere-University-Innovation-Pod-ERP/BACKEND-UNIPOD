@@ -131,8 +131,7 @@ public class ReceptionChecklistService {
 
     private static void requireCheckable(Submission submission) {
         if (submission.getStage() != SubmissionStage.DRAFT
-                && submission.getStage() != SubmissionStage.SUBMITTED
-                && submission.getStage() != SubmissionStage.RECEIVED) {
+                && submission.getStage() != SubmissionStage.SUBMITTED) {
             throw new SubmissionConflictException(
                     "The reception checklist can only be changed before the submission is forwarded."
             );

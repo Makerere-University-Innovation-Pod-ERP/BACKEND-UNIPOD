@@ -627,11 +627,11 @@ class ReviewAuditIntegrationTest {
     }
 
     private Submission factFindingBrief() {
-        return briefInStage(SubmissionStage.FACT_FINDING);
+        return briefInStage(SubmissionStage.IN_FACT_FINDING);
     }
 
     private Submission underReviewBrief() {
-        return briefInStage(SubmissionStage.UNDER_REVIEW);
+        return briefInStage(SubmissionStage.IN_REVIEW);
     }
 
     private Submission briefInStage(SubmissionStage target) {
@@ -649,11 +649,12 @@ class ReviewAuditIntegrationTest {
                 null,
                 Instant.parse("2026-11-01T08:00:00Z")
         );
+        brief.applyIntakeDetails(null, null, null, null, null, null, "2026-01");
         brief.register("CASE-AU-" + UUID.randomUUID().toString().substring(0, 8),
                 Instant.parse("2026-11-01T09:00:00Z"), "receptionist@example.test");
         Instant time = Instant.parse("2026-11-01T10:00:00Z");
         for (SubmissionStage stage : List.of(
-                SubmissionStage.REGISTERED, SubmissionStage.FACT_FINDING, SubmissionStage.UNDER_REVIEW)) {
+                SubmissionStage.FORWARDED, SubmissionStage.IN_FACT_FINDING, SubmissionStage.IN_REVIEW)) {
             brief.transitionTo(stage, time);
             if (stage == target) {
                 break;

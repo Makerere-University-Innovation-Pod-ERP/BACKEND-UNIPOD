@@ -22,6 +22,18 @@ public class WaluubeAuditLog {
             "/queues/reception",
             "/me/submissions",
             "/me/capabilities",
+            "/me/invoices",
+            "/me/invoices/**",
+            "/me/bookings",
+            "/me/bookings/**",
+            "/invoices",
+            "/invoices/**",
+            "/finance",
+            "/finance/**",
+            "/facilities",
+            "/facilities/**",
+            "/bookings",
+            "/bookings/**",
             "/dashboard/overview"
     );
     private static final int MAX_REQUEST_PATH_LENGTH = 1024;

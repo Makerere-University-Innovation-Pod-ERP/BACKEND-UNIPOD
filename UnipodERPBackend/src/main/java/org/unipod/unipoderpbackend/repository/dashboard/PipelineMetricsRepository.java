@@ -24,10 +24,10 @@ public class PipelineMetricsRepository {
         String query = """
                 SELECT count(*) AS total,
                     count(*) FILTER (
-                        WHERE s.stage IN ('FACT_FINDING', 'FORWARDED')
+                        WHERE s.stage IN ('READY_FOR_REVIEW', 'IN_REVIEW', 'RESUBMITTED')
                     ) AS waiting_for_review,
                     count(*) FILTER (
-                        WHERE s.stage = 'REFINEMENT_REQUESTED'
+                        WHERE s.stage = 'IMPROVEMENT_REQUESTED'
                     ) AS needing_improvement,
                     count(*) FILTER (
                         WHERE s.stage = 'COMPLETED' AND EXISTS (
@@ -38,19 +38,19 @@ public class PipelineMetricsRepository {
                         )
                     ) AS completed_this_month,
                     count(*) FILTER (
-                        WHERE s.stage IN ('SUBMITTED', 'AWAITING_INFORMATION', 'RECEIVED', 'REGISTERED')
+                        WHERE s.stage IN ('SUBMITTED', 'AWAITING_INFORMATION')
                     ) AS intake,
                     count(*) FILTER (
-                        WHERE s.stage IN ('FACT_FINDING', 'FORWARDED')
+                        WHERE s.stage IN ('FORWARDED', 'IN_FACT_FINDING')
                     ) AS fact_finding,
                     count(*) FILTER (
-                        WHERE s.stage IN ('UNDER_REVIEW', 'IN_PROGRESS')
+                        WHERE s.stage IN ('READY_FOR_REVIEW', 'IN_REVIEW', 'RESUBMITTED')
                     ) AS under_review,
                     count(*) FILTER (
-                        WHERE s.stage = 'REFINEMENT_REQUESTED'
+                        WHERE s.stage = 'IMPROVEMENT_REQUESTED'
                     ) AS refinement_requested,
                     count(*) FILTER (
-                        WHERE s.stage IN ('FURTHER_HANDLING', 'CONFIRMED_AS_PROJECT')
+                        WHERE s.stage IN ('CONFIRMED_AS_PROJECT', 'AWAITING_PAYMENT', 'IN_PROGRESS')
                     ) AS further_handling,
                     count(*) FILTER (WHERE s.stage = 'COMPLETED') AS completed
                 FROM submissions s
@@ -88,17 +88,18 @@ public class PipelineMetricsRepository {
                     CASE s.stage
                         WHEN 'SUBMITTED' THEN 'Awaiting intake review'
                         WHEN 'AWAITING_INFORMATION' THEN 'Awaiting submitter information'
-                        WHEN 'RECEIVED' THEN 'Awaiting intake review'
-                        WHEN 'REGISTERED' THEN 'Awaiting assessment'
-                        WHEN 'FACT_FINDING' THEN 'Assessment in progress'
-                        WHEN 'FORWARDED' THEN 'Assessment in progress'
-                        WHEN 'UNDER_REVIEW' THEN 'Review in progress'
-                        WHEN 'IN_PROGRESS' THEN 'Review in progress'
-                        WHEN 'REFINEMENT_REQUESTED' THEN 'Updated information requested'
-                        WHEN 'FURTHER_HANDLING' THEN 'Awaiting sector response'
+                        WHEN 'FORWARDED' THEN 'Awaiting fact-finding'
+                        WHEN 'IN_FACT_FINDING' THEN 'Fact-finding in progress'
+                        WHEN 'READY_FOR_REVIEW' THEN 'Awaiting review assignment'
+                        WHEN 'IN_REVIEW' THEN 'Review in progress'
+                        WHEN 'IMPROVEMENT_REQUESTED' THEN 'Updated information requested'
+                        WHEN 'RESUBMITTED' THEN 'Awaiting review'
+                        WHEN 'CONFIRMED_AS_PROJECT' THEN 'Awaiting handover'
+                        WHEN 'AWAITING_PAYMENT' THEN 'Awaiting payment'
+                        WHEN 'IN_PROGRESS' THEN 'Delivery in progress'
                     END AS reason
                 FROM submissions s
-                WHERE s.stage NOT IN ('DRAFT', 'COMPLETED', 'REJECTED', 'CONFIRMED_AS_PROJECT')
+                WHERE s.stage NOT IN ('DRAFT', 'COMPLETED', 'CLOSED', 'CONFIRMED_AS_PROJECT')
                     AND s.updated_at < ?
                 ORDER BY s.updated_at ASC, s.id ASC
                 LIMIT 5
@@ -117,7 +118,7 @@ public class PipelineMetricsRepository {
         return jdbcTemplate.queryForObject("""
                 SELECT count(*) FILTER (WHERE s.stage = 'SUBMITTED') AS in_queue,
                     count(*) FILTER (
-                        WHERE s.stage NOT IN ('DRAFT', 'REJECTED', 'COMPLETED')
+                        WHERE s.stage NOT IN ('DRAFT', 'CLOSED', 'COMPLETED')
                           AND (
                               s.stage = 'AWAITING_INFORMATION'
                               OR EXISTS (

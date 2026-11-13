@@ -3,11 +3,13 @@ package org.unipod.unipoderpbackend.model.auth;
 public enum ApiUserRole {
     ADMINISTRATOR,
     INNOVATION_COORDINATOR,
+    DEPARTMENT_COORDINATOR,
     RECEPTIONIST,
     FACT_FINDING_OFFICER,
     REVIEWER,
     SECTOR_OFFICER,
     IP_LIAISON,
     SUBMITTER,
+    FINANCE_OFFICER,
     OBSERVER
 }

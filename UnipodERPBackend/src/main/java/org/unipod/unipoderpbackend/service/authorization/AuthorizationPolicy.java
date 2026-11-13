@@ -58,9 +58,6 @@ public class AuthorizationPolicy {
                 CASE_VIEW, Scope.ALL,
                 AUDIT_VIEW, Scope.ALL
         ));
-        rules.put(ApiUserRole.IP_LIAISON, Map.of(
-                CASE_VIEW, Scope.ALL
-        ));
     }
 
     public Map<AuthorizationAction, Scope> capabilitiesFor(ApiUserRole role) {
