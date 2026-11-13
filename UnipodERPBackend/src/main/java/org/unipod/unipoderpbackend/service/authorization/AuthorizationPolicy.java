@@ -60,6 +60,12 @@ public class AuthorizationPolicy {
         ));
     }
 
+    public Map<AuthorizationAction, Scope> capabilitiesFor(ApiUserRole role) {
+        Map<AuthorizationAction, Scope> capabilities = new EnumMap<>(AuthorizationAction.class);
+        capabilities.putAll(rules.getOrDefault(role, Map.of()));
+        return capabilities;
+    }
+
     public Optional<Scope> scopeFor(ApiUserRole role, AuthorizationAction action) {
         return Optional.ofNullable(rules.getOrDefault(role, Map.of()).get(action));
     }

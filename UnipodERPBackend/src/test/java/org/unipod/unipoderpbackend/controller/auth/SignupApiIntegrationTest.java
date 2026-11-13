@@ -125,6 +125,15 @@ class SignupApiIntegrationTest {
     }
 
     @Test
+    void missingRulesAcceptedIsAFieldErrorNotAMalformedBody() throws Exception {
+        Map<String, Object> body = new HashMap<>(student("lydia@example.test", "2400700002"));
+        body.remove("rulesAccepted");
+        mockMvc.perform(signup(body))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("rulesAccepted"));
+    }
+
+    @Test
     void duplicateEmailOrStudentNumberIsAConflict() throws Exception {
         mockMvc.perform(signup(student("joseph@example.test", "2400709999")))
                 .andExpect(status().isCreated());
