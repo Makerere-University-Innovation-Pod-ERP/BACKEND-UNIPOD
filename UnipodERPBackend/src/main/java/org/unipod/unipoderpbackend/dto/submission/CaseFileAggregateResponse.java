@@ -2,6 +2,7 @@ package org.unipod.unipoderpbackend.dto.submission;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 import org.unipod.unipoderpbackend.model.submission.CaseStage;
 import org.unipod.unipoderpbackend.model.submission.OutcomeStatus;
 
@@ -9,6 +10,7 @@ public record CaseFileAggregateResponse(
         SubmissionResponse submission,
         CaseStage currentStage,
         String reference,
+        List<MissingItemResponse> openRequests,
         List<DocumentResponse> documents,
         List<CaseStageHistoryResponse> stageHistory,
         List<CaseStepResponse> stepper,
@@ -31,6 +33,8 @@ public record CaseFileAggregateResponse(
             OutcomeStatus status,
             String decision,
             String note,
+            UUID destinationDepartmentId,
+            String destinationDepartmentName,
             String decidedBy,
             Instant decidedAt
     ) {
@@ -39,7 +43,6 @@ public record CaseFileAggregateResponse(
     public record ReviewPanelResponse(
             String availability,
             List<String> reviewerTeam,
-            List<String> ipPanel,
             boolean quorumAvailable,
             boolean quorumMet
     ) {

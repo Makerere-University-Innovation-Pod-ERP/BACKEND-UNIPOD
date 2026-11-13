@@ -360,7 +360,7 @@ public class SubmissionService {
         SubmissionStage previousStage = submission.getStage();
         String projectCode = clean(request.projectCode());
         if (projectCode == null) {
-            projectCode = caseCodeGenerator.nextProject(caseYear(now));
+            projectCode = caseCodeGenerator.nextProject(submission.getCategory(), caseYear(now));
         } else {
             requireManualProjectCode(projectCode);
         }
