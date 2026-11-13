@@ -747,7 +747,7 @@ class WaluubeApiIntegrationTest {
                                 + "\",\"note\":\"Intake checked\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.stage").value("FORWARDED"))
-                .andExpect(jsonPath("$.version").value(4));
+                .andExpect(jsonPath("$.version").value(5));
 
         mockMvc.perform(get("/cases/{id}", id)
                         .with(user("coordinator").roles("INNOVATION_COORDINATOR")))
@@ -759,17 +759,17 @@ class WaluubeApiIntegrationTest {
                         .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"status":"VERIFIED","version":4}
+                                {"status":"VERIFIED","version":5}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.documents[0].status").value("VERIFIED"))
-                .andExpect(jsonPath("$.submission.version").value(5));
+                .andExpect(jsonPath("$.submission.version").value(6));
 
         mockMvc.perform(put("/cases/{id}/outcome", id)
                         .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"decision":"Needs more improvement","note":"Panel review complete","version":5}
+                                {"decision":"Needs more improvement","note":"Panel review complete","version":6}
                                 """))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail").value(
@@ -794,7 +794,7 @@ class WaluubeApiIntegrationTest {
                         .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"decision":"Approve","note":"Panel review complete","version":5}
+                                {"decision":"Approve","note":"Panel review complete","version":6}
                                 """))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.detail").value("Submission details are invalid or incomplete."));
@@ -802,7 +802,7 @@ class WaluubeApiIntegrationTest {
                         .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"decision":" ","note":"  ","version":5}
+                                {"decision":" ","note":"  ","version":6}
                                 """))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.detail").value("One or more request values are invalid."));
@@ -898,15 +898,15 @@ class WaluubeApiIntegrationTest {
                         .content("{\"sectorId\":\"" + attentionSector.id() + "\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.stage").value("FORWARDED"))
-                .andExpect(jsonPath("$.version").value(2));
+                .andExpect(jsonPath("$.version").value(3));
         mockMvc.perform(post("/cases/{id}/transitions", id)
                         .with(manager)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"to_stage":"IN_FACT_FINDING","version":2}
+                                {"to_stage":"IN_FACT_FINDING","version":3}
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.submission.version").value(3));
+                .andExpect(jsonPath("$.submission.version").value(4));
 
         jdbcTemplate.update("UPDATE submissions SET updated_at = CURRENT_TIMESTAMP WHERE id <> ?",
                 UUID.fromString(id));
