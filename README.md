@@ -240,9 +240,9 @@ Student Projects, General Innovations, and Service Requests use the same list en
 `GET /api/dashboard/overview`
 
 The M1 manager overview is available only to Administrators and Innovation
-Coordinators. It reports across all briefs and is cached for 30 seconds:
+Coordinators. It reports across all non-draft briefs and is cached for 30 seconds:
 
-* **Total briefs**, **waiting for review** (`FACT_FINDING` and `FORWARDED`),
+* **Total non-draft briefs**, **waiting for review** (`FACT_FINDING` and `FORWARDED`),
   **needing improvement** (`REFINEMENT_REQUESTED`), and **completed this month**.
 * **Pipeline**: six grouped lifecycle counts.
 * **Needs attention**: up to five open cases that have not changed for more than

@@ -4238,7 +4238,7 @@ components:
         totalBriefs:
           type: integer
           format: int64
-          description: Count of all briefs.
+          description: Count of all non-draft briefs.
         waitingForReview:
           type: integer
           format: int64

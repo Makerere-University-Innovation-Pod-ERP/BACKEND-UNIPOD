@@ -54,6 +54,7 @@ public class PipelineMetricsRepository {
                     ) AS further_handling,
                     count(*) FILTER (WHERE s.stage = 'COMPLETED') AS completed
                 FROM submissions s
+                WHERE s.stage <> 'DRAFT'
                 """;
 
         return jdbcTemplate.queryForObject(query,

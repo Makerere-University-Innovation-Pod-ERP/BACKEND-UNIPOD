@@ -13,6 +13,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.annotation.Transactional;
 import org.unipod.unipoderpbackend.dto.sector.SectorRequest;
 import org.unipod.unipoderpbackend.service.sector.SectorService;
@@ -898,6 +899,34 @@ class WaluubeApiIntegrationTest {
     }
 
     @Test
+    void managerDashboardExcludesDraftsFromTotalBriefs() throws Exception {
+        String actor = "dashboard-draft-owner-" + UUID.randomUUID();
+        var intake = user("dashboard-draft-intake-" + UUID.randomUUID()).roles("RECEPTIONIST");
+        var beforeManager = user("dashboard-draft-before-" + UUID.randomUUID()).roles("ADMINISTRATOR");
+        var afterManager = user("dashboard-draft-after-" + UUID.randomUUID()).roles("ADMINISTRATOR");
+
+        long before = dashboardTotal(beforeManager);
+
+        mockMvc.perform(post("/submissions")
+                        .with(intake)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "category": "general",
+                                  "title": "Draft excluded from totals",
+                                  "purpose": "Verify drafts do not inflate dashboard totals",
+                                  "problemAddressed": "Drafts are work in progress",
+                                  "submitterId": "%s"
+                                }
+                                """.formatted(actor)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.stage").value("DRAFT"));
+
+        assertEquals(before, dashboardTotal(afterManager),
+                "Draft briefs must not be counted in the manager dashboard total.");
+    }
+
+    @Test
     void databaseRejectsInconsistentReceivedAndForwardedMetadata() {
         org.springframework.dao.DataIntegrityViolationException receivedWithSector = org.junit.jupiter.api.Assertions
                 .assertThrows(org.springframework.dao.DataIntegrityViolationException.class, () ->
@@ -1250,6 +1279,17 @@ class WaluubeApiIntegrationTest {
                 Integer.class,
                 UUID.fromString(id)
         ));
+    }
+
+    private long dashboardTotal(RequestPostProcessor principal) throws Exception {
+        String body = mockMvc.perform(get("/dashboard/overview").with(principal))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        Matcher matcher = Pattern.compile("\"totalBriefs\":(\\d+)").matcher(body);
+        assertTrue(matcher.find(), "Dashboard response should include totalBriefs.");
+        return Long.parseLong(matcher.group(1));
     }
 
     private static String idOf(String response) {
