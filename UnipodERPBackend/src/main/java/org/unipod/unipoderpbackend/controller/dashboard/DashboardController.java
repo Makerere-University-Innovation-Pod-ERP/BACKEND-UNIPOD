@@ -19,7 +19,7 @@ public class DashboardController {
     }
 
     @GetMapping("/overview")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR')")
     public DashboardOverviewResponse overview(Authentication authentication) {
         return dashboard.overview(authentication);
     }
