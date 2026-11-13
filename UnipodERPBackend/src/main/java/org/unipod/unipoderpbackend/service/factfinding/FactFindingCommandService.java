@@ -70,10 +70,12 @@ public class FactFindingCommandService {
         Submission brief = visibleCaseForUpdate(briefId, authentication);
         requireSavableStage(brief.getStage());
         FactFindingCheck check = saveAnswers(briefId, request, authentication.getName());
+        // Submitters can read this brief's activity: never put notes, missing items or answers here.
         auditTrail.record(authentication.getName(), "submission.fact_finding_saved", briefId, null,
                 AuditTrail.details(
+                        "state", "DRAFT",
                         "round", check.getRound(),
-                        "stage", brief.getStage().name()
+                        "version", check.getVersion()
                 ));
         return FactFindingResponse.from(brief, check);
     }
@@ -116,9 +118,13 @@ public class FactFindingCommandService {
                 "Fact-finding complete: ready for review.",
                 now
         ));
-        auditTrail.record(authentication.getName(), "submission.fact_finding_completed", briefId,
-                AuditTrail.details("stage", previousStage.name()),
-                AuditTrail.details("stage", SubmissionStage.UNDER_REVIEW.name(), "round", check.getRound()));
+        // Submitters can read this brief's activity: never put notes, missing items or answers here.
+        auditTrail.record(authentication.getName(), "submission.fact_finding_completed", briefId, null,
+                AuditTrail.details(
+                        "round", check.getRound(),
+                        "result", check.getResult().name(),
+                        "version", check.getVersion()
+                ));
         submissions.flush();
         return FactFindingResponse.from(brief, check);
     }
