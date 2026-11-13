@@ -86,6 +86,8 @@ public class CaseFileService {
     private static final String UPLOAD_REVISION_OWNER_REASON = "Only the submitter can upload a revision.";
     private static final String RECEPTION_FORWARD_ROLE_REASON = "Only reception can forward a brief.";
     private static final String RECEPTION_FORWARD_STAGE_REASON = "This brief is not waiting at reception.";
+    private static final String RECEPTION_CHECKLIST_INCOMPLETE_REASON =
+            "Complete all four reception checks before forwarding this brief.";
     private static final String FACT_FIND_ROLE_REASON =
             "Fact-finding is only available to fact-finding officers.";
     private static final String FACT_FIND_STAGE_REASON = "This case is not in fact-finding.";
@@ -110,6 +112,7 @@ public class CaseFileService {
     private final MissingItemRepository missingItems;
     private final CaseFileEnrichmentProvider enrichment;
     private final FactFindingGuard factFindingGuard;
+    private final ReceptionChecklistService receptionChecklists;
     private final NotificationOutbox notificationOutbox;
     private final SectorService sectorsCatalog;
     private final CaseCodeGenerator caseCodeGenerator;
@@ -123,6 +126,7 @@ public class CaseFileService {
             MissingItemRepository missingItems,
             CaseFileEnrichmentProvider enrichment,
             FactFindingGuard factFindingGuard,
+            ReceptionChecklistService receptionChecklists,
             NotificationOutbox notificationOutbox,
             SectorService sectorsCatalog,
             CaseCodeGenerator caseCodeGenerator,
@@ -135,6 +139,7 @@ public class CaseFileService {
         this.missingItems = missingItems;
         this.enrichment = enrichment;
         this.factFindingGuard = factFindingGuard;
+        this.receptionChecklists = receptionChecklists;
         this.notificationOutbox = notificationOutbox;
         this.sectorsCatalog = sectorsCatalog;
         this.caseCodeGenerator = caseCodeGenerator;
@@ -450,7 +455,12 @@ public class CaseFileService {
         boolean canEditDraft = stage == SubmissionStage.DRAFT && (owner || reception);
         boolean canRespondInfo = stage == SubmissionStage.AWAITING_INFORMATION && owner;
         boolean canUploadRevision = stage == SubmissionStage.IMPROVEMENT_REQUESTED && owner;
-        boolean canReceptionForward = reception && stage == SubmissionStage.SUBMITTED;
+        boolean receptionChecklistComplete = !reception
+                || stage != SubmissionStage.SUBMITTED
+                || receptionChecklists.isComplete(submission.getId());
+        boolean canReceptionForward = reception
+                && stage == SubmissionStage.SUBMITTED
+                && receptionChecklistComplete;
         boolean canFactFind = factFindingOfficer && isFactFindingStage(stage);
         boolean canAssignReviewers = operator && stage == SubmissionStage.IN_REVIEW;
         boolean canRecordDecision = saveOutcome.enabled();
@@ -482,7 +492,9 @@ public class CaseFileService {
         if (!canReceptionForward) {
             lockReasons.put(
                     "canReceptionForward",
-                    reception ? RECEPTION_FORWARD_STAGE_REASON : RECEPTION_FORWARD_ROLE_REASON
+                    !reception ? RECEPTION_FORWARD_ROLE_REASON
+                            : stage != SubmissionStage.SUBMITTED ? RECEPTION_FORWARD_STAGE_REASON
+                            : RECEPTION_CHECKLIST_INCOMPLETE_REASON
             );
         }
         if (!canFactFind) {

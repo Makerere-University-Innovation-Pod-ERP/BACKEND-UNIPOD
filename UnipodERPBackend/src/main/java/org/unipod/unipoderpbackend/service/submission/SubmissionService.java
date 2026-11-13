@@ -743,15 +743,28 @@ public class SubmissionService {
                         authentication.getName()
                 )
                 .orElseThrow(() -> new SubmissionNotFoundException(id));
+        UUID destinationId = submission.getResponsibleSectorId();
+        String destinationName = submission.getResponsibleSectorName();
+        String whatsappGroupUrl = submission.getResponsibleSectorWhatsappGroupUrl();
+        if (destinationId == null && clean(submission.getDepartment()) != null) {
+            SectorResponse suggested = sectorsCatalog.activeSectors().stream()
+                    .filter(sector -> sector.name() != null
+                            && sector.name().equalsIgnoreCase(submission.getDepartment().trim()))
+                    .findFirst()
+                    .orElse(null);
+            if (suggested != null) {
+                destinationId = suggested.id();
+                destinationName = suggested.name();
+                whatsappGroupUrl = suggested.whatsappGroupUrl();
+            }
+        }
         return new SubmissionConfirmationResponse(
                 submission.getId(),
                 submission.getCode(),
                 submission.getSubmittedAt(),
-                submission.getResponsibleSectorId(),
-                submission.getResponsibleSectorName() == null
-                        ? submission.getDepartment()
-                        : submission.getResponsibleSectorName(),
-                submission.getResponsibleSectorWhatsappGroupUrl()
+                destinationId,
+                destinationName == null ? submission.getDepartment() : destinationName,
+                whatsappGroupUrl
         );
     }
 

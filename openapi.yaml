@@ -6101,7 +6101,10 @@ components:
           description: The owning submitter may upload a revision after an improvement request.
         canReceptionForward:
           type: boolean
-          description: Reception may forward a submitted brief to a department.
+          description: >-
+            Reception may forward a submitted brief to a department. False
+            until all four reception checks (details_complete,
+            documents_complete, files_readable, correct_type) are checked.
         canFactFind:
           type: boolean
           description: A fact-finding officer may record fact-finding for this case.

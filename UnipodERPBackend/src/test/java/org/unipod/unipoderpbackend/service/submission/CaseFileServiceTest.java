@@ -59,6 +59,7 @@ class CaseFileServiceTest {
     private final MissingItemRepository missingItems = mock(MissingItemRepository.class);
     private final CaseFileEnrichmentProvider enrichment = mock(CaseFileEnrichmentProvider.class);
     private final FactFindingGuard factFindingGuard = mock(FactFindingGuard.class);
+    private final ReceptionChecklistService receptionChecklists = mock(ReceptionChecklistService.class);
     private final NotificationOutbox notificationOutbox = mock(NotificationOutbox.class);
     private final SectorService sectorsCatalog = mock(SectorService.class);
     private final CaseCodeGenerator caseCodeGenerator = mock(CaseCodeGenerator.class);
@@ -66,7 +67,7 @@ class CaseFileServiceTest {
     private final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
     private final CaseFileService service = new CaseFileService(
             submissions, documents, history, missingItems, enrichment, factFindingGuard,
-            notificationOutbox, sectorsCatalog, caseCodeGenerator, audit, clock
+            receptionChecklists, notificationOutbox, sectorsCatalog, caseCodeGenerator, audit, clock
     );
     private Submission submission;
 
@@ -542,6 +543,7 @@ class CaseFileServiceTest {
         Authentication receptionist = authentication("desk", "ROLE_RECEPTIONIST");
         when(submissions.findVisibleById(CASE_ID, "ALL", "desk"))
                 .thenReturn(Optional.of(submission));
+        when(receptionChecklists.isComplete(CASE_ID)).thenReturn(true);
 
         var capabilities = service.capabilities(CASE_ID, receptionist);
 
@@ -550,6 +552,23 @@ class CaseFileServiceTest {
         assertEquals(
                 "This brief is no longer a draft.",
                 capabilities.lockReasons().get("canEditDraft")
+        );
+    }
+
+    @Test
+    void receptionCannotForwardUntilEveryReceptionCheckIsComplete() {
+        ReflectionTestUtils.setField(submission, "stage", SubmissionStage.SUBMITTED);
+        Authentication receptionist = authentication("desk", "ROLE_RECEPTIONIST");
+        when(submissions.findVisibleById(CASE_ID, "ALL", "desk"))
+                .thenReturn(Optional.of(submission));
+        when(receptionChecklists.isComplete(CASE_ID)).thenReturn(false);
+
+        var capabilities = service.capabilities(CASE_ID, receptionist);
+
+        assertFalse(capabilities.canReceptionForward());
+        assertEquals(
+                "Complete all four reception checks before forwarding this brief.",
+                capabilities.lockReasons().get("canReceptionForward")
         );
     }
 

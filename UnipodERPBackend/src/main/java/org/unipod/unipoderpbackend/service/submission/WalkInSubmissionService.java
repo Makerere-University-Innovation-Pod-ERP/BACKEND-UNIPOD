@@ -129,7 +129,7 @@ public class WalkInSubmissionService {
                 : name.length() <= 200 ? name : name.substring(0, 200);
         profiles.save(new UserProfile(
                 user.getId(),
-                AccountKind.PUBLIC,
+                request.accountKind() == null ? AccountKind.PUBLIC : request.accountKind(),
                 fullName,
                 firstName(name),
                 clean(request.phone()) == null ? "not-provided" : clean(request.phone()),
