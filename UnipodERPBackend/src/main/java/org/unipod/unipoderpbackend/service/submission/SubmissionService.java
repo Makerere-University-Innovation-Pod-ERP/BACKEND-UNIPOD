@@ -172,6 +172,7 @@ public class SubmissionService {
         requireCategoryDetails(request);
         Submission submission = submissions.findByIdForUpdate(id)
                 .orElseThrow(() -> new SubmissionNotFoundException(id));
+        requireDraftOwner(submission, actor);
         requireSubmitterOwnership(submission, actor, submitter);
         if (submission.getCategory() != request.category()) {
             throw new InvalidSubmissionException("The submission category cannot be changed after creation.");
@@ -226,13 +227,13 @@ public class SubmissionService {
                 UUID.randomUUID(),
                 submission.getId(),
                 previousStage,
-                SubmissionStage.RECEIVED,
+                SubmissionStage.SUBMITTED,
                 actor,
                 receivedAt
         ));
         auditTrail.record(actor, "submission.registered", submission.getId(),
                 AuditTrail.details("stage", previousStage.name()),
-                AuditTrail.details("stage", SubmissionStage.RECEIVED.name(), "code", submission.getCode()));
+                AuditTrail.details("stage", SubmissionStage.SUBMITTED.name(), "code", submission.getCode()));
         submissions.flush();
         return SubmissionResponse.from(submission);
     }
@@ -307,6 +308,7 @@ public class SubmissionService {
                 clean(request.serviceRequested()),
                 clean(request.department()),
                 clean(request.expectedResult()),
+                request.preferredAt(),
                 now
         );
         SubmissionStage previousStage = submission.getStage();
@@ -402,7 +404,7 @@ public class SubmissionService {
                 UUID.randomUUID(),
                 submission.getId(),
                 previousStage,
-                SubmissionStage.REJECTED,
+                SubmissionStage.CLOSED,
                 actor,
                 clean(request.reason()),
                 now
@@ -418,7 +420,7 @@ public class SubmissionService {
         auditTrail.record(actor, "submission.rejected", submission.getId(),
                 AuditTrail.details("stage", previousStage.name()),
                 AuditTrail.details(
-                        "stage", SubmissionStage.REJECTED.name(),
+                        "stage", SubmissionStage.CLOSED.name(),
                         "reason", clean(request.reason())
                 ));
         submissions.flush();
@@ -436,9 +438,7 @@ public class SubmissionService {
                 .orElseThrow(() -> new SubmissionNotFoundException(id));
         Sector sector = sectorsCatalog.requireActive(sectorId);
         Instant now = clock.instant();
-        if (submission.getStage() == SubmissionStage.SUBMITTED) {
-            receptionChecklists.requireComplete(id);
-        }
+        receptionChecklists.requireComplete(id);
         if (submission.getStage() == SubmissionStage.DRAFT) {
             SubmissionStage draftStage = submission.getStage();
             String code = submission.getCode() == null
@@ -449,7 +449,7 @@ public class SubmissionService {
                     UUID.randomUUID(),
                     submission.getId(),
                     draftStage,
-                    SubmissionStage.RECEIVED,
+                    SubmissionStage.SUBMITTED,
                     actor,
                     now
             ));
@@ -900,6 +900,9 @@ public class SubmissionService {
         String department = clean(request.department());
         if (submission.getCategory() == SubmissionCategory.SERVICE_REQUEST && department == null) {
             department = suggestDepartment(clean(request.serviceRequested()));
+        } else if (submission.getCategory() != SubmissionCategory.SERVICE_REQUEST
+                && department == null) {
+            department = "Innovation";
         }
         submission.applyIntakeDetails(
                 clean(request.submitterPhone()),
@@ -907,6 +910,7 @@ public class SubmissionService {
                 request.serviceRequester(),
                 department,
                 clean(request.expectedResult()),
+                request.preferredAt(),
                 clean(request.acceptedRulesVersion())
         );
     }
@@ -1092,6 +1096,12 @@ public class SubmissionService {
                 || request.serviceRequester() != null
                 || clean(request.department()) != null
                 || clean(request.expectedResult()) != null;
+    }
+
+    private static void requireDraftOwner(Submission submission, String actor) {
+        if (!submission.getSubmitterId().equals(actor)) {
+            throw new AccessDeniedException("Only the submitter can edit the brief.");
+        }
     }
 
     static void requireSubmitterOwnership(Submission submission, String actor, boolean submitter) {

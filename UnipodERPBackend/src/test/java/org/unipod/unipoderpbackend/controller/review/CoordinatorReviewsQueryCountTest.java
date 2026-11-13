@@ -96,12 +96,13 @@ class CoordinatorReviewsQueryCountTest {
                 UUID.randomUUID(), SubmissionCategory.GENERAL, "Counted reviews", "Purpose", "Problem",
                 "receptionist@example.test", "submitter@example.test", null, null, null, null,
                 Instant.parse("2026-11-01T08:00:00Z"));
+        brief.applyIntakeDetails(null, null, null, null, null, null, "2026-01");
         brief.register("CASE-CQ-" + UUID.randomUUID().toString().substring(0, 8),
                 Instant.parse("2026-11-01T09:00:00Z"), "receptionist@example.test");
         Instant time = Instant.parse("2026-11-01T10:00:00Z");
-        brief.transitionTo(SubmissionStage.REGISTERED, time);
-        brief.transitionTo(SubmissionStage.FACT_FINDING, time);
-        brief.transitionTo(SubmissionStage.UNDER_REVIEW, time);
+        brief.transitionTo(SubmissionStage.FORWARDED, time);
+        brief.transitionTo(SubmissionStage.IN_FACT_FINDING, time);
+        brief.transitionTo(SubmissionStage.IN_REVIEW, time);
         UUID id = submissions.saveAndFlush(brief).getId();
         settings.saveAndFlush(new ReviewSettings(id, 1, ReviewMode.PARALLEL, reviewers, null, COORDINATOR));
         for (int i = 1; i <= reviewers; i++) {

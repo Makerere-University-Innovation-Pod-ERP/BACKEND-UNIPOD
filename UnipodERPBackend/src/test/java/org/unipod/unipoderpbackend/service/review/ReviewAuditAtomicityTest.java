@@ -121,7 +121,7 @@ class ReviewAuditAtomicityTest {
 
     @Test
     void failureAfterTheAuditCallRollsBackFactFindingCompletion() throws Exception {
-        UUID brief = brief(SubmissionStage.FACT_FINDING);
+        UUID brief = brief(SubmissionStage.IN_FACT_FINDING);
         long version = savedVersion(brief);
         Mockito.clearInvocations(auditService);
         Mockito.doThrow(new IllegalStateException("flush failed")).when(submissions).flush();
@@ -135,12 +135,12 @@ class ReviewAuditAtomicityTest {
         assertNull(check.get("completed_at"));
         assertNull(check.get("result"));
         assertEquals(version, ((Number) check.get("version")).longValue());
-        assertEquals("FACT_FINDING", stage(brief));
+        assertEquals("IN_FACT_FINDING", stage(brief));
     }
 
     @Test
     void failureAfterTheAuditCallRollsBackSettingsAssignAndRemove() throws Exception {
-        UUID brief = brief(SubmissionStage.UNDER_REVIEW);
+        UUID brief = brief(SubmissionStage.IN_REVIEW);
         String reviewer = reviewerAccount();
         Mockito.doThrow(new IllegalStateException("panel failed")).when(panels).panelFor(Mockito.any(UUID.class));
 
@@ -164,7 +164,7 @@ class ReviewAuditAtomicityTest {
 
     @Test
     void failureAfterTheAuditCallRollsBackReviewSubmission() throws Exception {
-        UUID brief = brief(SubmissionStage.UNDER_REVIEW);
+        UUID brief = brief(SubmissionStage.IN_REVIEW);
         String reviewer = reviewerAccount();
         seedSettings(brief);
         seedAssignment(brief, reviewer, 1);
@@ -188,11 +188,11 @@ class ReviewAuditAtomicityTest {
 
     @Test
     void failingAuditRollsBackEveryOneOfTheSixWrites() throws Exception {
-        UUID factFinding = brief(SubmissionStage.FACT_FINDING);
-        UUID toComplete = brief(SubmissionStage.FACT_FINDING);
+        UUID factFinding = brief(SubmissionStage.IN_FACT_FINDING);
+        UUID toComplete = brief(SubmissionStage.IN_FACT_FINDING);
         long version = savedVersion(toComplete);
-        UUID underReview = brief(SubmissionStage.UNDER_REVIEW);
-        UUID withSettings = brief(SubmissionStage.UNDER_REVIEW);
+        UUID underReview = brief(SubmissionStage.IN_REVIEW);
+        UUID withSettings = brief(SubmissionStage.IN_REVIEW);
         String reviewer = reviewerAccount();
         String assigned = reviewerAccount();
         seedSettings(withSettings);
@@ -209,7 +209,7 @@ class ReviewAuditAtomicityTest {
                 officer()));
         assertNull(jdbcTemplate.queryForObject(
                 "SELECT completed_at FROM fact_finding_checks WHERE brief_id = ?", Instant.class, toComplete));
-        assertEquals("FACT_FINDING", stage(toComplete));
+        assertEquals("IN_FACT_FINDING", stage(toComplete));
         assertEquals(0, count("SELECT count(*) FROM case_stage_history WHERE submission_id = ?", toComplete));
 
         expectServerError(perform(put("/cases/{id}/review-settings", underReview),
@@ -308,11 +308,12 @@ class ReviewAuditAtomicityTest {
                     UUID.randomUUID(), SubmissionCategory.GENERAL, "Atomic audit brief", "Purpose", "Problem",
                     "receptionist@example.test", "submitter@example.test", null, null, null, null,
                     Instant.parse("2026-11-01T08:00:00Z"));
+            brief.applyIntakeDetails(null, null, null, null, null, null, "2026-01");
             brief.register("CASE-AA-" + UUID.randomUUID().toString().substring(0, 8),
                     Instant.parse("2026-11-01T09:00:00Z"), "receptionist@example.test");
             Instant time = Instant.parse("2026-11-01T10:00:00Z");
             for (SubmissionStage stage : List.of(
-                    SubmissionStage.REGISTERED, SubmissionStage.FACT_FINDING, SubmissionStage.UNDER_REVIEW)) {
+                    SubmissionStage.FORWARDED, SubmissionStage.IN_FACT_FINDING, SubmissionStage.IN_REVIEW)) {
                 brief.transitionTo(stage, time);
                 if (stage == target) {
                     break;

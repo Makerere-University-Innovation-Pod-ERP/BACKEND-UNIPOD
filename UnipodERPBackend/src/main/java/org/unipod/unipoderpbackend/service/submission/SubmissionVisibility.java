@@ -8,7 +8,7 @@ public final class SubmissionVisibility {
 
     public static String scope(Authentication authentication) {
         if (has(authentication, "ADMINISTRATOR", "INNOVATION_COORDINATOR", "RECEPTIONIST",
-                "FACT_FINDING_OFFICER", "IP_LIAISON", "OBSERVER")) {
+                "FACT_FINDING_OFFICER", "OBSERVER")) {
             return "ALL";
         }
         boolean reviewer = has(authentication, "REVIEWER");

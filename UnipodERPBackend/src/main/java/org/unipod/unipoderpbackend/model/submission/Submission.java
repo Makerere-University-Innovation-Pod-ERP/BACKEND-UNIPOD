@@ -85,6 +85,9 @@ public class Submission {
     @Column(name = "expected_result", columnDefinition = "text")
     private String expectedResult;
 
+    @Column(name = "preferred_at")
+    private Instant preferredAt;
+
     @Column(name = "project_code", unique = true, length = 32)
     private String projectCode;
 
@@ -257,6 +260,8 @@ public class Submission {
             throw new SubmissionConflictException("Submission has already been registered.");
         }
         requireStudentDetails();
+        requireServiceRequestDetails();
+        requireAcceptedRules();
         if (this.code == null) {
             this.code = caseCode;
         } else if (!this.code.equals(caseCode)) {
@@ -265,7 +270,7 @@ public class Submission {
         this.receivedAt = time;
         this.submittedAt = this.submittedAt == null ? time : this.submittedAt;
         this.receivingOfficer = officer;
-        this.stage = SubmissionStage.RECEIVED;
+        this.stage = SubmissionStage.SUBMITTED;
         this.updatedAt = time;
         clearInformationRequest();
     }
@@ -282,6 +287,7 @@ public class Submission {
         requireStudentDetails();
         requireServiceRequestDetails();
         requireContactDetails();
+        requireAcceptedRules();
         if (this.code == null) {
             this.code = caseCode;
         }
@@ -297,15 +303,20 @@ public class Submission {
      * the brief to the intake queue as a new brief version.
      */
     public void reply(Instant time) {
-        if (stage != SubmissionStage.AWAITING_INFORMATION && stage != SubmissionStage.SUBMITTED) {
-            throw new SubmissionConflictException("Only a submitted or awaiting-information submission can be replied to.");
+        boolean informationReply = stage == SubmissionStage.AWAITING_INFORMATION
+                || stage == SubmissionStage.SUBMITTED;
+        boolean improvementReply = stage == SubmissionStage.IMPROVEMENT_REQUESTED;
+        if (!informationReply && !improvementReply) {
+            throw new SubmissionConflictException(
+                    "Only a submitted, awaiting-information or improvement-requested submission can be replied to."
+            );
         }
         requireStudentDetails();
         requireServiceRequestDetails();
         requireContactDetails();
         this.briefVersion = Math.max(1, this.briefVersion) + 1;
         this.submittedAt = time;
-        this.stage = SubmissionStage.SUBMITTED;
+        this.stage = improvementReply ? SubmissionStage.RESUBMITTED : SubmissionStage.SUBMITTED;
         this.updatedAt = time;
         clearInformationRequest();
     }
@@ -327,10 +338,15 @@ public class Submission {
             String serviceRequested,
             String department,
             String expectedResult,
+            Instant preferredAt,
             Instant time
     ) {
-        if (stage != SubmissionStage.AWAITING_INFORMATION && stage != SubmissionStage.SUBMITTED) {
-            throw new SubmissionConflictException("Only a submitted or awaiting-information submission can be updated by its submitter.");
+        if (stage != SubmissionStage.AWAITING_INFORMATION
+                && stage != SubmissionStage.SUBMITTED
+                && stage != SubmissionStage.IMPROVEMENT_REQUESTED) {
+            throw new SubmissionConflictException(
+                    "Only a submitted, awaiting-information or improvement-requested submission can be updated by its submitter."
+            );
         }
         requireReplyDetailsMatchCategory(
                 studentNumber,
@@ -373,6 +389,9 @@ public class Submission {
         }
         if (expectedResult != null) {
             this.expectedResult = clean(expectedResult);
+        }
+        if (preferredAt != null) {
+            this.preferredAt = preferredAt;
         }
         this.updatedAt = time;
     }
@@ -432,6 +451,7 @@ public class Submission {
             ServiceRequester serviceRequester,
             String department,
             String expectedResult,
+            Instant preferredAt,
             String acceptedRulesVersion
     ) {
         this.submitterPhone = clean(submitterPhone);
@@ -439,7 +459,10 @@ public class Submission {
         this.serviceRequester = serviceRequester;
         this.department = clean(department);
         this.expectedResult = clean(expectedResult);
-        this.acceptedRulesVersion = clean(acceptedRulesVersion);
+        this.preferredAt = preferredAt;
+        if (acceptedRulesVersion != null) {
+            this.acceptedRulesVersion = clean(acceptedRulesVersion);
+        }
     }
 
     public void assignTrackingReference(String caseCode) {
@@ -493,8 +516,8 @@ public class Submission {
     }
 
     public void forward(Sector sector, String note, String actor, Instant time) {
-        if (stage != SubmissionStage.RECEIVED && stage != SubmissionStage.SUBMITTED) {
-            throw new SubmissionConflictException("Only received or submitted submissions can be forwarded.");
+        if (stage != SubmissionStage.SUBMITTED) {
+            throw new SubmissionConflictException("Only a submitted submission can be forwarded.");
         }
         if (sector == null) {
             throw new InvalidSubmissionException("A sector is required to forward a submission.");
@@ -517,9 +540,12 @@ public class Submission {
 
     public void confirmAsProject(String projectCode, String note, String actor, Instant time) {
         boolean confirmable = stage == SubmissionStage.SUBMITTED
-                || stage == SubmissionStage.RECEIVED
                 || stage == SubmissionStage.FORWARDED
-                || stage == SubmissionStage.FACT_FINDING;
+                || stage == SubmissionStage.IN_FACT_FINDING
+                || stage == SubmissionStage.READY_FOR_REVIEW
+                || stage == SubmissionStage.IN_REVIEW
+                || stage == SubmissionStage.IMPROVEMENT_REQUESTED
+                || stage == SubmissionStage.RESUBMITTED;
         if (!confirmable) {
             throw new SubmissionConflictException("This submission cannot be confirmed as a project in its current stage.");
         }
@@ -539,22 +565,29 @@ public class Submission {
     public void reject(String reason, Instant time) {
         boolean rejectable = stage == SubmissionStage.SUBMITTED
                 || stage == SubmissionStage.AWAITING_INFORMATION
-                || stage == SubmissionStage.RECEIVED
-                || stage == SubmissionStage.FORWARDED;
+                || stage == SubmissionStage.FORWARDED
+                || stage == SubmissionStage.IN_FACT_FINDING
+                || stage == SubmissionStage.READY_FOR_REVIEW
+                || stage == SubmissionStage.IN_REVIEW
+                || stage == SubmissionStage.IMPROVEMENT_REQUESTED
+                || stage == SubmissionStage.RESUBMITTED
+                || stage == SubmissionStage.AWAITING_PAYMENT;
         if (!rejectable) {
-            throw new SubmissionConflictException("This submission cannot be rejected in its current stage.");
+            throw new SubmissionConflictException("This submission cannot be closed in its current stage.");
         }
         if (isBlank(reason)) {
-            throw new InvalidSubmissionException("A reason is required to reject a submission.");
+            throw new InvalidSubmissionException("A reason is required to close a submission.");
         }
         this.rejectionReason = reason.trim();
-        this.stage = SubmissionStage.REJECTED;
+        this.stage = SubmissionStage.CLOSED;
         this.updatedAt = time;
         clearInformationRequest();
     }
 
     public void advanceTo(SubmissionStage nextStage, Instant time) {
-        boolean validTransition = (stage == SubmissionStage.FORWARDED
+        boolean validTransition = (stage == SubmissionStage.CONFIRMED_AS_PROJECT
+                && nextStage == SubmissionStage.IN_PROGRESS)
+                || (stage == SubmissionStage.AWAITING_PAYMENT
                 && nextStage == SubmissionStage.IN_PROGRESS)
                 || (stage == SubmissionStage.IN_PROGRESS
                 && nextStage == SubmissionStage.COMPLETED);
@@ -567,15 +600,27 @@ public class Submission {
 
     public void transitionTo(SubmissionStage nextStage, Instant time) {
         boolean validTransition = switch (stage) {
-            case RECEIVED -> nextStage == SubmissionStage.REGISTERED;
-            case REGISTERED -> nextStage == SubmissionStage.FACT_FINDING;
-            case FACT_FINDING, FORWARDED -> nextStage == SubmissionStage.UNDER_REVIEW
-                    || nextStage == SubmissionStage.REFINEMENT_REQUESTED;
-            case UNDER_REVIEW, IN_PROGRESS -> nextStage == SubmissionStage.REFINEMENT_REQUESTED;
-            case REFINEMENT_REQUESTED -> nextStage == SubmissionStage.FURTHER_HANDLING;
-            case FURTHER_HANDLING -> nextStage == SubmissionStage.COMPLETED;
-            case DRAFT, SUBMITTED, AWAITING_INFORMATION, CONFIRMED_AS_PROJECT,
-                    REJECTED, COMPLETED -> false;
+            case SUBMITTED -> nextStage == SubmissionStage.FORWARDED;
+            case FORWARDED -> nextStage == SubmissionStage.IN_FACT_FINDING
+                    || nextStage == SubmissionStage.READY_FOR_REVIEW;
+            case IN_FACT_FINDING -> nextStage == SubmissionStage.READY_FOR_REVIEW
+                    || nextStage == SubmissionStage.IN_REVIEW
+                    || nextStage == SubmissionStage.IMPROVEMENT_REQUESTED;
+            case READY_FOR_REVIEW -> nextStage == SubmissionStage.IN_REVIEW
+                    || nextStage == SubmissionStage.IMPROVEMENT_REQUESTED
+                    || nextStage == SubmissionStage.CLOSED;
+            case IN_REVIEW -> nextStage == SubmissionStage.IMPROVEMENT_REQUESTED
+                    || nextStage == SubmissionStage.CONFIRMED_AS_PROJECT
+                    || nextStage == SubmissionStage.AWAITING_PAYMENT
+                    || nextStage == SubmissionStage.CLOSED;
+            case IMPROVEMENT_REQUESTED -> nextStage == SubmissionStage.RESUBMITTED;
+            case RESUBMITTED -> nextStage == SubmissionStage.IN_REVIEW;
+            case CONFIRMED_AS_PROJECT -> nextStage == SubmissionStage.AWAITING_PAYMENT
+                    || nextStage == SubmissionStage.IN_PROGRESS;
+            case AWAITING_PAYMENT -> nextStage == SubmissionStage.IN_PROGRESS;
+            case IN_PROGRESS -> nextStage == SubmissionStage.COMPLETED
+                    || nextStage == SubmissionStage.CLOSED;
+            case DRAFT, AWAITING_INFORMATION, COMPLETED, CLOSED -> false;
         };
         if (!validTransition) {
             throw new SubmissionConflictException("The requested lifecycle transition is not allowed.");
@@ -613,20 +658,21 @@ public class Submission {
     public void requestOutcomeImprovement(String decision, String note, String actor, Instant time) {
         requireOutcomeOpen();
         applyOutcomeDecision(decision, note, actor, time);
-        this.stage = SubmissionStage.REFINEMENT_REQUESTED;
+        this.stage = SubmissionStage.IMPROVEMENT_REQUESTED;
         this.updatedAt = time;
     }
 
     public void closeWithOutcome(String decision, String note, String actor, Instant time) {
         requireOutcomeOpen();
         applyOutcomeDecision(decision, note, actor, time);
-        this.stage = SubmissionStage.COMPLETED;
+        this.stage = SubmissionStage.CLOSED;
         this.updatedAt = time;
     }
 
     private void requireOutcomeOpen() {
-        if (stage == SubmissionStage.DRAFT
-                || stage == SubmissionStage.REJECTED
+        if (outcomeStatus == OutcomeStatus.DECIDED
+                || stage == SubmissionStage.DRAFT
+                || stage == SubmissionStage.CLOSED
                 || stage == SubmissionStage.COMPLETED
                 || stage == SubmissionStage.CONFIRMED_AS_PROJECT) {
             throw new SubmissionConflictException("The outcome cannot be changed in the current case stage.");
@@ -649,7 +695,7 @@ public class Submission {
     }
 
     public void touch(Instant time) {
-        if (stage == SubmissionStage.COMPLETED || stage == SubmissionStage.REJECTED) {
+        if (stage == SubmissionStage.COMPLETED || stage == SubmissionStage.CLOSED) {
             throw new SubmissionConflictException("Closed submissions cannot be changed.");
         }
         this.updatedAt = time;
@@ -742,6 +788,10 @@ public class Submission {
 
     public String getExpectedResult() {
         return expectedResult;
+    }
+
+    public Instant getPreferredAt() {
+        return preferredAt;
     }
 
     public String getProjectCode() {
@@ -852,9 +902,17 @@ public class Submission {
 
     private void requireServiceRequestDetails() {
         if (category == SubmissionCategory.SERVICE_REQUEST
-                && (isBlank(serviceRequested) || isBlank(expectedResult))) {
+                && (isBlank(serviceRequested) || isBlank(expectedResult) || preferredAt == null)) {
             throw new InvalidSubmissionException(
-                    "Service requests require the service requested and the expected result."
+                    "Service requests require the service requested, the expected result, and a preferred date and time."
+            );
+        }
+    }
+
+    private void requireAcceptedRules() {
+        if (isBlank(acceptedRulesVersion)) {
+            throw new InvalidSubmissionException(
+                    "Accept the submission rules before submitting the brief."
             );
         }
     }

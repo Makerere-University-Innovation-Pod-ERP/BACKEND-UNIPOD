@@ -248,7 +248,10 @@ public class ReviewCommandService {
         String scope = SubmissionVisibility.scope(authentication);
         Submission brief = submissions.findVisibleByIdForUpdate(briefId, scope, authentication.getName())
                 .orElseThrow(() -> new SubmissionNotFoundException(briefId));
-        if (brief.getStage() != SubmissionStage.UNDER_REVIEW) {
+        if (brief.getStage() == SubmissionStage.READY_FOR_REVIEW) {
+            brief.transitionTo(SubmissionStage.IN_REVIEW, clock.instant());
+        }
+        if (brief.getStage() != SubmissionStage.IN_REVIEW) {
             throw new SubmissionConflictException(STAGE_REQUIRED);
         }
         return brief;

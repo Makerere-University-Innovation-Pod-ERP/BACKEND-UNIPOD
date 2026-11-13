@@ -553,12 +553,13 @@ class CoordinatorReviewsApiIntegrationTest {
         Submission brief = new Submission(
                 UUID.randomUUID(), SubmissionCategory.GENERAL, "Coordinator reviews brief", "Purpose", "Problem",
                 "receptionist@example.test", SUBMITTER, null, null, null, null, Instant.parse("2026-11-01T08:00:00Z"));
+        brief.applyIntakeDetails(null, null, null, null, null, null, "2026-01");
         brief.register("CASE-CR-" + UUID.randomUUID().toString().substring(0, 8),
                 Instant.parse("2026-11-01T09:00:00Z"), "receptionist@example.test");
         Instant time = Instant.parse("2026-11-01T10:00:00Z");
-        brief.transitionTo(SubmissionStage.REGISTERED, time);
-        brief.transitionTo(SubmissionStage.FACT_FINDING, time);
-        brief.transitionTo(SubmissionStage.UNDER_REVIEW, time);
+        brief.transitionTo(SubmissionStage.FORWARDED, time);
+        brief.transitionTo(SubmissionStage.IN_FACT_FINDING, time);
+        brief.transitionTo(SubmissionStage.IN_REVIEW, time);
         return submissions.saveAndFlush(brief);
     }
 }
