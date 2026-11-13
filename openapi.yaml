@@ -2262,12 +2262,12 @@ paths:
     get:
       tags: [Dashboard]
       operationId: getDashboardOverview
-      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
-      summary: Get the role-scoped dashboard composed from workflow and module summaries
-      description: Available to every authenticated role. Operational tiles are visible to all roles; finance data is returned only to Administrators and Innovation Coordinators. Results are cached for 30 seconds. Unconfigured external modules identify their availability rather than returning fabricated metrics.
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR]
+      summary: Get the M1 manager overview dashboard
+      description: Available only to Administrators and Innovation Coordinators. Returns all brief counts, the grouped pipeline, stale cases needing attention, the Fidel overdue-equipment-returns tile, and the David recent-activity feed. Results are cached for 30 seconds. Unconfigured external modules identify their availability rather than returning fabricated metrics.
       responses:
         '200':
-          description: Waluube workflow metrics, attention items, and role-visible module tiles
+          description: Manager overview metrics, attention items, and module tiles
           content:
             application/json:
               schema:
@@ -4692,59 +4692,38 @@ components:
           minimum: 0
     DashboardOverview:
       type: object
-      required: [totalSubmissions, byStage, studentSubmissions, generalSubmissions, awaitingActionCount, forwardedCount, completedCount, recentlyUpdatedCount, awaitingReviewCount, refinementRequestedCount, pipelineAtAGlance, needsAttention, operations, finance, recentActivity]
+      required: [totalBriefs, waitingForReview, needingImprovement, completedThisMonth, pipeline, needsAttention, overdueEquipmentReturns, recentActivity]
       properties:
-        totalSubmissions:
+        totalBriefs:
           type: integer
           format: int64
-        byStage:
+          description: Count of all non-draft briefs.
+        waitingForReview:
+          type: integer
+          format: int64
+          description: FACT_FINDING and FORWARDED cases waiting for assessment and review.
+        needingImprovement:
+          type: integer
+          format: int64
+          description: REFINEMENT_REQUESTED cases.
+        completedThisMonth:
+          type: integer
+          format: int64
+          description: Cases that entered COMPLETED during the current calendar month in the application clock's timezone.
+        pipeline:
           type: object
-          additionalProperties:
-            type: integer
-            format: int64
-        studentSubmissions:
-          type: integer
-          format: int64
-        generalSubmissions:
-          type: integer
-          format: int64
-        awaitingActionCount:
-          type: integer
-          format: int64
-        forwardedCount:
-          type: integer
-          format: int64
-        completedCount:
-          type: integer
-          format: int64
-        recentlyUpdatedCount:
-          type: integer
-          format: int64
-        awaitingReviewCount:
-          type: integer
-          format: int64
-          description: Fact-Finding and FORWARDED cases visible to the caller
-        refinementRequestedCount:
-          type: integer
-          format: int64
-        pipelineAtAGlance:
-          type: object
-          description: Six grouped lifecycle counts; intake combines RECEIVED and REGISTERED, Fact-Finding combines FACT_FINDING and FORWARDED, and review combines UNDER_REVIEW and IN_PROGRESS.
+          description: Six grouped lifecycle counts; intake combines SUBMITTED, AWAITING_INFORMATION, RECEIVED, and REGISTERED, Fact-Finding combines FACT_FINDING and FORWARDED, review combines UNDER_REVIEW and IN_PROGRESS, and further handling combines FURTHER_HANDLING and CONFIRMED_AS_PROJECT.
           additionalProperties:
             type: integer
             format: int64
         needsAttention:
           type: array
           maxItems: 5
+          description: Oldest open cases not updated for more than 14 days.
           items:
             $ref: '#/components/schemas/DashboardAttentionCase'
-        operations:
-          $ref: '#/components/schemas/DashboardOperations'
-        finance:
-          oneOf:
-            - $ref: '#/components/schemas/DashboardFinance'
-            - type: 'null'
-          description: Present only for Administrators and Innovation Coordinators.
+        overdueEquipmentReturns:
+          $ref: '#/components/schemas/DashboardEquipmentReturns'
         recentActivity:
           $ref: '#/components/schemas/DashboardActivityFeed'
     DashboardAttentionCase:
@@ -4765,49 +4744,18 @@ components:
         updatedAt:
           type: string
           format: date-time
-    DashboardOperations:
+    DashboardEquipmentReturns:
       type: object
-      required: [availability, reason, equipmentUnderRepair, bookingsToday, facilitiesFreeNow]
+      required: [availability, reason, overdueCount]
       properties:
         availability:
           type: string
           enum: [AVAILABLE, NOT_CONFIGURED]
         reason:
           type: [string, 'null']
-        equipmentUnderRepair:
+        overdueCount:
           type: [integer, 'null']
           format: int64
-        bookingsToday:
-          type: [integer, 'null']
-          format: int64
-        facilitiesFreeNow:
-          type: [integer, 'null']
-          format: int64
-    DashboardFinance:
-      type: object
-      required: [availability, reason, incomeMonthToDate, incomeBars]
-      properties:
-        availability:
-          type: string
-          enum: [AVAILABLE, NOT_CONFIGURED]
-        reason:
-          type: [string, 'null']
-        incomeMonthToDate:
-          type: [number, 'null']
-          format: double
-        incomeBars:
-          type: array
-          items:
-            $ref: '#/components/schemas/DashboardIncomeBar'
-    DashboardIncomeBar:
-      type: object
-      required: [period, income]
-      properties:
-        period:
-          type: string
-        income:
-          type: number
-          format: double
     DashboardActivityFeed:
       type: object
       required: [availability, reason, items]
