@@ -34,6 +34,14 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.unipod.unipoderpbackend.dto.FieldErrorResponse;
 import org.unipod.unipoderpbackend.exception.auth.InvalidSignupException;
 import org.unipod.unipoderpbackend.exception.authorization.AccessDeniedWithReasonException;
+import org.unipod.unipoderpbackend.exception.booking.BookingConflictException;
+import org.unipod.unipoderpbackend.exception.booking.BookingNotFoundException;
+import org.unipod.unipoderpbackend.exception.booking.FacilityNotFoundException;
+import org.unipod.unipoderpbackend.exception.booking.InvalidBookingException;
+import org.unipod.unipoderpbackend.exception.finance.InvalidInvoiceException;
+import org.unipod.unipoderpbackend.exception.finance.InvoiceConflictException;
+import org.unipod.unipoderpbackend.exception.finance.InvoiceNotFoundException;
+import org.unipod.unipoderpbackend.exception.finance.ReceiptNotFoundException;
 import org.unipod.unipoderpbackend.exception.notification.NotificationNotFoundException;
 import org.unipod.unipoderpbackend.exception.sector.SectorConflictException;
 import org.unipod.unipoderpbackend.exception.sector.SectorNotFoundException;
@@ -104,6 +112,51 @@ public class ApiExceptionHandler {
     @ExceptionHandler(StorageObjectNotFoundException.class)
     ResponseEntity<ProblemDetail> handleDocumentNotFound(StorageObjectNotFoundException exception) {
         return problem(HttpStatus.NOT_FOUND, "Document not found", "The requested document was not found.", "DOCUMENT_NOT_FOUND");
+    }
+
+    @ExceptionHandler(InvoiceNotFoundException.class)
+    ResponseEntity<ProblemDetail> handleInvoiceNotFound(InvoiceNotFoundException exception) {
+        return problem(HttpStatus.NOT_FOUND, "Invoice not found", "The requested invoice was not found.", "INVOICE_NOT_FOUND");
+    }
+
+    @ExceptionHandler(ReceiptNotFoundException.class)
+    ResponseEntity<ProblemDetail> handleReceiptNotFound(ReceiptNotFoundException exception) {
+        return problem(HttpStatus.NOT_FOUND, "Receipt not found", "No receipt has been issued for this invoice.", "RECEIPT_NOT_FOUND");
+    }
+
+    @ExceptionHandler({InvoiceConflictException.class, BookingConflictException.class})
+    ResponseEntity<ProblemDetail> handleFinanceBookingConflict(RuntimeException exception) {
+        return problem(HttpStatus.CONFLICT, "Conflict", exception.getMessage(), "CONFLICT");
+    }
+
+    @ExceptionHandler(InvalidInvoiceException.class)
+    ResponseEntity<ProblemDetail> handleInvalidInvoice(InvalidInvoiceException exception) {
+        return problem(
+                HttpStatus.UNPROCESSABLE_CONTENT,
+                "Invalid invoice",
+                "The invoice or payment details are invalid.",
+                "INVOICE_INVALID"
+        );
+    }
+
+    @ExceptionHandler(BookingNotFoundException.class)
+    ResponseEntity<ProblemDetail> handleBookingNotFound(BookingNotFoundException exception) {
+        return problem(HttpStatus.NOT_FOUND, "Booking not found", "The requested booking was not found.", "BOOKING_NOT_FOUND");
+    }
+
+    @ExceptionHandler(FacilityNotFoundException.class)
+    ResponseEntity<ProblemDetail> handleFacilityNotFound(FacilityNotFoundException exception) {
+        return problem(HttpStatus.NOT_FOUND, "Facility not found", "The requested facility was not found.", "FACILITY_NOT_FOUND");
+    }
+
+    @ExceptionHandler(InvalidBookingException.class)
+    ResponseEntity<ProblemDetail> handleInvalidBooking(InvalidBookingException exception) {
+        return problem(
+                HttpStatus.UNPROCESSABLE_CONTENT,
+                "Invalid booking",
+                "The booking details are invalid.",
+                "BOOKING_INVALID"
+        );
     }
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)

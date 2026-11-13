@@ -38,6 +38,7 @@ import org.unipod.unipoderpbackend.model.submission.CaseStage;
 import org.unipod.unipoderpbackend.model.submission.CaseStageHistory;
 import org.unipod.unipoderpbackend.model.submission.MissingItemStatus;
 import org.unipod.unipoderpbackend.model.submission.OutcomeDecision;
+import org.unipod.unipoderpbackend.model.submission.OutcomeStatus;
 import org.unipod.unipoderpbackend.model.submission.Submission;
 import org.unipod.unipoderpbackend.model.submission.SubmissionDocument;
 import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
@@ -55,20 +56,30 @@ import org.unipod.unipoderpbackend.util.CaseCodeGenerator;
 public class CaseFileService {
     private static final ZoneId CASE_CODE_ZONE = ZoneId.of("Africa/Kampala");
     private static final List<CaseStage> STEPPER_STAGES = List.of(
-            CaseStage.RECEIVED,
-            CaseStage.REGISTERED,
-            CaseStage.FACT_FINDING,
-            CaseStage.UNDER_REVIEW,
-            CaseStage.REFINEMENT_REQUESTED,
-            CaseStage.FURTHER_HANDLING,
+            CaseStage.SUBMITTED,
+            CaseStage.FORWARDED,
+            CaseStage.IN_FACT_FINDING,
+            CaseStage.READY_FOR_REVIEW,
+            CaseStage.IN_REVIEW,
+            CaseStage.IMPROVEMENT_REQUESTED,
+            CaseStage.CONFIRMED_AS_PROJECT,
+            CaseStage.IN_PROGRESS,
             CaseStage.COMPLETED
     );
     private static final String QUORUM_REQUIRED =
             "Save stays disabled until the configured reviewer quorum is met";
-    private static final String OPERATOR_REQUIRED =
-            "Only an Administrator or Innovation Coordinator can change this case.";
+    private static final String WRITE_REQUIRED =
+            "Only an Administrator, Innovation Coordinator or Fact-Finding Officer can change this case.";
+    private static final String OUTCOME_OPERATOR_REQUIRED =
+            "Only an Administrator or Innovation Coordinator can save an outcome.";
+    private static final String DOCUMENT_OPERATOR_REQUIRED =
+            "Only an Administrator or Innovation Coordinator can change document status.";
     private static final String FACT_FINDING_REQUIRED =
             "A completed fact-finding check is required before moving this case to review.";
+    private static final String REFINEMENT_NOTE_REQUIRED =
+            "A note is required when requesting more information.";
+    private static final List<CaseStage> FACT_FINDING_NEXT_STAGES =
+            List.of(CaseStage.READY_FOR_REVIEW, CaseStage.IMPROVEMENT_REQUESTED);
 
     private final SubmissionRepository submissions;
     private final SubmissionDocumentRepository documents;
@@ -121,7 +132,7 @@ public class CaseFileService {
     @Transactional(readOnly = true)
     public TransitionOptions allowedTransitions(UUID id, Authentication authentication) {
         Submission submission = visibleCase(id, authentication);
-        return new TransitionOptions(isOperator(authentication) ? nextStages(submission.getStage()) : List.of());
+        return new TransitionOptions(allowedTransitionsFor(submission.getStage(), authentication));
     }
 
     @Transactional
@@ -130,18 +141,30 @@ public class CaseFileService {
             CaseTransitionRequest request,
             Authentication authentication
     ) {
-        requireOperator(authentication);
         Submission submission = mutableCase(id, request.version());
-        List<CaseStage> allowed = nextStages(submission.getStage());
+        if (request.toStage() == CaseStage.CONFIRMED_AS_PROJECT) {
+            throw new SubmissionConflictException(
+                    "Project confirmation is recorded through the outcome, not a lifecycle transition."
+            );
+        }
+        List<CaseStage> allowed = allowedTransitionsFor(submission.getStage(), authentication);
         if (!allowed.contains(request.toStage())) {
-            throw new SubmissionConflictException("The requested lifecycle transition is not allowed.");
+            if (isOperator(authentication)) {
+                throw new SubmissionConflictException("The requested lifecycle transition is not allowed.");
+            }
+            throw new AccessDeniedException(WRITE_REQUIRED);
+        }
+        if (request.toStage() == CaseStage.IMPROVEMENT_REQUESTED && clean(request.note()) == null) {
+            throw new InvalidSubmissionException(REFINEMENT_NOTE_REQUIRED);
         }
         Instant now = clock.instant();
         SubmissionStage previousStage = submission.getStage();
         SubmissionStage nextStage = SubmissionStage.valueOf(request.toStage().name());
-        if (nextStage == SubmissionStage.UNDER_REVIEW
-                && (previousStage == SubmissionStage.FACT_FINDING
-                        || previousStage == SubmissionStage.FORWARDED)
+        if ((nextStage == SubmissionStage.READY_FOR_REVIEW
+                || nextStage == SubmissionStage.IN_REVIEW)
+                && (previousStage == SubmissionStage.IN_FACT_FINDING
+                        || previousStage == SubmissionStage.FORWARDED
+                        || previousStage == SubmissionStage.RESUBMITTED)
                 && !factFindingGuard.isComplete(id)) {
             throw new SubmissionConflictException(FACT_FINDING_REQUIRED);
         }
@@ -168,7 +191,7 @@ public class CaseFileService {
             OutcomeUpdateRequest request,
             Authentication authentication
     ) {
-        requireOperator(authentication);
+        requireOutcomeOperator(authentication);
         OutcomeDecision decision = outcomeDecision(request.decision());
         String note = clean(request.note());
         if (note == null) {
@@ -284,7 +307,7 @@ public class CaseFileService {
             DocumentStatusUpdateRequest request,
             Authentication authentication
     ) {
-        requireOperator(authentication);
+        requireDocumentOperator(authentication);
         Submission submission = mutableCase(id, request.version());
         SubmissionDocument document = documents.findByIdAndSubmissionId(documentId, id)
                 .orElseThrow(StorageObjectNotFoundException::new);
@@ -320,8 +343,7 @@ public class CaseFileService {
         UUID id = submission.getId();
         CaseFileEnrichmentProvider.ReviewPanel review = enrichment.reviewPanel(id);
         CaseFileEnrichmentProvider.ActivityFeed activity = enrichment.activity(id);
-        boolean operator = isOperator(authentication);
-        List<CaseStage> allowed = operator ? nextStages(submission.getStage()) : List.of();
+        List<CaseStage> allowed = allowedTransitionsFor(submission.getStage(), authentication);
         Capabilities capabilities = capabilitiesFor(submission, authentication, review);
         return new CaseFileAggregateResponse(
                 SubmissionResponse.from(submission),
@@ -375,25 +397,30 @@ public class CaseFileService {
             CaseFileEnrichmentProvider.ReviewPanel review
     ) {
         boolean operator = isOperator(authentication);
-        List<CaseStage> allowed = operator ? nextStages(submission.getStage()) : List.of();
-        String operatorReason = operator ? null : OPERATOR_REQUIRED;
+        boolean factFindingOfficer = isFactFindingOfficer(authentication);
+        List<CaseStage> allowed = allowedTransitionsFor(submission.getStage(), authentication);
+        String nextReason = !allowed.isEmpty()
+                ? null
+                : operator ? "There are no allowed next stages from the current stage."
+                : factFindingOfficer ? "The fact-finding officer can only move a case that is in fact-finding."
+                : WRITE_REQUIRED;
         String quorumReason = review.quorumAvailable() && review.quorumMet() ? null : QUORUM_REQUIRED;
+        boolean outcomeLocked = submission.getOutcomeStatus() == OutcomeStatus.DECIDED;
         boolean outcomeStageOpen = submission.getStage() != SubmissionStage.DRAFT
-                && submission.getStage() != SubmissionStage.REJECTED
+                && submission.getStage() != SubmissionStage.CLOSED
                 && submission.getStage() != SubmissionStage.COMPLETED
                 && submission.getStage() != SubmissionStage.CONFIRMED_AS_PROJECT;
-        boolean documentsOpen = submission.getStage() != SubmissionStage.REJECTED
+        boolean documentsOpen = submission.getStage() != SubmissionStage.CLOSED
                 && submission.getStage() != SubmissionStage.COMPLETED;
         return new Capabilities(
-                capability(!allowed.isEmpty(), !allowed.isEmpty()
-                        ? null
-                        : operator ? "There are no allowed next stages from the current stage." : operatorReason),
-                capability(operator && outcomeStageOpen && quorumReason == null,
-                        !operator ? operatorReason
+                capability(!allowed.isEmpty(), nextReason),
+                capability(operator && outcomeStageOpen && !outcomeLocked && quorumReason == null,
+                        !operator ? OUTCOME_OPERATOR_REQUIRED
+                                : outcomeLocked ? "The outcome has already been saved and is locked."
                                 : !outcomeStageOpen ? "Outcome cannot be changed in the current case stage."
                                 : quorumReason),
                 capability(operator && documentsOpen,
-                        !operator ? operatorReason
+                        !operator ? DOCUMENT_OPERATOR_REQUIRED
                                 : !documentsOpen ? "Closed cases cannot be changed." : null)
         );
     }
@@ -414,36 +441,78 @@ public class CaseFileService {
     private static CaseStage caseStage(SubmissionStage stage) {
         return switch (stage) {
             case DRAFT -> null;
-            case SUBMITTED, AWAITING_INFORMATION, RECEIVED -> CaseStage.RECEIVED;
-            case REGISTERED -> CaseStage.REGISTERED;
-            case FACT_FINDING, FORWARDED -> CaseStage.FACT_FINDING;
-            case UNDER_REVIEW, IN_PROGRESS -> CaseStage.UNDER_REVIEW;
-            case REFINEMENT_REQUESTED -> CaseStage.REFINEMENT_REQUESTED;
-            case FURTHER_HANDLING, CONFIRMED_AS_PROJECT -> CaseStage.FURTHER_HANDLING;
-            case REJECTED, COMPLETED -> CaseStage.COMPLETED;
+            case SUBMITTED, AWAITING_INFORMATION -> CaseStage.SUBMITTED;
+            case FORWARDED -> CaseStage.FORWARDED;
+            case IN_FACT_FINDING -> CaseStage.IN_FACT_FINDING;
+            case READY_FOR_REVIEW -> CaseStage.READY_FOR_REVIEW;
+            case IN_REVIEW, RESUBMITTED -> CaseStage.IN_REVIEW;
+            case IMPROVEMENT_REQUESTED -> CaseStage.IMPROVEMENT_REQUESTED;
+            case CONFIRMED_AS_PROJECT, AWAITING_PAYMENT -> CaseStage.CONFIRMED_AS_PROJECT;
+            case IN_PROGRESS -> CaseStage.IN_PROGRESS;
+            case COMPLETED, CLOSED -> CaseStage.COMPLETED;
         };
     }
 
     private static List<CaseStage> nextStages(SubmissionStage stage) {
         return switch (stage) {
-            case RECEIVED -> List.of(CaseStage.REGISTERED);
-            case REGISTERED -> List.of(CaseStage.FACT_FINDING);
-            case FACT_FINDING, FORWARDED -> List.of(CaseStage.UNDER_REVIEW, CaseStage.REFINEMENT_REQUESTED);
-            case UNDER_REVIEW, IN_PROGRESS -> List.of(CaseStage.REFINEMENT_REQUESTED);
-            case REFINEMENT_REQUESTED -> List.of(CaseStage.FURTHER_HANDLING);
-            case FURTHER_HANDLING -> List.of(CaseStage.COMPLETED);
+            case SUBMITTED -> List.of();
+            case FORWARDED -> List.of(CaseStage.IN_FACT_FINDING);
+            case IN_FACT_FINDING -> List.of(
+                    CaseStage.READY_FOR_REVIEW,
+                    CaseStage.IN_REVIEW,
+                    CaseStage.IMPROVEMENT_REQUESTED
+            );
+            case READY_FOR_REVIEW -> List.of(
+                    CaseStage.IN_REVIEW,
+                    CaseStage.IMPROVEMENT_REQUESTED,
+                    CaseStage.CLOSED
+            );
+            case IN_REVIEW -> List.of(
+                    CaseStage.IMPROVEMENT_REQUESTED,
+                    CaseStage.AWAITING_PAYMENT,
+                    CaseStage.CLOSED
+            );
+            case IMPROVEMENT_REQUESTED -> List.of(CaseStage.RESUBMITTED);
+            case RESUBMITTED -> List.of(CaseStage.IN_REVIEW);
+            case CONFIRMED_AS_PROJECT -> List.of(CaseStage.AWAITING_PAYMENT, CaseStage.IN_PROGRESS);
+            case AWAITING_PAYMENT -> List.of(CaseStage.IN_PROGRESS, CaseStage.CLOSED);
+            case IN_PROGRESS -> List.of(CaseStage.COMPLETED, CaseStage.CLOSED);
             default -> List.of();
         };
     }
 
-    private static void requireOperator(Authentication authentication) {
+    private static List<CaseStage> allowedTransitionsFor(SubmissionStage stage, Authentication authentication) {
+        if (isOperator(authentication)) {
+            return nextStages(stage);
+        }
+        if (isFactFindingOfficer(authentication) && isFactFindingStage(stage)) {
+            return FACT_FINDING_NEXT_STAGES;
+        }
+        return List.of();
+    }
+
+    private static boolean isFactFindingStage(SubmissionStage stage) {
+        return stage == SubmissionStage.IN_FACT_FINDING || stage == SubmissionStage.FORWARDED;
+    }
+
+    private static void requireOutcomeOperator(Authentication authentication) {
         if (!isOperator(authentication)) {
-            throw new AccessDeniedException(OPERATOR_REQUIRED);
+            throw new AccessDeniedException(OUTCOME_OPERATOR_REQUIRED);
+        }
+    }
+
+    private static void requireDocumentOperator(Authentication authentication) {
+        if (!isOperator(authentication)) {
+            throw new AccessDeniedException(DOCUMENT_OPERATOR_REQUIRED);
         }
     }
 
     private static boolean isOperator(Authentication authentication) {
         return hasRole(authentication, "ADMINISTRATOR", "INNOVATION_COORDINATOR");
+    }
+
+    private static boolean isFactFindingOfficer(Authentication authentication) {
+        return hasRole(authentication, "FACT_FINDING_OFFICER");
     }
 
     private static boolean hasRole(Authentication authentication, String... roles) {

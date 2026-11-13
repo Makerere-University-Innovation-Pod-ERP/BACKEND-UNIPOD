@@ -146,7 +146,7 @@ class UserAdministrationApiIntegrationTest {
         mockMvc.perform(get("/roles").header("Authorization", bearer(adminToken)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[?(@.role == 'FINANCE_OFFICER')].staff").value(true))
-                .andExpect(jsonPath("$[?(@.role == 'DEPARTMENT_HEAD')].staff").value(true))
+                .andExpect(jsonPath("$[?(@.role == 'DEPARTMENT_COORDINATOR')].staff").value(true))
                 .andExpect(jsonPath("$[?(@.role == 'SUBMITTER')].staff").value(false));
     }
 

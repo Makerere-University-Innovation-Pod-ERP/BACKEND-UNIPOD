@@ -147,12 +147,13 @@ class ReviewSubmitConcurrencyTest {
                     null,
                     Instant.parse("2026-11-01T08:00:00Z")
             );
+            brief.applyIntakeDetails(null, null, null, null, null, null, "2026-01");
             brief.register("CASE-RX-" + UUID.randomUUID().toString().substring(0, 8),
                     Instant.parse("2026-11-01T09:00:00Z"), "receptionist@example.test");
             Instant time = Instant.parse("2026-11-01T10:00:00Z");
-            brief.transitionTo(SubmissionStage.REGISTERED, time);
-            brief.transitionTo(SubmissionStage.FACT_FINDING, time);
-            brief.transitionTo(SubmissionStage.UNDER_REVIEW, time);
+            brief.transitionTo(SubmissionStage.FORWARDED, time);
+            brief.transitionTo(SubmissionStage.IN_FACT_FINDING, time);
+            brief.transitionTo(SubmissionStage.IN_REVIEW, time);
             Submission saved = submissions.save(brief);
             settings.save(new ReviewSettings(saved.getId(), 1, ReviewMode.PARALLEL, 1, null, COORDINATOR));
             assignments.save(new ReviewAssignment(saved.getId(), 1, reviewer, null, 1, COORDINATOR));

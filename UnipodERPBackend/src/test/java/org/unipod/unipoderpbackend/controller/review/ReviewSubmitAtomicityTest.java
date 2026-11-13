@@ -111,7 +111,7 @@ class ReviewSubmitAtomicityTest {
                 "SELECT status, version FROM review_assignments WHERE brief_id = ?", brief);
         assertEquals("NOT_STARTED", assignment.get("status"));
         assertEquals(0L, ((Number) assignment.get("version")).longValue());
-        assertEquals("UNDER_REVIEW", jdbcTemplate.queryForObject(
+        assertEquals("IN_REVIEW", jdbcTemplate.queryForObject(
                 "SELECT stage FROM submissions WHERE id = ?", String.class, brief));
     }
 
@@ -131,12 +131,13 @@ class ReviewSubmitAtomicityTest {
                     null,
                     Instant.parse("2026-11-01T08:00:00Z")
             );
+            brief.applyIntakeDetails(null, null, null, null, null, null, "2026-01");
             brief.register("CASE-RA-" + UUID.randomUUID().toString().substring(0, 8),
                     Instant.parse("2026-11-01T09:00:00Z"), "receptionist@example.test");
             Instant time = Instant.parse("2026-11-01T10:00:00Z");
-            brief.transitionTo(SubmissionStage.REGISTERED, time);
-            brief.transitionTo(SubmissionStage.FACT_FINDING, time);
-            brief.transitionTo(SubmissionStage.UNDER_REVIEW, time);
+            brief.transitionTo(SubmissionStage.FORWARDED, time);
+            brief.transitionTo(SubmissionStage.IN_FACT_FINDING, time);
+            brief.transitionTo(SubmissionStage.IN_REVIEW, time);
             Submission saved = submissions.save(brief);
             settings.save(new ReviewSettings(saved.getId(), 1, ReviewMode.PARALLEL, 1, null, COORDINATOR));
             assignments.save(new ReviewAssignment(saved.getId(), 1, REVIEWER, null, 1, COORDINATOR));

@@ -45,7 +45,7 @@ class PriceListApiIntegrationTest {
         textile = support.department("PL Textile");
         multimedia = support.department("PL Multimedia");
         finance = support.user("pl-finance@example.test", ApiUserRole.FINANCE_OFFICER);
-        textileHead = support.user("pl-head@example.test", ApiUserRole.DEPARTMENT_HEAD, textile);
+        textileHead = support.user("pl-head@example.test", ApiUserRole.DEPARTMENT_COORDINATOR, textile);
         submitter = support.user("pl-submitter@example.test", ApiUserRole.SUBMITTER);
     }
 

@@ -38,29 +38,29 @@ The Waluube API contract is documented in [`openapi.yaml`](./openapi.yaml).
 
 ### Submission Creation and Registration
 
-* `POST /api/submissions` creates a draft and atomically assigns its immutable tracking reference.
+* `POST /api/submissions` creates a draft and atomically assigns its immutable `BRF-{year}-{sequence}` tracking reference.
 * Submitters may create submissions for themselves. Their identity comes from the authenticated principal, not the request body. Intake staff may create a walk-in submission for a separate submitter.
-* `PUT /api/submissions/{id}` updates a draft. Submitters may update only their own drafts; intake staff may update drafts they manage.
+* `PUT /api/submissions/{id}` updates a draft. Only the submitter who owns the draft may change its content; intake staff must comment or request information instead and receive `403` if they attempt an edit.
 * `POST /api/submissions/{id}/submit` submits a completed draft for reception review and publishes `submission.submitted` notifications to the submitter and, when configured, to the reception mailbox.
-* `POST /api/submissions/{id}/reply` lets the owning submitter answer an information request while the brief is `SUBMITTED` or `AWAITING_INFORMATION`. Open information requests are resolved automatically and the brief returns to `SUBMITTED`.
+* `POST /api/submissions/{id}/reply` lets the owning submitter answer an information request while the brief is `SUBMITTED` or `AWAITING_INFORMATION`, or provide an improved version while it is `IMPROVEMENT_REQUESTED`. Open requests are resolved automatically; the brief returns to `SUBMITTED` or moves to `RESUBMITTED`.
 * `POST /api/submissions/{id}/register` records receipt in the legacy/assisted flow and adds the stage-history entry while preserving the original tracking reference.
-* `POST /api/submissions/{id}/forward` can register and forward a draft to a department in one transaction, or forward an already received/submitted submission. It accepts an optional handover `note`; forwarding a `SUBMITTED` brief requires a complete reception checklist.
-* `POST /api/submissions/{id}/confirm-project` closes intake by confirming the brief as a project. An optional `projectCode` is accepted; a `PRJ-{year}-{sequence}` code is allocated when blank.
-* `POST /api/submissions/{id}/reject` closes intake with a required `reason` and notifies the submitter.
+* `POST /api/submissions/{id}/forward` can register and forward a draft to a department in one transaction, or forward a submitted brief. It accepts an optional handover `note`; every forward path requires a complete reception checklist.
+* `POST /api/submissions/{id}/confirm-project` closes intake by confirming the brief as a project. An optional `projectCode` is accepted; otherwise a category-prefixed `{STU|GEN|SRV}-{year}-{sequence}` project code is allocated from a project-only sequence.
+* `POST /api/submissions/{id}/reject` closes intake as `CLOSED` with a required `reason` and notifies the submitter.
 * Intake staff can use `POST /api/submissions/{id}/request-information` to attach a reason, a note, or a list of missing items to a brief and enqueue a notification. Updating a draft clears the outstanding request.
-* `GET|PUT /api/submissions/{id}/reception-checklist` records the four canonical reception verification lines, with an optional note per line. The checklist can be changed while the submission is `DRAFT`, `SUBMITTED`, or `RECEIVED`.
+* `GET|PUT /api/submissions/{id}/reception-checklist` records the four canonical reception verification lines, with an optional note per line. The checklist can be changed while the submission is `DRAFT` or `SUBMITTED`, and must be complete before the submission is forwarded.
 * `GET|POST /api/submissions/{id}/missing-items` lists outstanding and resolved requests and records both information and document requests. `POST /api/submissions/{id}/missing-documents` remains the strict document-only form.
 * `POST /api/submissions/{id}/reminders` marks open missing items as reminded and enqueues a reminder notification. `POST /api/submissions/{id}/missing-items/{itemId}/resolve` closes an item manually; uploading a matching document closes it automatically.
 * `POST /api/submissions/assisted` captures a walk-in brief and creates a minimal `SUBMITTER` account. The one-time temporary password is returned once, and the login response flags that the submitter should change it. A single-use `setPasswordToken`/`setPasswordUrl` lets the submitter choose a password through `POST /api/auth/set-password` instead.
 
-Case codes follow these formats:
+Tracking and project references use different formats:
 
-* Student submissions: `STU-{year}-{sequence}`
-* General-public submissions: `GEN-{year}-{sequence}`
-* Service requests: `SRV-{year}-{sequence}`
-* Confirmed projects: `PRJ-{year}-{sequence}`
+* Tracking references: `BRF-{year}-{sequence}` for every submission category.
+* Student projects: `STU-{year}-{sequence}`.
+* General-public projects: `GEN-{year}-{sequence}`.
+* Service-request projects: `SRV-{year}-{sequence}`.
 
-Sequence allocation is transactional and safe for concurrent submissions sharing a category and year.
+Tracking references and project references use separate yearly sequences. Sequence allocation is transactional and safe for concurrent submissions sharing a category and year.
 
 Three brief categories are supported: `student`, `general`, and `service_request`. Student drafts may be saved before all student details are available. However, submitting or registering requires:
 
@@ -69,24 +69,33 @@ Three brief categories are supported: `student`, `general`, and `service_request
 * Supervisor.
 * Recommendation-letter status.
 
-Service requests require `serviceRequested` and `expectedResult` at submit time. A blank `department` is suggested from the active sector names. General-public submissions must not contain student-only or service-only details.
+Service requests require `serviceRequested`, `expectedResult`, and a preferred `preferredAt` date and time at register/submit time. Every brief requires `acceptedRulesVersion` before it can be registered or submitted. A blank `department` defaults to `Innovation` for general and student briefs and is suggested from the active sector names for service requests. General-public submissions must not contain student-only or service-only details.
 
 ### Submission Lifecycle
 
-The submitter-facing intake stages are:
+The canonical lifecycle has fourteen statuses:
 
-`DRAFT` → `SUBMITTED` → (`AWAITING_INFORMATION` → `SUBMITTED`) → `FORWARDED` or `CONFIRMED_AS_PROJECT` or `REJECTED`
+`DRAFT`, `SUBMITTED`, `AWAITING_INFORMATION`, `FORWARDED`, `IN_FACT_FINDING`, `READY_FOR_REVIEW`, `IN_REVIEW`, `IMPROVEMENT_REQUESTED`, `RESUBMITTED`, `CONFIRMED_AS_PROJECT`, `AWAITING_PAYMENT`, `IN_PROGRESS`, `COMPLETED`, and `CLOSED`.
 
-The case lifecycle continues through:
+The normal path through the lifecycle is:
 
-`FORWARDED` → `IN_PROGRESS` → `COMPLETED`
+1. `DRAFT` → `SUBMITTED`
+2. `SUBMITTED` → `AWAITING_INFORMATION` → `SUBMITTED`, or `SUBMITTED` → `FORWARDED`, `CONFIRMED_AS_PROJECT`, or `CLOSED`
+3. `FORWARDED` → `IN_FACT_FINDING` or `READY_FOR_REVIEW`
+4. `IN_FACT_FINDING` → `READY_FOR_REVIEW`, `IN_REVIEW`, or `IMPROVEMENT_REQUESTED`
+5. `READY_FOR_REVIEW` → `IN_REVIEW`, `IMPROVEMENT_REQUESTED`, or `CLOSED`
+6. `IN_REVIEW` → `IMPROVEMENT_REQUESTED`, `CONFIRMED_AS_PROJECT`, `AWAITING_PAYMENT`, or `CLOSED`
+7. `IMPROVEMENT_REQUESTED` → `RESUBMITTED` → `IN_REVIEW`
+8. `CONFIRMED_AS_PROJECT` → `AWAITING_PAYMENT` or `IN_PROGRESS`
+9. `AWAITING_PAYMENT` → `IN_PROGRESS`
+10. `IN_PROGRESS` → `COMPLETED` or `CLOSED`
 
-`RECEIVED` and `REGISTERED` are retained for the legacy/assisted registration and fact-finding flows. The API rejects skipped and backward transitions.
+`REJECTED` is retired; rejection now records the reason and moves the brief to `CLOSED`. `RECEIVED` and `REGISTERED` are retired and are no longer valid API statuses. The API rejects skipped, backward, and role-invalid transitions.
 
 Forwarding a case:
 
-1. For a draft, validates required student evidence and registers it as received.
-2. For a submitted brief, requires a complete reception checklist.
+1. Requires a complete reception checklist for every forward path.
+2. For a draft, validates required student/service evidence and accepted rules, then registers it and moves it to `SUBMITTED`.
 3. Assigns an active sector from the catalog and records the optional handover note.
 4. Records each stage-history change.
 5. Inserts a `submission.forwarded` record, including the sector's notification
@@ -137,13 +146,31 @@ Drafts are private to their owner and do not appear in the queue. The list is or
 | GET    | `/api/me/submissions`               | Lists the signed-in submitter's submissions, optionally filtered by `tab=BRIEFS` or `tab=SERVICE_REQUESTS`, with any waiting-for-you action. |
 | GET    | `/api/me/submissions/{id}`          | Returns one submitter-owned case with its waiting-for-you action. |
 | GET    | `/api/me/capabilities`               | Returns the submitter's actions and tab/module availability. |
+| GET    | `/api/me/invoices`                   | Lists the signed-in submitter's invoices.               |
+| GET    | `/api/me/invoices/{id}`              | Returns one owned invoice.                              |
+| POST   | `/api/me/invoices/{id}/proof`        | Uploads payment proof (`reference`, `amount`, `paidOn`, `file`). |
+| GET    | `/api/me/invoices/{id}/receipt`      | Returns receipt metadata for an owned invoice.          |
+| POST   | `/api/invoices`                      | Creates an invoice as finance staff.                    |
+| GET    | `/api/invoices`                      | Lists invoices as finance staff, optionally by `status`. |
+| POST   | `/api/invoices/{id}/verify`          | Verifies payment proof.                                 |
+| POST   | `/api/invoices/{id}/reject`          | Rejects payment proof with a reason.                    |
+| POST   | `/api/invoices/{id}/receipt`         | Issues a receipt after payment is verified.             |
+| GET    | `/api/finance/summary`               | Returns invoice and income totals.                      |
+| GET    | `/api/facilities`                    | Lists facilities.                                       |
+| POST   | `/api/facilities`                    | Creates a facility.                                     |
+| PATCH  | `/api/facilities/{id}/status`        | Changes a facility's status.                            |
+| GET    | `/api/me/bookings`                   | Lists the signed-in submitter's bookings.               |
+| POST   | `/api/me/bookings`                   | Requests a facility booking.                            |
+| POST   | `/api/me/bookings/{id}/cancel`       | Cancels an owned booking.                               |
+| GET    | `/api/bookings`                      | Lists bookings for staff, optionally by status or date. |
+| POST   | `/api/bookings/{id}/approve`         | Approves a pending booking.                             |
 | GET    | `/api/sectors/filter-options`        | Returns sector IDs and names to authorized submission readers. |
 | GET    | `/api/submissions/{id}`            | Returns a submission, documents, and stage history.     |
 | POST   | `/api/submissions`                 | Creates a draft and assigns its tracking reference.     |
 | PUT    | `/api/submissions/{id}`            | Updates an owned draft and clears an information request. |
 | POST   | `/api/submissions/{id}/submit`      | Submits a completed draft for reception review.         |
 | POST   | `/api/submissions/{id}/reply`       | Replies to an information request as the owning submitter. |
-| POST   | `/api/submissions/{id}/register`   | Registers a draft as received without changing its code. |
+| POST   | `/api/submissions/{id}/register`   | Registers a draft in the legacy flow without changing its tracking reference. |
 | POST   | `/api/submissions/{id}/request-information` | Requests missing information and enqueues a notification. |
 | POST   | `/api/submissions/{id}/forward`    | Registers or forwards a submission to a sector with an optional note. |
 | POST   | `/api/submissions/{id}/confirm-project` | Confirms the brief as a project and assigns a project code. |
@@ -165,7 +192,7 @@ Drafts are private to their owner and do not appear in the queue. The list is or
 
 ### W4 Case File
 
-The case-file endpoints provide the aggregate, seven-stage stepper, outcome,
+The case-file endpoints provide the aggregate, nine-stage stepper, outcome,
 document status controls, and per-control capability reasons:
 
 | Method | Endpoint | Purpose |
@@ -177,13 +204,17 @@ document status controls, and per-control capability reasons:
 | PUT | `/api/cases/{id}/outcome` | Saves a decision (`Confirmed as project`, `Needs more improvement`, or `Closed with a reason`) and note. Requires the current `version` and reviewer quorum. |
 | PATCH | `/api/cases/{id}/documents/{docId}` | Updates document status. Requires the current case `version`. |
 
-The seven stepper stages are `RECEIVED`, `REGISTERED`, `FACT_FINDING`,
-`UNDER_REVIEW`, `REFINEMENT_REQUESTED`, `FURTHER_HANDLING`, and `COMPLETED`.
-Stage changes are currently sequential; only Administrators and Innovation
-Coordinators may perform them, including moving a case out of Fact-Finding.
-The source SRS 8.2 transition matrix was not present in this repository, so the
-sequential transition map should be checked against that matrix before treating
-it as authoritative.
+The nine stepper stages are `SUBMITTED`, `FORWARDED`, `IN_FACT_FINDING`,
+`READY_FOR_REVIEW`, `IN_REVIEW`, `IMPROVEMENT_REQUESTED`,
+`CONFIRMED_AS_PROJECT`, `IN_PROGRESS`, and `COMPLETED`. `AWAITING_INFORMATION`
+maps to the `SUBMITTED` step, `RESUBMITTED` to `IN_REVIEW`, `AWAITING_PAYMENT` to
+`CONFIRMED_AS_PROJECT`, and `CLOSED` to `COMPLETED`; `DRAFT` has no stepper step.
+
+Administrators and Innovation Coordinators may perform the canonical transitions.
+A Fact-Finding Officer may move a `FORWARDED` or `IN_FACT_FINDING` case to
+`READY_FOR_REVIEW` or `IMPROVEMENT_REQUESTED`. Completing fact-finding moves the
+case to `READY_FOR_REVIEW`, and saving review settings or assigning a reviewer
+advances `READY_FOR_REVIEW` to `IN_REVIEW`.
 
 Administrators and Innovation Coordinators may update outcomes and document
 statuses. Other permitted case-file readers receive disabled mutation
@@ -192,12 +223,12 @@ stale versions return `409 Conflict`. Outcome writes return `409 Conflict`
 with `Save stays disabled until the configured reviewer quorum is met` unless
 the reviewer-quorum provider is available and reports quorum met.
 
-The Mark reviewer-team/quorum and David activity integrations are not
-configured in this backend. Their aggregate sections explicitly report
-`NOT_CONFIGURED` and return empty data rather than fabricating panel members or
-activity. Replace the default `CaseFileEnrichmentProvider` bean when those
-service contracts are available. Until quorum is configured, saving outcomes
-is intentionally unavailable.
+The case-file review panel is backed by the internal review settings and
+assignments, and the case-file activity feed is backed by the audit trail, so
+both report `AVAILABLE` by default. A Mark reviewer-team/quorum or David activity
+integration can replace the default `CaseFileEnrichmentProvider` bean when those
+service contracts are configured. Outcome saving remains disabled until the
+reviewer quorum is configured and met.
 
 `/api/submissions`, `/api/submissions/search`, and `/api/submissions/mine` are
 paginated. The search endpoint accepts `code`, `page`, and `size`; `page` is
@@ -216,9 +247,9 @@ Pagination defaults:
 `GET /api/submissions` supports the optional `category` (`student`, `general`, or `service_request`), `stage` (status), `sector` (department), `receivedFrom`, `receivedTo` (inclusive received-date bounds in Africa/Kampala), and `q` filters. Results are ordered by received date descending, with the submission ID as a deterministic tie-breaker, and use the same page-size limits as the other submission lists.
 
 `GET /api/submissions/search?code=...` first checks for an exact visible
-tracking reference. If no exact reference is visible, it searches visible
-tracking references (project codes), titles, and submitter names using a
-case-insensitive substring match.
+tracking reference or project code. If neither matches exactly, it searches
+visible tracking references, project codes, titles, and submitter names using
+a case-insensitive substring match.
 
 The `code` value must not be blank. Literal `%`, `_`, and `\` characters in
 substring searches are treated as ordinary text, not wildcard operators.
@@ -230,8 +261,8 @@ Visibility is enforced in the database query:
 * Submitters see submissions linked to their submitter identity.
 * Reviewers see submissions assigned to their subject.
 * Sector Officers see submissions routed to sectors where they are members.
-* Administrators, Coordinators, Receptionists, Fact-Finding Officers,
-  IP Liaisons, and Observers see all non-draft submissions.
+* Administrators, Coordinators, Receptionists, Fact-Finding Officers, and
+  Observers see all non-draft submissions.
 
 Student Projects, General Innovations, and Service Requests use the same list endpoint with the appropriate `category` filter. Administrator-only endpoints manage reviewer assignments and Sector Officer membership.
 
@@ -242,8 +273,8 @@ Student Projects, General Innovations, and Service Requests use the same list en
 The M1 manager overview is available only to Administrators and Innovation
 Coordinators. It reports across all non-draft briefs and is cached for 30 seconds:
 
-* **Total non-draft briefs**, **waiting for review** (`FACT_FINDING` and `FORWARDED`),
-  **needing improvement** (`REFINEMENT_REQUESTED`), and **completed this month**.
+* **Total non-draft briefs**, **waiting for review** (`READY_FOR_REVIEW` and `IN_REVIEW`),
+  **needing improvement** (`IMPROVEMENT_REQUESTED`), and **completed this month**.
 * **Pipeline**: six grouped lifecycle counts.
 * **Needs attention**: up to five open cases that have not changed for more than
   14 days.
@@ -257,11 +288,11 @@ fabricated.
 
 The six pipeline groups are:
 
-* **Intake**: `SUBMITTED`, `AWAITING_INFORMATION`, `RECEIVED`, and `REGISTERED`.
-* **Fact-Finding**: `FACT_FINDING` and `FORWARDED`.
-* **Under Review**: `UNDER_REVIEW` and `IN_PROGRESS`.
-* **Refinement Requested**: `REFINEMENT_REQUESTED`.
-* **Further Handling**: `FURTHER_HANDLING` and `CONFIRMED_AS_PROJECT`.
+* **Intake**: `SUBMITTED` and `AWAITING_INFORMATION`.
+* **Fact-Finding**: `FORWARDED` and `IN_FACT_FINDING`.
+* **Under Review**: `READY_FOR_REVIEW` and `IN_REVIEW`.
+* **Refinement Requested**: `IMPROVEMENT_REQUESTED`.
+* **Further Handling**: `CONFIRMED_AS_PROJECT`, `AWAITING_PAYMENT`, and `IN_PROGRESS`.
 * **Completed**: `COMPLETED`.
 
 ### Forwarding a Submission
@@ -282,9 +313,9 @@ Request body:
 The optional `note` is recorded on the brief, in the stage history, and in the
 submitter's forwarded-copy notification.
 
-A `DRAFT` is registered and forwarded in one transaction. Forwarding a
-`SUBMITTED` brief requires a complete reception checklist and returns `409`
-when a required line is still unchecked.
+A `DRAFT` is registered and forwarded in one transaction. Every forward path,
+including forwarding a `DRAFT`, requires a complete reception checklist and
+returns `409` when a required line is still unchecked.
 
 Create and manage sectors through the sector catalog. Only active sector IDs are
 accepted for forwarding; each sector has a notification email address.
@@ -387,8 +418,8 @@ Reception verifies a submitted brief with:
 
 Every brief uses the same four canonical lines. Each line has a stable `key`, a
 human-readable `label`, and an optional `note`. The checklist can be updated
-while the submission is `DRAFT`, `SUBMITTED`, or `RECEIVED`. Forwarding a
-`SUBMITTED` brief requires every line to be checked.
+while the submission is `DRAFT` or `SUBMITTED`. Every forward path
+requires every line to be checked.
 
 | Key | Verifies |
 | --- | -------- |
@@ -480,7 +511,6 @@ register, forward, confirm, reject, or transition cases.
 
 Submission list and global search additionally support:
 
-* `IP_LIAISON`
 * `OBSERVER`
 * `SUBMITTER`
 * `REVIEWER`
@@ -499,10 +529,9 @@ submitter-owned brief. Both expose `pendingAction`, `waitingForYou`, and
 `waitingSince` when the submitter has work to do, and omit staff-only fields.
 The list accepts `tab=BRIEFS|SERVICE_REQUESTS`; invoices and bookings are
 separate modules. `GET /api/me/capabilities` reports the submitter's own
-actions (create, edit, submit, respond, upload) and the availability of every
-home tab. Briefs and service requests are `AVAILABLE`; invoices and payments
-(D4) and bookings (F1) report `NOT_CONFIGURED` until those services are
-connected.
+actions (create, edit, submit, respond, upload, upload payment proof, book) and
+the availability of every home module. Briefs, service requests, invoices and
+payments (D4), and bookings (F1) are all `AVAILABLE`.
 
 Submitters may create submissions, update and submit their own drafts, reply to
 an information request, and upload documents while their brief is `DRAFT`,
@@ -518,6 +547,36 @@ principal; the persisted field remains separate from `registeredBy`.
 The W3 submitter home responses are read-only and omit staff-only fields.
 Submitter-scoped workflow commands remain on the submission endpoints and return
 the standard submission response.
+
+### Finance and Facilities
+
+Invoices are owner-scoped by `customerEmail == JWT subject`. A submitter lists
+and reads only their own invoices with `GET /api/me/invoices` and
+`GET /api/me/invoices/{id}`; another submitter's invoice, proof or receipt is
+reported as `404`. While the invoice is `WAITING_FOR_PROOF`, the owner uploads
+the bank reference, amount, paid date and file with
+`POST /api/me/invoices/{id}/proof` (or the D4 alias
+`POST /api/invoices/{id}/evidence`). The invoice then moves to
+`WAITING_FOR_CHECK`. Proof and receipt files are available through the
+owner-scoped `/api/me/invoices/{id}/proof/file` and
+`/api/me/invoices/{id}/receipt[/download]` endpoints.
+
+Finance Officers and Administrators create invoices with `POST /api/invoices`,
+list them with `GET /api/invoices?status=`, verify or reject payment with
+`POST /api/invoices/{id}/verify|reject`, and issue a receipt with
+`POST /api/invoices/{id}/receipt`. Receipts are issued only after payment is
+`PAID`. `GET /api/finance/summary` returns invoice and income totals.
+
+Submitters list and create their own facility bookings with
+`GET|POST /api/me/bookings`, read one with `GET /api/me/bookings/{id}`, and
+cancel a pending or approved booking with
+`POST /api/me/bookings/{id}/cancel`. Staff approve, reject, reschedule, check in
+and check out bookings through `/api/bookings`. Facilities are listed with
+`GET /api/facilities` and managed with `POST /api/facilities` and
+`PATCH /api/facilities/{id}/status`. Overlapping active bookings return `409`,
+as does a booking at a facility in `MAINTENANCE`; the requested attendee count
+must not exceed the facility capacity.
+
 The existing Waluube notification outbox is a PostgreSQL-backed external-consumer
 boundary for durable asynchronous delivery. This repository does not provide a
 Kafka topic or Kafka consumer; a separate polling or CDC bridge is required
@@ -597,6 +656,8 @@ For example:
 | `INNOVATION_COORDINATOR` | `ROLE_INNOVATION_COORDINATOR` |
 | `RECEPTIONIST`           | `ROLE_RECEPTIONIST`           |
 | `FACT_FINDING_OFFICER`   | `ROLE_FACT_FINDING_OFFICER`   |
+| `DEPARTMENT_COORDINATOR` | `ROLE_DEPARTMENT_COORDINATOR` |
+| `FINANCE_OFFICER`        | `ROLE_FINANCE_OFFICER`        |
 | `IP_LIAISON`            | `ROLE_IP_LIAISON`              |
 | `OBSERVER`              | `ROLE_OBSERVER`                |
 | `SUBMITTER`             | `ROLE_SUBMITTER`               |
@@ -663,9 +724,9 @@ Officers. Reviewers and Sector Officers may request information and manage
 missing items for cases they can see, but cannot register, forward, or
 transition a case. Submitters may create submissions, update and submit their
 own drafts, reply to information requests, and upload documents to their own
-briefs. Submission list and search access additionally supports IP Liaisons,
-Observers, Submitters, Reviewers, and Sector Officers, with row-level
-visibility described above.
+briefs. Submission list and search access additionally supports Observers,
+Submitters, Reviewers, and Sector Officers, with row-level visibility
+described above.
 
 The demonstration catalog and ten demonstration submissions are opt-in. To
 enable them for a dedicated demo database, set the PostgreSQL connection option
@@ -683,7 +744,7 @@ Never commit real database credentials, access tokens, or other secrets to the r
 
 Before applying the workflow migration to an existing database, check for registered student submissions that do not satisfy the new database constraints.
 
-This includes older `RECEIVED` cases whose recommendation-letter status was missing.
+This includes older non-draft student cases whose recommendation-letter status was missing.
 
 The previous PostgreSQL `CHECK` constraint could allow those records because a `NULL` result passes a check constraint.
 
@@ -834,8 +895,7 @@ operations:
 
 Reviewers and Sector Officers may additionally request information and manage
 missing items for cases they can see; they cannot register, forward, confirm,
-reject, or transition cases. IP Liaisons and Observers have read-only list and
-search access.
+reject, or transition cases. Observers have read-only list and search access.
 
 Submitters can also authenticate. They may create a submission for themselves,
 update and submit their own drafts, reply to an information request, and upload
@@ -881,7 +941,8 @@ Request body:
   "studentNumber": "TEST-0001",
   "programme": "Engineering",
   "supervisor": "Test Supervisor",
-  "recommendationLetterStatus": "submitted"
+  "recommendationLetterStatus": "submitted",
+  "acceptedRulesVersion": "2026-01"
 }
 ```
 
@@ -895,8 +956,8 @@ Save the returned submission `id` in the Postman environment as:
 
 ### 5. Submit, Register, and Forward the Submission
 
-The submission response already contains a tracking code. A submitter first
-submits the completed draft for reception review:
+The submission response already contains a `BRF-{year}-{sequence}` tracking
+reference. A submitter first submits the completed draft for reception review:
 
 `POST {{baseUrl}}/submissions/{{submissionId}}/submit`
 
@@ -917,8 +978,8 @@ Expected response:
 The response should contain:
 
 * The registered submission.
-* Stage: `RECEIVED`.
-* The same tracking code that was assigned when the draft was created.
+* Stage: `SUBMITTED`.
+* The same tracking reference that was assigned when the draft was created.
 
 Repeating this registration request should return:
 
@@ -926,8 +987,8 @@ Repeating this registration request should return:
 
 Reception can instead use `POST {{baseUrl}}/submissions/{{submissionId}}/forward`
 with `{"sectorId":"<active-sector-uuid>","note":"Optional handover note"}` to
-register and forward a draft in one transaction. Forwarding a `SUBMITTED` brief
-requires a complete reception checklist.
+register and forward a draft in one transaction. Every forward path requires a
+complete reception checklist.
 
 To close intake, use `POST {{baseUrl}}/submissions/{{submissionId}}/confirm-project`
 with an optional `projectCode`, or `POST {{baseUrl}}/submissions/{{submissionId}}/reject`

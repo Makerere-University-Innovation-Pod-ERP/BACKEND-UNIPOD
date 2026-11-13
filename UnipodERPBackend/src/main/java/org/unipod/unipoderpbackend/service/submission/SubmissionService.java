@@ -55,6 +55,7 @@ import org.unipod.unipoderpbackend.repository.dashboard.PipelineMetricsRepositor
 import org.unipod.unipoderpbackend.repository.submission.CaseStageHistoryRepository;
 import org.unipod.unipoderpbackend.repository.submission.MissingItemRepository;
 import org.unipod.unipoderpbackend.repository.submission.NotificationOutbox;
+import org.unipod.unipoderpbackend.repository.submission.SubmissionCodeAliasRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionDocumentRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
 import org.unipod.unipoderpbackend.service.audit.AuditTrail;
@@ -65,8 +66,10 @@ import org.unipod.unipoderpbackend.util.CaseCodeGenerator;
 public class SubmissionService {
     private static final ZoneId CASE_CODE_ZONE = ZoneId.of("Africa/Kampala");
     private static final Instant FAR_FUTURE = Instant.parse("9999-12-31T23:59:59Z");
+    private static final String DEFAULT_DEPARTMENT = "Innovation";
 
     private final SubmissionRepository submissions;
+    private final SubmissionCodeAliasRepository codeAliases;
     private final CaseStageHistoryRepository stageHistory;
     private final CaseCodeGenerator caseCodeGenerator;
     private final SubmissionDocumentRepository documents;
@@ -82,6 +85,7 @@ public class SubmissionService {
     @Autowired
     public SubmissionService(
             SubmissionRepository submissions,
+            SubmissionCodeAliasRepository codeAliases,
             CaseStageHistoryRepository stageHistory,
             CaseCodeGenerator caseCodeGenerator,
             SubmissionDocumentRepository documents,
@@ -96,6 +100,7 @@ public class SubmissionService {
             Clock clock
     ) {
         this.submissions = submissions;
+        this.codeAliases = codeAliases;
         this.stageHistory = stageHistory;
         this.caseCodeGenerator = caseCodeGenerator;
         this.documents = documents;
@@ -172,6 +177,7 @@ public class SubmissionService {
         requireCategoryDetails(request);
         Submission submission = submissions.findByIdForUpdate(id)
                 .orElseThrow(() -> new SubmissionNotFoundException(id));
+        requireDraftOwner(submission, actor);
         requireSubmitterOwnership(submission, actor, submitter);
         if (submission.getCategory() != request.category()) {
             throw new InvalidSubmissionException("The submission category cannot be changed after creation.");
@@ -226,13 +232,13 @@ public class SubmissionService {
                 UUID.randomUUID(),
                 submission.getId(),
                 previousStage,
-                SubmissionStage.RECEIVED,
+                SubmissionStage.SUBMITTED,
                 actor,
                 receivedAt
         ));
         auditTrail.record(actor, "submission.registered", submission.getId(),
                 AuditTrail.details("stage", previousStage.name()),
-                AuditTrail.details("stage", SubmissionStage.RECEIVED.name(), "code", submission.getCode()));
+                AuditTrail.details("stage", SubmissionStage.SUBMITTED.name(), "code", submission.getCode()));
         submissions.flush();
         return SubmissionResponse.from(submission);
     }
@@ -307,16 +313,18 @@ public class SubmissionService {
                 clean(request.serviceRequested()),
                 clean(request.department()),
                 clean(request.expectedResult()),
+                request.preferredAt(),
                 now
         );
         SubmissionStage previousStage = submission.getStage();
         submission.reply(now);
+        SubmissionStage resultingStage = submission.getStage();
         String note = clean(request.note()) == null ? "Submitter replied with the requested information." : clean(request.note());
         stageHistory.save(new CaseStageHistory(
                 UUID.randomUUID(),
                 submission.getId(),
                 previousStage,
-                SubmissionStage.SUBMITTED,
+                resultingStage,
                 actor,
                 note,
                 now
@@ -341,7 +349,7 @@ public class SubmissionService {
         auditTrail.record(actor, "submission.replied", submission.getId(),
                 AuditTrail.details("stage", previousStage.name()),
                 AuditTrail.details(
-                        "stage", SubmissionStage.SUBMITTED.name(),
+                        "stage", resultingStage.name(),
                         "briefVersion", submission.getBriefVersion()
                 ));
         submissions.flush();
@@ -402,7 +410,7 @@ public class SubmissionService {
                 UUID.randomUUID(),
                 submission.getId(),
                 previousStage,
-                SubmissionStage.REJECTED,
+                SubmissionStage.CLOSED,
                 actor,
                 clean(request.reason()),
                 now
@@ -418,7 +426,7 @@ public class SubmissionService {
         auditTrail.record(actor, "submission.rejected", submission.getId(),
                 AuditTrail.details("stage", previousStage.name()),
                 AuditTrail.details(
-                        "stage", SubmissionStage.REJECTED.name(),
+                        "stage", SubmissionStage.CLOSED.name(),
                         "reason", clean(request.reason())
                 ));
         submissions.flush();
@@ -436,9 +444,7 @@ public class SubmissionService {
                 .orElseThrow(() -> new SubmissionNotFoundException(id));
         Sector sector = sectorsCatalog.requireActive(sectorId);
         Instant now = clock.instant();
-        if (submission.getStage() == SubmissionStage.SUBMITTED) {
-            receptionChecklists.requireComplete(id);
-        }
+        receptionChecklists.requireComplete(id);
         if (submission.getStage() == SubmissionStage.DRAFT) {
             SubmissionStage draftStage = submission.getStage();
             String code = submission.getCode() == null
@@ -449,7 +455,7 @@ public class SubmissionService {
                     UUID.randomUUID(),
                     submission.getId(),
                     draftStage,
-                    SubmissionStage.RECEIVED,
+                    SubmissionStage.SUBMITTED,
                     actor,
                     now
             ));
@@ -693,8 +699,14 @@ public class SubmissionService {
         String scope = SubmissionVisibility.scope(authentication);
         String principal = authentication.getName();
         String term = query.trim();
-        Submission exact = submissions.findVisibleByCode(term.toUpperCase(Locale.ROOT), scope, principal)
+        String normalised = term.toUpperCase(Locale.ROOT);
+        Submission exact = submissions.findVisibleByCode(normalised, scope, principal)
                 .orElse(null);
+        if (exact == null) {
+            exact = codeAliases.findSubmissionIdByAlias(normalised)
+                    .flatMap(id -> submissions.findVisibleById(id, scope, principal))
+                    .orElse(null);
+        }
         if (exact != null) {
             if (pageable.getOffset() > 0) {
                 return new org.springframework.data.domain.PageImpl<>(
@@ -839,6 +851,15 @@ public class SubmissionService {
                     : submission.getInformationRequestedAt();
             return new Pending(SubmitterPendingAction.PROVIDE_INFORMATION, note, since);
         }
+        if (submission.getStage() == SubmissionStage.IMPROVEMENT_REQUESTED) {
+            String improvementNote = clean(submission.getOutcomeNote());
+            if (improvementNote != null) {
+                Instant since = submission.getOutcomeDecidedAt() == null
+                        ? submission.getUpdatedAt()
+                        : submission.getOutcomeDecidedAt();
+                return new Pending(SubmitterPendingAction.PROVIDE_INFORMATION, improvementNote, since);
+            }
+        }
         if (submission.getStage() == SubmissionStage.DRAFT) {
             return new Pending(
                     SubmitterPendingAction.CONTINUE_DRAFT,
@@ -852,7 +873,8 @@ public class SubmissionService {
     private static boolean submitterCanAct(SubmissionStage stage) {
         return stage == SubmissionStage.DRAFT
                 || stage == SubmissionStage.SUBMITTED
-                || stage == SubmissionStage.AWAITING_INFORMATION;
+                || stage == SubmissionStage.AWAITING_INFORMATION
+                || stage == SubmissionStage.IMPROVEMENT_REQUESTED;
     }
 
     private record Pending(SubmitterPendingAction action, String message, Instant since) {
@@ -900,6 +922,9 @@ public class SubmissionService {
         String department = clean(request.department());
         if (submission.getCategory() == SubmissionCategory.SERVICE_REQUEST && department == null) {
             department = suggestDepartment(clean(request.serviceRequested()));
+        } else if (submission.getCategory() != SubmissionCategory.SERVICE_REQUEST
+                && department == null) {
+            department = DEFAULT_DEPARTMENT;
         }
         submission.applyIntakeDetails(
                 clean(request.submitterPhone()),
@@ -907,6 +932,7 @@ public class SubmissionService {
                 request.serviceRequester(),
                 department,
                 clean(request.expectedResult()),
+                request.preferredAt(),
                 clean(request.acceptedRulesVersion())
         );
     }
@@ -1088,10 +1114,17 @@ public class SubmissionService {
     }
 
     private static boolean hasServiceDetails(CreateSubmissionRequest request) {
+        String department = clean(request.department());
         return clean(request.serviceRequested()) != null
                 || request.serviceRequester() != null
-                || clean(request.department()) != null
+                || (department != null && !DEFAULT_DEPARTMENT.equalsIgnoreCase(department))
                 || clean(request.expectedResult()) != null;
+    }
+
+    private static void requireDraftOwner(Submission submission, String actor) {
+        if (!submission.getSubmitterId().equals(actor)) {
+            throw new AccessDeniedException("Only the submitter can edit the brief.");
+        }
     }
 
     static void requireSubmitterOwnership(Submission submission, String actor, boolean submitter) {
@@ -1110,9 +1143,10 @@ public class SubmissionService {
             throw new AccessDeniedException("Submitters may only reply to their own submissions.");
         }
         if (submission.getStage() != SubmissionStage.AWAITING_INFORMATION
-                && submission.getStage() != SubmissionStage.SUBMITTED) {
+                && submission.getStage() != SubmissionStage.SUBMITTED
+                && submission.getStage() != SubmissionStage.IMPROVEMENT_REQUESTED) {
             throw new SubmissionConflictException(
-                    "Only a submitted or awaiting-information submission can be replied to."
+                    "Only a submitted, awaiting-information or improvement-requested submission can be replied to."
             );
         }
     }

@@ -44,6 +44,7 @@ public class AssistedSubmissionService {
                         request.serviceRequester(),
                         request.department(),
                         request.expectedResult(),
+                        request.preferredAt(),
                         request.acceptedRulesVersion()
                 ),
                 actor
