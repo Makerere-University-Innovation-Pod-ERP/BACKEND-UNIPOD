@@ -154,9 +154,10 @@ class ReceptionChecklistServiceTest {
     @Test
     void updateRejectsChecklistChangesAfterForwarding() {
         Submission submission = submission(SubmissionCategory.GENERAL);
+        submission.applyIntakeDetails(null, null, null, null, null, null, "2026-01");
         submission.register("GEN-2026-000001", NOW, "receptionist-1");
-        submission.transitionTo(SubmissionStage.REGISTERED, NOW);
-        submission.transitionTo(SubmissionStage.FACT_FINDING, NOW);
+        submission.transitionTo(SubmissionStage.FORWARDED, NOW);
+        submission.transitionTo(SubmissionStage.IN_FACT_FINDING, NOW);
         when(submissions.findVisibleByIdForUpdate(any(), any(), any())).thenReturn(Optional.of(submission));
 
         assertThrows(

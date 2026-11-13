@@ -26,17 +26,12 @@ public record SubmitterCapabilitiesResponse(
     ) {
     }
 
-    private static final String INVOICES_NOT_CONFIGURED =
-            "Invoices and payments are provided by the finance module (D4) and are not configured in this backend.";
-    private static final String BOOKINGS_NOT_CONFIGURED =
-            "Bookings are provided by the facilities module (F1) and are not configured in this backend.";
-
     public static SubmitterCapabilitiesResponse forSubmitter() {
         Module invoices = new Module(
-                "INVOICES", "Invoices and payments", Availability.NOT_CONFIGURED, INVOICES_NOT_CONFIGURED
+                "INVOICES", "Invoices and payments", Availability.AVAILABLE, null
         );
         Module bookings = new Module(
-                "BOOKINGS", "Bookings", Availability.NOT_CONFIGURED, BOOKINGS_NOT_CONFIGURED
+                "BOOKINGS", "Bookings", Availability.AVAILABLE, null
         );
         return new SubmitterCapabilitiesResponse(
                 true,
@@ -53,7 +48,8 @@ public record SubmitterCapabilitiesResponse(
                         bookings
                 ),
                 "You can create and edit your own drafts, submit them to reception, "
-                        + "respond to information requests, and upload documents while a brief is still open."
+                        + "respond to information requests, upload documents, upload payment proof, "
+                        + "view receipts, and request facility bookings."
         );
     }
 }

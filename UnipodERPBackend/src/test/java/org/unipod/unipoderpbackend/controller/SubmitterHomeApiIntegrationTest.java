@@ -78,15 +78,15 @@ class SubmitterHomeApiIntegrationTest {
                 .andExpect(jsonPath("$.canSubmitDraft").value(true))
                 .andExpect(jsonPath("$.canRespondToInformationRequest").value(true))
                 .andExpect(jsonPath("$.canUploadDocuments").value(true))
-                .andExpect(jsonPath("$.canUploadPaymentProof").value(false))
-                .andExpect(jsonPath("$.canBook").value(false))
+                .andExpect(jsonPath("$.canUploadPaymentProof").value(true))
+                .andExpect(jsonPath("$.canBook").value(true))
                 .andExpect(jsonPath("$.modules.length()").value(4))
                 .andExpect(jsonPath("$.modules[0].key").value("BRIEFS"))
                 .andExpect(jsonPath("$.modules[0].availability").value("AVAILABLE"))
                 .andExpect(jsonPath("$.modules[2].key").value("INVOICES"))
-                .andExpect(jsonPath("$.modules[2].availability").value("NOT_CONFIGURED"))
+                .andExpect(jsonPath("$.modules[2].availability").value("AVAILABLE"))
                 .andExpect(jsonPath("$.modules[3].key").value("BOOKINGS"))
-                .andExpect(jsonPath("$.modules[3].availability").value("NOT_CONFIGURED"));
+                .andExpect(jsonPath("$.modules[3].availability").value("AVAILABLE"));
 
         mockMvc.perform(get("/me/submissions")
                         .header("Authorization", "Bearer " + token)

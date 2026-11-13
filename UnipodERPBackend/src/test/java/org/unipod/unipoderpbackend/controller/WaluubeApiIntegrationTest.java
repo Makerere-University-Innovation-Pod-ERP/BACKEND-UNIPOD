@@ -13,6 +13,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.annotation.Transactional;
 import org.unipod.unipoderpbackend.dto.sector.SectorRequest;
 import org.unipod.unipoderpbackend.service.sector.SectorService;
@@ -56,7 +57,8 @@ class WaluubeApiIntegrationTest {
                                   "title": "HTTP workflow test",
                                   "purpose": "Verify the workflow API",
                                   "problemAddressed": "The workflow API needs end-to-end coverage",
-                                  "submitterId": "%s"
+                                  "submitterId": "%s",
+                                  "acceptedRulesVersion": "2026-01"
                                 }
                                 """.formatted(submitter)))
                 .andExpect(status().isCreated())
@@ -101,13 +103,13 @@ class WaluubeApiIntegrationTest {
                 .andExpect(jsonPath("$.canSubmitDraft").value(true))
                 .andExpect(jsonPath("$.canRespondToInformationRequest").value(true))
                 .andExpect(jsonPath("$.canUploadDocuments").value(true))
-                .andExpect(jsonPath("$.canUploadPaymentProof").value(false))
-                .andExpect(jsonPath("$.canBook").value(false))
+                .andExpect(jsonPath("$.canUploadPaymentProof").value(true))
+                .andExpect(jsonPath("$.canBook").value(true))
                 .andExpect(jsonPath("$.modules.length()").value(4))
                 .andExpect(jsonPath("$.modules[?(@.key == 'INVOICES')].availability")
-                        .value(org.hamcrest.Matchers.hasItem("NOT_CONFIGURED")))
+                        .value(org.hamcrest.Matchers.hasItem("AVAILABLE")))
                 .andExpect(jsonPath("$.modules[?(@.key == 'BOOKINGS')].availability")
-                        .value(org.hamcrest.Matchers.hasItem("NOT_CONFIGURED")));
+                        .value(org.hamcrest.Matchers.hasItem("AVAILABLE")));
 
         mockMvc.perform(get("/submissions/mine")
                         .with(user(submitter).roles("SUBMITTER")))
@@ -156,7 +158,7 @@ class WaluubeApiIntegrationTest {
 
         mockMvc.perform(post("/submissions/{id}/register", id).with(receptionist))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.stage").value("RECEIVED"))
+                .andExpect(jsonPath("$.stage").value("SUBMITTED"))
                 .andExpect(jsonPath("$.code").isNotEmpty());
 
         mockMvc.perform(post("/submissions/{id}/documents", id)
@@ -180,6 +182,7 @@ class WaluubeApiIntegrationTest {
                 "sector@example.invalid",
                 true
         )).id().toString();
+        completeReceptionChecklist(id, receptionist);
         mockMvc.perform(post("/submissions/{id}/forward", id)
                         .with(receptionist)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -204,6 +207,14 @@ class WaluubeApiIntegrationTest {
                 )
         );
 
+        mockMvc.perform(post("/submissions/{id}/confirm-project", id)
+                        .with(receptionist)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stage").value("CONFIRMED_AS_PROJECT"))
+                .andExpect(jsonPath("$.projectCode").isNotEmpty());
+
         mockMvc.perform(post("/submissions/{id}/transition", id)
                         .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -222,7 +233,7 @@ class WaluubeApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.submission.id").value(id))
                 .andExpect(jsonPath("$.documents.length()").value(1))
-                .andExpect(jsonPath("$.stageHistory.length()").value(5));
+                .andExpect(jsonPath("$.stageHistory.length()").value(6));
 
         mockMvc.perform(get("/queues/reception")
                         .with(receptionist)
@@ -232,8 +243,7 @@ class WaluubeApiIntegrationTest {
                 .andExpect(jsonPath("$.items").isArray());
 
         mockMvc.perform(get("/dashboard/overview").with(receptionist))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.totalSubmissions").isNumber());
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -286,7 +296,8 @@ class WaluubeApiIntegrationTest {
                                   "purpose": "Verify pending work on the home screen",
                                   "problemAddressed": "Reception needs more information",
                                   "submitterEmail": "%s",
-                                  "submitterPhone": "+256700000000"
+                                  "submitterPhone": "+256700000000",
+                                  "acceptedRulesVersion": "2026-01"
                                 }
                                 """.formatted(submitter)))
                 .andExpect(status().isCreated())
@@ -463,7 +474,7 @@ class WaluubeApiIntegrationTest {
                                 """.formatted(submitter)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.stage").value("DRAFT"))
-                .andExpect(jsonPath("$.code").value(org.hamcrest.Matchers.startsWith("STU-")))
+                .andExpect(jsonPath("$.code").value(org.hamcrest.Matchers.startsWith("BRF-")))
                 .andExpect(jsonPath("$.submitterId").value(submitter))
                 .andExpect(jsonPath("$.registeredBy").value(receptionist))
                 .andReturn()
@@ -527,7 +538,8 @@ class WaluubeApiIntegrationTest {
                   "studentNumber": "STU-12345",
                   "programme": "Engineering",
                   "supervisor": "Dr Example",
-                  "recommendationLetterStatus": "SUBMITTED"
+                  "recommendationLetterStatus": "SUBMITTED",
+                  "acceptedRulesVersion": "2026-01"
                 }
                 """;
         mockMvc.perform(put("/submissions/{id}", id)
@@ -551,6 +563,7 @@ class WaluubeApiIntegrationTest {
                 "atomic-forward@example.invalid",
                 true
         ));
+        completeReceptionChecklist(id, receptionistUser);
         mockMvc.perform(post("/submissions/{id}/forward", id)
                         .with(receptionistUser)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -612,19 +625,6 @@ class WaluubeApiIntegrationTest {
     }
 
     @Test
-    void operationalAndFinanceDashboardTilesAreRestrictedToAdministratorsAndCoordinators() throws Exception {
-        mockMvc.perform(get("/dashboard/overview").with(user("observer").roles("OBSERVER")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.operations").doesNotExist())
-                .andExpect(jsonPath("$.finance").doesNotExist());
-
-        mockMvc.perform(get("/dashboard/overview").with(user("administrator").roles("ADMINISTRATOR")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.operations.availability").value("NOT_CONFIGURED"))
-                .andExpect(jsonPath("$.finance.availability").value("NOT_CONFIGURED"));
-    }
-
-    @Test
     void caseFileEndpointsExposeAggregateAndEnforceVersionedWrites() throws Exception {
         String actor = "case-file-" + UUID.randomUUID();
         String submitter = "submitter-" + actor;
@@ -638,7 +638,8 @@ class WaluubeApiIntegrationTest {
                                   "title": "Case file API test",
                                   "purpose": "Verify the W4 case file",
                                   "problemAddressed": "The aggregate and writes need HTTP coverage",
-                                  "submitterId": "%s"
+                                  "submitterId": "%s",
+                                  "acceptedRulesVersion": "2026-01"
                                 }
                                 """.formatted(submitter)))
                 .andExpect(status().isCreated())
@@ -687,14 +688,16 @@ class WaluubeApiIntegrationTest {
 
         mockMvc.perform(get("/cases/{id}", id).with(user(submitter).roles("SUBMITTER")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.currentStage").value("RECEIVED"))
-                .andExpect(jsonPath("$.stepper.length()").value(7))
+                .andExpect(jsonPath("$.currentStage").value("SUBMITTED"))
+                .andExpect(jsonPath("$.stepper.length()").value(9))
                 .andExpect(jsonPath("$.outcome.status").value("NOT_STARTED"))
                 .andExpect(jsonPath("$.openRequests[0].label").value("Supervisor contact"))
                 .andExpect(jsonPath("$.openRequests[0].dueAt").isNotEmpty())
-                .andExpect(jsonPath("$.reviewPanel.availability").value("NOT_CONFIGURED"))
+                .andExpect(jsonPath("$.reviewPanel.availability").value("AVAILABLE"))
+                .andExpect(jsonPath("$.reviewPanel.quorumAvailable").value(false))
                 .andExpect(jsonPath("$.reviewPanel.ipPanel").doesNotExist())
-                .andExpect(jsonPath("$.activity.availability").value("NOT_CONFIGURED"))
+                .andExpect(jsonPath("$.activity.availability").value("AVAILABLE"))
+                .andExpect(jsonPath("$.activity.items").isArray())
                 .andExpect(jsonPath("$.capabilities.nextStep.enabled").value(false));
         mockMvc.perform(get("/cases/{id}", id).with(user("ip-liaison").roles("IP_LIAISON")))
                 .andExpect(status().isForbidden());
@@ -722,41 +725,51 @@ class WaluubeApiIntegrationTest {
         mockMvc.perform(get("/cases/{id}/transitions/allowed", id)
                         .with(user("coordinator").roles("INNOVATION_COORDINATOR")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.allowedTransitions[0]").value("REGISTERED"));
+                .andExpect(jsonPath("$.allowedTransitions").isEmpty());
         mockMvc.perform(post("/cases/{id}/transitions", id)
                         .with(user("officer").roles("FACT_FINDING_OFFICER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"to_stage":"REGISTERED","version":2}
+                                {"to_stage":"FORWARDED","version":3}
                                 """))
                 .andExpect(status().isForbidden());
 
-        mockMvc.perform(post("/cases/{id}/transitions", id)
-                        .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
+        var forwardSector = sectors.create(new SectorRequest(
+                "Case file forward " + UUID.randomUUID(),
+                "case-file-forward@example.invalid",
+                true
+        ));
+        completeReceptionChecklist(id, receptionist);
+        mockMvc.perform(post("/submissions/{id}/forward", id)
+                        .with(receptionist)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"to_stage":"REGISTERED","note":"Intake checked","version":3}
-                                """))
+                        .content("{\"sectorId\":\"" + forwardSector.id()
+                                + "\",\"note\":\"Intake checked\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.currentStage").value("REGISTERED"))
-                .andExpect(jsonPath("$.submission.version").value(4))
+                .andExpect(jsonPath("$.stage").value("FORWARDED"))
+                .andExpect(jsonPath("$.version").value(5));
+
+        mockMvc.perform(get("/cases/{id}", id)
+                        .with(user("coordinator").roles("INNOVATION_COORDINATOR")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentStage").value("FORWARDED"))
                 .andExpect(jsonPath("$.stageHistory[-1:].note").value("Intake checked"));
 
         mockMvc.perform(patch("/cases/{id}/documents/{documentId}", id, documentId)
                         .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"status":"VERIFIED","version":4}
+                                {"status":"VERIFIED","version":5}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.documents[0].status").value("VERIFIED"))
-                .andExpect(jsonPath("$.submission.version").value(5));
+                .andExpect(jsonPath("$.submission.version").value(6));
 
         mockMvc.perform(put("/cases/{id}/outcome", id)
                         .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"decision":"Needs more improvement","note":"Panel review complete","version":5}
+                                {"decision":"Needs more improvement","note":"Panel review complete","version":6}
                                 """))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail").value(
@@ -767,7 +780,7 @@ class WaluubeApiIntegrationTest {
                         .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"to_stage":"FACT_FINDING","version":-1}
+                                {"to_stage":"IN_FACT_FINDING","version":-1}
                                 """))
                 .andExpect(status().isUnprocessableContent());
         mockMvc.perform(put("/cases/{id}/outcome", id)
@@ -781,7 +794,7 @@ class WaluubeApiIntegrationTest {
                         .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"decision":"Approve","note":"Panel review complete","version":5}
+                                {"decision":"Approve","note":"Panel review complete","version":6}
                                 """))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.detail").value("Submission details are invalid or incomplete."));
@@ -789,14 +802,14 @@ class WaluubeApiIntegrationTest {
                         .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"decision":" ","note":"  ","version":5}
+                                {"decision":" ","note":"  ","version":6}
                                 """))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.detail").value("One or more request values are invalid."));
     }
 
     @Test
-    void intakeRoleCanReadQueueAndDashboard() throws Exception {
+    void intakeRoleCanReadQueueAndManagersCanReadDashboard() throws Exception {
         mockMvc.perform(get("/queues/reception").with(user("receptionist").roles("RECEPTIONIST")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items").isArray())
@@ -804,50 +817,63 @@ class WaluubeApiIntegrationTest {
                 .andExpect(jsonPath("$.awaitingActionCount").isNumber())
                 .andExpect(jsonPath("$.recentlyUpdatedCount").isNumber());
 
-        mockMvc.perform(get("/dashboard/overview").with(user("coordinator").roles("INNOVATION_COORDINATOR")))
+        mockMvc.perform(get("/dashboard/overview")
+                        .with(user("dashboard-coordinator-" + UUID.randomUUID())
+                                .roles("INNOVATION_COORDINATOR")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.byStage.DRAFT").isNumber())
-                .andExpect(jsonPath("$.completedCount").isNumber());
+                .andExpect(jsonPath("$.totalBriefs").isNumber())
+                .andExpect(jsonPath("$.pipeline.length()").value(6))
+                .andExpect(jsonPath("$.completedThisMonth").isNumber());
     }
 
     @Test
-    void dashboardIsAvailableToAllRolesAndHidesOperationalTilesFromNonPrivilegedRoles() throws Exception {
+    void dashboardIsRestrictedToManagersAndCoordinators() throws Exception {
         for (String role : new String[] {
-                "ADMINISTRATOR", "INNOVATION_COORDINATOR", "RECEPTIONIST",
-                "FACT_FINDING_OFFICER", "REVIEWER", "SECTOR_OFFICER",
+                "RECEPTIONIST", "FACT_FINDING_OFFICER", "REVIEWER", "SECTOR_OFFICER",
                 "IP_LIAISON", "SUBMITTER", "OBSERVER"
         }) {
-            var request = mockMvc.perform(get("/dashboard/overview")
-                    .with(user("dashboard-" + role).roles(role)))
+            mockMvc.perform(get("/dashboard/overview")
+                            .with(user("dashboard-denied-" + role).roles(role)))
+                    .andExpect(status().isForbidden());
+        }
+
+        for (String role : new String[] {"ADMINISTRATOR", "INNOVATION_COORDINATOR"}) {
+            mockMvc.perform(get("/dashboard/overview")
+                            .with(user("dashboard-manager-" + role).roles(role)))
                     .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.totalBriefs").isNumber())
+                    .andExpect(jsonPath("$.waitingForReview").isNumber())
+                    .andExpect(jsonPath("$.needingImprovement").isNumber())
+                    .andExpect(jsonPath("$.completedThisMonth").isNumber())
+                    .andExpect(jsonPath("$.pipeline.length()").value(6))
+                    .andExpect(jsonPath("$.needsAttention.length()")
+                            .value(org.hamcrest.Matchers.lessThanOrEqualTo(5)))
+                    .andExpect(jsonPath("$.overdueEquipmentReturns.availability")
+                            .value("NOT_CONFIGURED"))
                     .andExpect(jsonPath("$.recentActivity.availability").value("NOT_CONFIGURED"))
-                    .andExpect(jsonPath("$.pipelineAtAGlance.length()").value(6))
-                    .andExpect(jsonPath("$.needsAttention.length()").value(org.hamcrest.Matchers.lessThanOrEqualTo(5)));
-            if (role.equals("ADMINISTRATOR") || role.equals("INNOVATION_COORDINATOR")) {
-                request.andExpect(jsonPath("$.operations.availability").value("NOT_CONFIGURED"))
-                        .andExpect(jsonPath("$.finance.availability").value("NOT_CONFIGURED"));
-            } else {
-                request.andExpect(jsonPath("$.operations").doesNotExist());
-                request.andExpect(jsonPath("$.finance").doesNotExist());
-            }
+                    .andExpect(jsonPath("$.studentSubmissions").doesNotExist())
+                    .andExpect(jsonPath("$.byStage").doesNotExist())
+                    .andExpect(jsonPath("$.operations").doesNotExist())
+                    .andExpect(jsonPath("$.finance").doesNotExist());
         }
     }
 
     @Test
-    void dashboardMetricsRespectSubmitterScopeAndExplainOpenCases() throws Exception {
+    void managerDashboardShowsStaleCasesAndOmitsLegacyTiles() throws Exception {
         String actor = "dashboard-owner-" + UUID.randomUUID();
-        String otherSubmitter = "dashboard-other-" + UUID.randomUUID();
-        var receptionist = user("dashboard-intake").roles("RECEPTIONIST");
+        var intake = user("dashboard-intake-" + UUID.randomUUID()).roles("RECEPTIONIST");
+        var manager = user("dashboard-manager-" + UUID.randomUUID()).roles("ADMINISTRATOR");
         String created = mockMvc.perform(post("/submissions")
-                        .with(receptionist)
+                        .with(intake)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
                                   "category": "general",
                                   "title": "Dashboard attention case",
-                                  "purpose": "Exercise scoped dashboard metrics",
-                                  "problemAddressed": "Dashboard metrics should respect row visibility",
-                                  "submitterId": "%s"
+                                  "purpose": "Exercise manager dashboard metrics",
+                                  "problemAddressed": "Stale cases should need attention",
+                                  "submitterId": "%s",
+                                  "acceptedRulesVersion": "2026-01"
                                 }
                                 """.formatted(actor)))
                 .andExpect(status().isCreated())
@@ -857,42 +883,89 @@ class WaluubeApiIntegrationTest {
         Matcher idMatcher = Pattern.compile("\"id\":\"([^\"]+)\"").matcher(created);
         assertTrue(idMatcher.find(), "Create response should include the submission id.");
         String id = idMatcher.group(1);
-        mockMvc.perform(post("/submissions/{id}/register", id).with(receptionist))
+        mockMvc.perform(post("/submissions/{id}/register", id).with(intake))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.version").value(1));
+        var attentionSector = sectors.create(new SectorRequest(
+                "Dashboard attention sector " + UUID.randomUUID(),
+                "dashboard-attention@example.invalid",
+                true
+        ));
+        completeReceptionChecklist(id, intake);
+        mockMvc.perform(post("/submissions/{id}/forward", id)
+                        .with(intake)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sectorId\":\"" + attentionSector.id() + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stage").value("FORWARDED"))
+                .andExpect(jsonPath("$.version").value(3));
         mockMvc.perform(post("/cases/{id}/transitions", id)
-                        .with(user("dashboard-coordinator").roles("INNOVATION_COORDINATOR"))
+                        .with(manager)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"to_stage":"REGISTERED","version":1}
+                                {"to_stage":"IN_FACT_FINDING","version":3}
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.submission.version").value(2));
-        mockMvc.perform(post("/cases/{id}/transitions", id)
-                        .with(user("dashboard-coordinator").roles("INNOVATION_COORDINATOR"))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"to_stage":"FACT_FINDING","version":2}
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.submission.version").value(3));
+                .andExpect(jsonPath("$.submission.version").value(4));
 
-        mockMvc.perform(get("/dashboard/overview").with(user(actor).roles("SUBMITTER")))
+        jdbcTemplate.update("UPDATE submissions SET updated_at = CURRENT_TIMESTAMP WHERE id <> ?",
+                UUID.fromString(id));
+        jdbcTemplate.update(
+                "UPDATE submissions SET updated_at = CURRENT_TIMESTAMP - INTERVAL '20 days' WHERE id = ?",
+                UUID.fromString(id));
+
+        mockMvc.perform(get("/dashboard/overview").with(manager))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.totalSubmissions").value(1))
-                .andExpect(jsonPath("$.studentSubmissions").value(0))
-                .andExpect(jsonPath("$.generalSubmissions").value(1))
-                .andExpect(jsonPath("$.awaitingReviewCount").value(1))
-                .andExpect(jsonPath("$.pipelineAtAGlance.FACT_FINDING").value(1))
+                .andExpect(jsonPath("$.totalBriefs").isNumber())
+                .andExpect(jsonPath("$.needingImprovement").isNumber())
+                .andExpect(jsonPath("$.completedThisMonth").isNumber())
+                .andExpect(jsonPath("$.pipeline.FACT_FINDING").value(
+                        org.hamcrest.Matchers.greaterThanOrEqualTo(1)))
                 .andExpect(jsonPath("$.needsAttention.length()").value(1))
                 .andExpect(jsonPath("$.needsAttention[0].id").value(id))
-                .andExpect(jsonPath("$.needsAttention[0].reason").value("Assessment in progress"));
+                .andExpect(jsonPath("$.needsAttention[0].reason").value("Fact-finding in progress"))
+                .andExpect(jsonPath("$.overdueEquipmentReturns.availability").value("NOT_CONFIGURED"))
+                .andExpect(jsonPath("$.recentActivity.availability").value("NOT_CONFIGURED"));
 
-        mockMvc.perform(get("/dashboard/overview").with(user(otherSubmitter).roles("SUBMITTER")))
+        jdbcTemplate.update("UPDATE submissions SET stage = 'READY_FOR_REVIEW' WHERE id = ?",
+                UUID.fromString(id));
+
+        var reviewManager = user("dashboard-review-manager-" + UUID.randomUUID())
+                .roles("ADMINISTRATOR");
+        mockMvc.perform(get("/dashboard/overview").with(reviewManager))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.totalSubmissions").value(0))
-                .andExpect(jsonPath("$.awaitingReviewCount").value(0))
-                .andExpect(jsonPath("$.needsAttention").isEmpty());
+                .andExpect(jsonPath("$.waitingForReview").value(
+                        org.hamcrest.Matchers.greaterThanOrEqualTo(1)))
+                .andExpect(jsonPath("$.pipeline.UNDER_REVIEW").value(
+                        org.hamcrest.Matchers.greaterThanOrEqualTo(1)));
+    }
+
+    @Test
+    void managerDashboardExcludesDraftsFromTotalBriefs() throws Exception {
+        String actor = "dashboard-draft-owner-" + UUID.randomUUID();
+        var intake = user("dashboard-draft-intake-" + UUID.randomUUID()).roles("RECEPTIONIST");
+        var beforeManager = user("dashboard-draft-before-" + UUID.randomUUID()).roles("ADMINISTRATOR");
+        var afterManager = user("dashboard-draft-after-" + UUID.randomUUID()).roles("ADMINISTRATOR");
+
+        long before = dashboardTotal(beforeManager);
+
+        mockMvc.perform(post("/submissions")
+                        .with(intake)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "category": "general",
+                                  "title": "Draft excluded from totals",
+                                  "purpose": "Verify drafts do not inflate dashboard totals",
+                                  "problemAddressed": "Drafts are work in progress",
+                                  "submitterId": "%s"
+                                }
+                                """.formatted(actor)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.stage").value("DRAFT"));
+
+        assertEquals(before, dashboardTotal(afterManager),
+                "Draft briefs must not be counted in the manager dashboard total.");
     }
 
     @Test
@@ -905,7 +978,7 @@ class WaluubeApiIntegrationTest {
                                     submitter_id, stage, code, received_at, receiving_officer,
                                     responsible_sector_id, forwarded_at, created_at, updated_at
                                 ) VALUES (?, 'GENERAL', 'Invalid received', 'Purpose', 'Problem',
-                                    'actor', 'submitter', 'RECEIVED', 'GEN-2026-900001',
+                                    'actor', 'submitter', 'SUBMITTED', 'BRF-2026-900001',
                                     CURRENT_TIMESTAMP, 'officer', ?, CURRENT_TIMESTAMP,
                                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                                 """, UUID.randomUUID(), UUID.randomUUID())
@@ -916,37 +989,16 @@ class WaluubeApiIntegrationTest {
     }
 
     @Test
-    void databaseRejectsForwardedCaseWithoutSectorOrForwardedAt() {
-        org.springframework.dao.DataIntegrityViolationException forwardedWithoutSector =
-                org.junit.jupiter.api.Assertions.assertThrows(
-                        org.springframework.dao.DataIntegrityViolationException.class,
-                        () -> jdbcTemplate.update("""
-                                INSERT INTO submissions (
-                                    id, category, title, purpose, problem_addressed, registered_by,
-                                    submitter_id, stage, code, received_at, receiving_officer,
-                                    created_at, updated_at
-                                ) VALUES (?, 'GENERAL', 'Invalid forwarded', 'Purpose', 'Problem',
-                                    'actor', 'submitter', 'FORWARDED', 'GEN-2026-900002',
-                                    CURRENT_TIMESTAMP, 'officer', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                                """, UUID.randomUUID())
-                );
-        assertTrue(forwardedWithoutSector.getMostSpecificCause().getMessage().contains(
-                "ck_submission_receipt_state"
-        ));
-    }
-
-    @Test
-    void dashboardMetricsAreLocaleIndependent() throws Exception {
-        Locale originalLocale = Locale.getDefault();
-        try {
-            Locale.setDefault(Locale.forLanguageTag("tr-TR"));
-            mockMvc.perform(get("/dashboard/overview")
-                            .with(user("locale-reviewer").roles("REVIEWER")))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.byStage.IN_PROGRESS").value(0));
-        } finally {
-            Locale.setDefault(originalLocale);
-        }
+    void canonicalForwardedCaseDoesNotRequireLegacySectorMetadata() {
+        assertEquals(1, jdbcTemplate.update("""
+                INSERT INTO submissions (
+                    id, category, title, purpose, problem_addressed, registered_by,
+                    submitter_id, stage, code, received_at, receiving_officer,
+                    created_at, updated_at
+                ) VALUES (?, 'GENERAL', 'Canonical forwarded', 'Purpose', 'Problem',
+                    'actor', 'submitter', 'FORWARDED', 'BRF-2026-900002',
+                    CURRENT_TIMESTAMP, 'officer', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """, UUID.randomUUID()));
     }
 
     @Test
@@ -1084,7 +1136,8 @@ class WaluubeApiIntegrationTest {
                                   "problemAddressed": "Search must cover every display key",
                                   "submitterId": "submitter-%s",
                                   "submitterName": "%s",
-                                  "submitterEmail": "submitter-%s@example.test"
+                                  "submitterEmail": "submitter-%s@example.test",
+                                  "acceptedRulesVersion": "2026-01"
                                 }
                                 """.formatted(title, token, submitterName, token)))
                 .andExpect(status().isCreated())
@@ -1135,6 +1188,70 @@ class WaluubeApiIntegrationTest {
     }
 
     @Test
+    void searchMatchesConfirmedProjectByProjectCode() throws Exception {
+        String token = UUID.randomUUID().toString();
+        var receptionist = user("reception-project-" + token).roles("RECEPTIONIST");
+        var observer = user("observer-project-" + token).roles("OBSERVER");
+
+        String created = mockMvc.perform(post("/submissions")
+                        .with(receptionist)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "category": "general",
+                                  "title": "Project code search %s",
+                                  "purpose": "Verify project-code search",
+                                  "problemAddressed": "Search must find confirmed projects",
+                                  "submitterId": "submitter-%s",
+                                  "submitterEmail": "project-search-%s@example.test",
+                                  "acceptedRulesVersion": "2026-01"
+                                }
+                                """.formatted(token, token, token)))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String id = idOf(created);
+
+        mockMvc.perform(post("/submissions/{id}/submit", id).with(receptionist))
+                .andExpect(status().isOk());
+        completeReceptionChecklist(id, receptionist);
+
+        String confirmed = mockMvc.perform(post("/submissions/{id}/confirm-project", id)
+                        .with(receptionist)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stage").value("CONFIRMED_AS_PROJECT"))
+                .andExpect(jsonPath("$.projectCode").isNotEmpty())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        Matcher projectCodeMatcher = Pattern.compile("\"projectCode\":\"([^\"]+)\"").matcher(confirmed);
+        assertTrue(projectCodeMatcher.find(), "Confirm response should include the project code.");
+        String projectCode = projectCodeMatcher.group(1);
+
+        mockMvc.perform(get("/submissions/search")
+                        .with(observer)
+                        .param("code", projectCode))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].id").value(id))
+                .andExpect(jsonPath("$.items[0].projectCode").value(projectCode));
+
+        mockMvc.perform(get("/submissions/search")
+                        .with(observer)
+                        .param("code", projectCode.toLowerCase(Locale.ROOT)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[?(@.id == '" + id + "')]").isNotEmpty());
+
+        mockMvc.perform(get("/submissions")
+                        .with(observer)
+                        .param("q", projectCode))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[?(@.id == '" + id + "')]").isNotEmpty());
+    }
+
+    @Test
     void submissionListFiltersByInclusiveReceivedDateRange() throws Exception {
         String token = UUID.randomUUID().toString();
         var receptionist = user("reception-" + token).roles("RECEPTIONIST");
@@ -1150,7 +1267,8 @@ class WaluubeApiIntegrationTest {
                                   "title": "Dated case %s",
                                   "purpose": "Verify the received date filter",
                                   "problemAddressed": "Reception needs date filtering",
-                                  "submitterId": "submitter-%s"
+                                  "submitterId": "submitter-%s",
+                                  "acceptedRulesVersion": "2026-01"
                                 }
                                 """.formatted(token, token)))
                 .andExpect(status().isCreated())
@@ -1210,7 +1328,8 @@ class WaluubeApiIntegrationTest {
                                   "purpose": "Verify item resolution on draft update",
                                   "problemAddressed": "Reception needs one more detail",
                                   "submitterId": "%s",
-                                  "submitterEmail": "%s"
+                                  "submitterEmail": "%s",
+                                  "acceptedRulesVersion": "2026-01"
                                 }
                                 """.formatted(submitter, submitter)))
                 .andExpect(status().isCreated())
@@ -1262,6 +1381,34 @@ class WaluubeApiIntegrationTest {
                 Integer.class,
                 UUID.fromString(id)
         ));
+    }
+
+    private void completeReceptionChecklist(String id, RequestPostProcessor principal) throws Exception {
+        mockMvc.perform(put("/submissions/{id}/reception-checklist", id)
+                        .with(principal)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "items": [
+                                    {"key": "DETAILS_COMPLETE", "checked": true},
+                                    {"key": "DOCUMENTS_COMPLETE", "checked": true},
+                                    {"key": "FILES_READABLE", "checked": true},
+                                    {"key": "CORRECT_TYPE", "checked": true}
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isOk());
+    }
+
+    private long dashboardTotal(RequestPostProcessor principal) throws Exception {
+        String body = mockMvc.perform(get("/dashboard/overview").with(principal))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        Matcher matcher = Pattern.compile("\"totalBriefs\":(\\d+)").matcher(body);
+        assertTrue(matcher.find(), "Dashboard response should include totalBriefs.");
+        return Long.parseLong(matcher.group(1));
     }
 
     private static String idOf(String response) {

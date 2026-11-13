@@ -5,16 +5,21 @@ info:
   description: |
     REST contract for the Makerere Innovation Hub ERP intake and case workflow.
 
-    A submission receives its tracking reference when it is created and remains a draft while
-    information is being completed. The submitter then submits it for reception review; reception
-    verifies the brief, may request missing information or documents, and either forwards it to a
-    sector, confirms it as a project, or rejects it. Student evidence is required before
-    registration; general-public cases must not include student-specific fields.
+    A submission receives an immutable `BRF-<year>-<sequence>` tracking reference when it is
+    created and remains a draft while information is being completed. The submitter then submits
+    it for reception review; reception verifies the brief, may request missing information or
+    documents, and either forwards it to a sector, confirms it as a project, or closes it with a
+    reason. Student evidence is required before registration; general-public cases must not include
+    student-specific fields.
 
     Three categories are supported: `student`, `general`, and `service_request`. Service requests
     describe a requested service (`serviceRequested`), who is asking (`serviceRequester`), the
-    requesting department, and the `expectedResult`; the service fields are required when the
-    brief is submitted.
+    requesting department, the `expectedResult`, and a preferred `preferredAt` date and time; the
+    service fields are required when the brief is submitted. The submitter must accept the current
+    intake rules (`acceptedRulesVersion`) before a brief can be registered or submitted. General
+    and student briefs without a department default to `Innovation`. Reception must complete the
+    four-line reception checklist before forwarding a brief, and only the draft owner may edit
+    draft content; staff record corrections through comments and information requests instead.
 
     ## Base URL
 
@@ -71,9 +76,10 @@ info:
 
     ## Identifiers and timestamps
 
-    IDs are UUID strings. Intake codes follow `(STU|GEN|SRV)-<year>-<sequence>`; a confirmed
-    project receives a `PRJ-<year>-<sequence>` project code. Timestamps are ISO-8601 instants in
-    UTC (for example `2026-03-10T09:30:00Z`).
+    IDs are UUID strings. Every submission tracking reference follows
+    `BRF-<year>-<sequence>`. A confirmed project receives a category-prefixed
+    `(STU|GEN|SRV)-<year>-<sequence>` project code from a separate sequence. Timestamps are
+    ISO-8601 instants in UTC (for example `2026-03-10T09:30:00Z`).
 
     ## Files
 
@@ -109,6 +115,8 @@ tags:
     description: Case file aggregate, controls, stages, outcome, and document review
   - name: Fact-Finding
     description: Structured brief assessment and readiness for review
+  - name: Reviews
+    description: Review settings, reviewer assignment, quorum, the reviewer queue, and reviewer submissions
   - name: Audit
     description: Append-only audit log (AD2) and the history panel on a brief
   - name: Notifications
@@ -123,6 +131,19 @@ tags:
       too long, missing) is `422`. A broken body, an unknown field or a bad enum or date value is
       `400`, and so is a rule the request shape cannot express, such as a renewal date outside the
       years 1900 to 2999.
+  - name: Finance
+    description: |
+      Invoices, payment evidence, verification and receipts (finance module D4). Submitters see and
+      act only on invoices whose `customerEmail` matches their authenticated subject; another
+      submitter's invoice, proof or receipt is reported as `404`. Payment evidence is uploaded as
+      `multipart/form-data` with `reference`, `amount`, `paidOn` and `file`. Money values are UGX
+      integers.
+  - name: Facilities
+    description: |
+      Facilities and bookings (facilities module F1). Submitters create and manage their own
+      bookings; staff approve, reject, reschedule, check in and check out. Booking times are
+      ISO-8601 instants. Overlapping active bookings for the same facility return `409`, as does a
+      booking at a facility in `MAINTENANCE`.
 x-cors:
   allowedOrigins:
     - http://localhost:5173
@@ -317,12 +338,16 @@ paths:
         Fact-Finding Officer, and Submitter. A Submitter's identity is taken
         from the authenticated principal; a supplied submitterId cannot change
         ownership. Intake staff may create walk-in submissions for another
-        submitter. A unique case code is allocated atomically at creation.
+        submitter. A unique `BRF-<year>-<sequence>` tracking reference is allocated atomically at creation.
 
         Student fields apply to `student` briefs, service fields apply to
         `service_request` briefs, and general briefs leave both groups empty.
         The draft is completed with `PUT /submissions/{id}` and submitted with
-        `POST /submissions/{id}/submit`.
+        `POST /submissions/{id}/submit`. Both registration and submission require
+        `acceptedRulesVersion`; `preferredAt` is required before a service request
+        can be registered or submitted. A blank `department` defaults to
+        `Innovation` for general and student briefs, and is suggested from active
+        sector names for service requests.
       security:
         - bearerAuth: []
       requestBody:
@@ -350,6 +375,7 @@ paths:
                   problemAddressed: Limited access to reliable charging
                   submitterId: submitter@example.test
                   submitterEmail: submitter@example.test
+                  acceptedRulesVersion: "2026-01"
               service_request:
                 value:
                   category: service_request
@@ -360,6 +386,8 @@ paths:
                   serviceRequester: staff
                   department: Agricultural Engineering
                   expectedResult: Three tested enclosures and a build guide
+                  preferredAt: "2026-12-01T09:30:00Z"
+                  acceptedRulesVersion: "2026-01"
       responses:
         '201':
           description: Draft created
@@ -382,7 +410,7 @@ paths:
     get:
       tags: [Submissions]
       operationId: listSubmissions
-      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, IP_LIAISON, OBSERVER, SUBMITTER, REVIEWER, SECTOR_OFFICER]
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, OBSERVER, SUBMITTER, REVIEWER, SECTOR_OFFICER]
       summary: List all submissions
       description: Results are role-scoped, filtered, paginated, and stably ordered by received date then id.
       parameters:
@@ -407,7 +435,7 @@ paths:
             format: uuid
         - name: q
           in: query
-          description: Case-insensitive substring match on tracking reference, title, or submitter name.
+          description: Case-insensitive substring match on tracking reference, project code, title, or submitter name.
           schema:
             type: string
         - name: receivedFrom
@@ -480,11 +508,12 @@ paths:
     get:
       tags: [Submissions]
       operationId: searchSubmissions
-      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, IP_LIAISON, OBSERVER, SUBMITTER, REVIEWER, SECTOR_OFFICER]
-      summary: Search submissions by reference, title, or submitter name
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, OBSERVER, SUBMITTER, REVIEWER, SECTOR_OFFICER]
+      summary: Search submissions by reference, project code, title, or submitter name
       description: |
-        An exact tracking-reference match is returned first. Otherwise the value is matched as a
-        case-insensitive substring against the tracking reference (project code), title, and submitter name.
+        An exact tracking-reference or project-code match is returned first. Otherwise the value
+        is matched as a case-insensitive substring against the tracking reference, project code,
+        title, and submitter name.
       parameters:
         - name: code
           in: query
@@ -604,10 +633,9 @@ paths:
       summary: Return what the authenticated submitter can do
       description: |
         Reports the submitter's own abilities and the availability of every
-        submitter-home tab. Briefs and service requests are served by this
-        backend. Invoices and payments (D4) and bookings (F1) are delivered by
-        other modules, report `NOT_CONFIGURED`, and keep the matching action
-        flags false until those integrations are connected.
+        submitter-home module. Briefs and service requests are served by this
+        backend. Invoices and payments (D4) and bookings (F1) are also
+        available; `canUploadPaymentProof` and `canBook` are true.
       security:
         - bearerAuth: []
       responses:
@@ -626,7 +654,7 @@ paths:
       tags: [Submissions]
       operationId: registerSubmission
       x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
-      summary: Register a submission as received
+      summary: Register a draft for reception review
       description: |
         Available to Administrator, Innovation Coordinator, Receptionist, and
         Fact-Finding Officer. Preserves the code assigned at creation.
@@ -664,9 +692,11 @@ paths:
         `submission.submitted` notification to the submitter. A submitter may
         submit only their own draft. Student briefs require student number,
         programme, supervisor, and recommendation-letter status; service requests
-        require `serviceRequested` and `expectedResult`. A blank department is
-        suggested from the active sector names. Submitting a brief that is not a
-        draft returns 409.
+        require `serviceRequested`, `expectedResult`, and `preferredAt`. The
+        submitter must have accepted the current rules (`acceptedRulesVersion`).
+        A blank department defaults to `Innovation` for general and student briefs
+        and is suggested from the active sector names for service requests.
+        Submitting a brief that is not a draft returns 409.
       security:
         - bearerAuth: []
       parameters:
@@ -740,7 +770,8 @@ paths:
       description: |
         Closes the intake decision by moving the brief to `CONFIRMED_AS_PROJECT`.
         The optional `projectCode` is used when supplied; when blank the server
-        allocates the next `PRJ-<year>-<sequence>` code. A
+        allocates the next category-prefixed `(STU|GEN|SRV)-<year>-<sequence>`
+        project code from a project-only sequence. A
         `submission.confirmed_as_project` notification is published to the
         submitter.
       security:
@@ -779,7 +810,7 @@ paths:
       x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
       summary: Reject a brief
       description: |
-        Closes the intake decision by moving the brief to `REJECTED` with the
+        Closes the intake decision by moving the brief to `CLOSED` with the
         required `reason`. Outstanding information requests are cleared and a
         `submission.rejected` notification is published to the submitter.
       security:
@@ -889,9 +920,10 @@ paths:
       summary: Tick reception checklist lines with a note per line
       description: |
         Updates one or more checklist lines. A note can be recorded per line.
-        The checklist can only be changed while the submission is `DRAFT`,
-        `SUBMITTED`, or `RECEIVED`; it becomes read-only once the submission is
-        forwarded. Forwarding a `SUBMITTED` brief requires a complete checklist.
+        The checklist can only be changed while the submission is `DRAFT` or
+        `SUBMITTED`; it becomes read-only once the submission is forwarded. Every
+        forward path, including forwarding a `DRAFT` directly, requires a complete
+        checklist.
       security:
         - bearerAuth: []
       parameters:
@@ -1171,7 +1203,12 @@ paths:
       operationId: updateSubmissionDraft
       x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, SUBMITTER]
       summary: Update an owned draft
-      description: Submitters can update only their own drafts; intake roles can update drafts they manage. Updating a draft clears its outstanding information request. The tracking reference and submitter ownership remain unchanged.
+      description: |
+        Only the submitter who owns the draft may change its content. Intake staff
+        cannot edit submitter content and must use comments or information requests
+        instead; staff attempts return 403. Updating a draft clears its outstanding
+        information request. The tracking reference, submitter ownership, and a
+        previously accepted rules version remain unchanged.
       security:
         - bearerAuth: []
       parameters:
@@ -1210,9 +1247,10 @@ paths:
       description: |
         Available to Administrator, Innovation Coordinator, Fact-Finding
         Officer, Reviewer, Sector Officer, and Submitter. Reviewer and Sector
-        Officer results are row-scoped. Mark's reviewer panel/quorum and David's
-        activity are marked NOT_CONFIGURED until their integration providers are
-        supplied.
+        Officer results are row-scoped. The reviewer panel and quorum come from
+        the review module, and the activity feed comes from the audit trail;
+        both report AVAILABLE. Internal reviewer comments and free text are
+        never exposed to the submitter.
       parameters:
         - $ref: '#/components/parameters/SubmissionId'
       responses:
@@ -1274,9 +1312,17 @@ paths:
     post:
       tags: [Case Files]
       operationId: transitionCase
-      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR]
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, FACT_FINDING_OFFICER]
       summary: Move a case to its next allowed stage
-      description: Only Administrator and Innovation Coordinator may transition cases. Leaving Fact-Finding is coordinator-controlled; a FACT_FINDING or FORWARDED case may move to REFINEMENT_REQUESTED to return a brief to the submitter for more information. Moving to UNDER_REVIEW from FACT_FINDING or FORWARDED requires a completed fact-finding check (FR-008). The current version is required to reject stale writes.
+      description: |
+        Administrator and Innovation Coordinator may perform any valid canonical
+        transition. A Fact-Finding Officer may move an `IN_FACT_FINDING` or
+        `FORWARDED` case only to `READY_FOR_REVIEW` or `IMPROVEMENT_REQUESTED`.
+        Moving to `READY_FOR_REVIEW` or `IN_REVIEW` from fact-finding requires a
+        completed fact-finding check (FR-008), and `IMPROVEMENT_REQUESTED`
+        requires a non-blank note. The current version is required to reject stale
+        writes; a stale write returns 409. A transition the actor's role cannot
+        perform returns 403.
       parameters:
         - $ref: '#/components/parameters/SubmissionId'
       requestBody:
@@ -1311,7 +1357,8 @@ paths:
         decision must be Confirmed as project, Needs more improvement, or Closed
         with a reason, and a non-blank note is required. Confirming a project
         requires a destination department. Save is rejected with 409 until the
-        configured reviewer quorum is available and met.
+        configured reviewer quorum is available and met, and once a decision has
+        been saved the outcome is locked against further changes.
       parameters:
         - $ref: '#/components/parameters/SubmissionId'
       requestBody:
@@ -1404,7 +1451,7 @@ paths:
       summary: Save fact-finding answers as a draft
       description: |
         Fact-Finding Officer only. Answers can be saved only while the case stage is `FORWARDED`
-        or `FACT_FINDING`. Omit `version` to start a new round; include the current `version` to
+        or `IN_FACT_FINDING`. Omit `version` to start a new round; include the current `version` to
         update the open draft. Server-owned fields (`officerId`, `round`, `result`,
         `completedAt`) are ignored if sent. Note fields are limited to 1000 characters and
         `missingItems` to 2000 characters.
@@ -1464,7 +1511,7 @@ paths:
       description: |
         Fact-Finding Officer only. Requires an open draft with all four questions answered and the
         current `version`. On success the check is marked `COMPLETED` and the case moves to
-        `UNDER_REVIEW`, satisfying the FR-008 guard for the review transition.
+        `READY_FOR_REVIEW`, satisfying the FR-008 guard for the review transition.
       x-required-roles: [FACT_FINDING_OFFICER]
       parameters:
         - $ref: '#/components/parameters/SubmissionId'
@@ -1493,12 +1540,341 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+  /cases/{id}/review-quorum:
+    get:
+      tags: [Reviews]
+      operationId: getReviewQuorum
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR]
+      summary: Get the quorum for the latest review round
+      description: |
+        Available to Administrator and Innovation Coordinator. Returns
+        `configured: false` with a null round and zero counts when the brief has
+        no review settings. Results are visibility-scoped to the caller.
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      responses:
+        '200':
+          description: Latest-round quorum, or a not-configured quorum
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewQuorum'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /cases/{id}/reviewers:
+    get:
+      tags: [Reviews]
+      operationId: getReviewersPanel
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR]
+      summary: Get the reviewers panel for the latest review round
+      description: |
+        Available to Administrator and Innovation Coordinator. Returns
+        `configured: false` with a null round and an empty reviewer list before
+        settings exist. Review comments are not included. Results are
+        visibility-scoped to the caller.
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      responses:
+        '200':
+          description: Review settings, quorum, and the reviewers of the latest round
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewersPanelResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Reviews]
+      operationId: assignReviewer
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR]
+      summary: Assign a reviewer to the latest review round
+      description: |
+        Available to Administrator and Innovation Coordinator while the brief is
+        `READY_FOR_REVIEW` or `IN_REVIEW`; `READY_FOR_REVIEW` advances to
+        `IN_REVIEW` when the write succeeds. Settings must exist first. `reviewerId` must be the email
+        of an active reviewer account. The reviewer is appended at the next
+        position; a round holds at most 20 reviewers. Server-owned fields
+        (`round`, `position`, `status`, `assignedBy`) are ignored.
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignReviewerRequest'
+      responses:
+        '201':
+          description: Updated reviewers panel
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewersPanelResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+  /cases/{id}/reviewers/{reviewerId}:
+    delete:
+      tags: [Reviews]
+      operationId: removeReviewer
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR]
+      summary: Remove a reviewer from the latest review round
+      description: |
+        Available to Administrator and Innovation Coordinator while the brief is
+        `READY_FOR_REVIEW` or `IN_REVIEW`; `READY_FOR_REVIEW` advances to
+        `IN_REVIEW` when the write succeeds. `reviewerId` is the reviewer's email.
+        A reviewer who has already submitted a review cannot be removed.
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+        - $ref: '#/components/parameters/ReviewerId'
+      responses:
+        '200':
+          description: Updated reviewers panel
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewersPanelResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /cases/{id}/review-settings:
+    put:
+      tags: [Reviews]
+      operationId: saveReviewSettings
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR]
+      summary: Create or update the review settings
+      description: |
+        Available to Administrator and Innovation Coordinator while the brief is
+        `READY_FOR_REVIEW` or `IN_REVIEW`; `READY_FOR_REVIEW` advances to
+        `IN_REVIEW` when the write succeeds. Omit `version` when creating round one;
+        include the current `version` when updating. `mode` and `reviewsNeeded` are required
+        and `reviewsNeeded` is 1 to 20. A due date must not be in the past. The
+        mode cannot change after a review is submitted, and `reviewsNeeded`
+        cannot drop below the number already submitted. Server-owned fields
+        (`round`, `setBy`) are ignored.
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveReviewSettingsRequest'
+      responses:
+        '200':
+          description: Updated reviewers panel
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewersPanelResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+  /cases/{id}/reviews:
+    get:
+      tags: [Reviews]
+      operationId: getCoordinatorReviews
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR]
+      summary: Get the submitted reviews of a review round
+      description: |
+        Available to Administrator and Innovation Coordinator. Returns the
+        submitted reviews of the latest round, or of `round` when given, with
+        their comments and follow-up notes. Earlier rounds can be read while
+        `latestRound` reports the newest one. Reviewers who have not submitted
+        appear only in `notSubmittedCount`. A round with no settings is 404.
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+        - name: round
+          in: query
+          required: false
+          description: The review round to read; defaults to the latest round
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Submitted reviews, quorum, and not-submitted count for the round
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CoordinatorReviewsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+    post:
+      tags: [Reviews]
+      operationId: submitReview
+      x-required-roles: [REVIEWER]
+      summary: Submit the caller's own review
+      description: |
+        Reviewer only. The caller must be assigned in the latest review round;
+        an unassigned reviewer receives the same 404 as for a missing brief. The
+        brief must be `IN_REVIEW` and the current `assignmentVersion` is
+        required. A comment is required (up to 2000 characters). In `SEQUENTIAL`
+        mode a reviewer cannot submit before earlier positions have submitted.
+        A submitted review is immutable, so a second submission is 409.
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitReviewRequest'
+      responses:
+        '201':
+          description: The submitted review and the latest-round quorum
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewSubmissionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+  /cases/{id}/my-review:
+    get:
+      tags: [Reviews]
+      operationId: getMyReview
+      x-required-roles: [REVIEWER]
+      summary: Get the caller's own review assignment
+      description: |
+        Reviewer only. Returns the caller's assignment in the latest review
+        round. `decision`, `comment`, and `submittedAt` are null until the caller
+        submits. Never includes other reviewers' data. An unassigned reviewer
+        receives the same 404 as for a missing brief.
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      responses:
+        '200':
+          description: The caller's own assignment and submitted review
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MyReviewResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /cases/{id}/my-review/follow-up-notes:
+    get:
+      tags: [Reviews]
+      operationId: getMyFollowUpNotes
+      x-required-roles: [REVIEWER]
+      summary: List the caller's own follow-up notes
+      description: |
+        Reviewer only. Returns the caller's follow-up notes for their latest-round
+        review, oldest first. The list is empty before the review is submitted.
+        An unassigned reviewer receives the same 404 as for a missing brief.
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      responses:
+        '200':
+          description: The caller's own follow-up notes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FollowUpNoteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Reviews]
+      operationId: addFollowUpNote
+      x-required-roles: [REVIEWER]
+      summary: Add a follow-up note to the caller's own review
+      description: |
+        Reviewer only. The brief must be `IN_REVIEW` and the caller must have
+        submitted already. `note` is required and limited to 1000 characters; a
+        review holds at most 20 notes. The review itself is never modified.
+        Server-owned fields (`id`, `reviewId`, `createdBy`, `createdAt`) are
+        ignored.
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddFollowUpNoteRequest'
+      responses:
+        '201':
+          description: The saved follow-up note
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FollowUpNoteResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
   /submissions/{id}/forward:
     post:
       tags: [Submissions]
       operationId: forwardSubmission
       x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
-      summary: Register and forward a draft, or forward a received submission
+      summary: Register and forward a draft, or forward a submitted brief
       description: |
         A draft is registered and forwarded in one transaction; a `SUBMITTED`
         brief is forwarded after its reception checklist is complete. Stores the
@@ -1927,7 +2303,7 @@ paths:
       operationId: getReceptionQueue
       x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
       summary: Get draft reception queue and queue counters
-      description: The queue contains DRAFT submissions. Awaiting action counts RECEIVED submissions; recently updated counts all submissions updated in the last 14 days.
+      description: The queue contains SUBMITTED submissions. Awaiting action counts AWAITING_INFORMATION submissions or briefs with open missing items; recently updated counts all non-draft submissions updated in the last 14 days.
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Size'
@@ -1944,16 +2320,43 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /queues/reviews:
+    get:
+      tags: [Reviews]
+      operationId: getReviewQueue
+      x-required-roles: [REVIEWER]
+      summary: Get the caller's own review queue
+      description: |
+        Reviewer only. Lists the briefs assigned to the caller across review
+        rounds. `assignedToMe` and `waitingForMyReview` cover all of the
+        caller's rows, not only this page. `canSubmit` is true when the
+        assignment is `NOT_STARTED` and the brief is `IN_REVIEW`.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: The caller's review queue page and counters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewQueueResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /dashboard/overview:
     get:
       tags: [Dashboard]
       operationId: getDashboardOverview
-      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
-      summary: Get the role-scoped dashboard composed from workflow and module summaries
-      description: Available to every authenticated role. Operational tiles are visible to all roles; finance data is returned only to Administrators and Innovation Coordinators. Results are cached for 30 seconds. Unconfigured external modules identify their availability rather than returning fabricated metrics.
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR]
+      summary: Get the M1 manager overview dashboard
+      description: Available only to Administrators and Innovation Coordinators. Returns all brief counts, the grouped pipeline, stale cases needing attention, the Fidel overdue-equipment-returns tile, and the David recent-activity feed. Results are cached for 30 seconds. Unconfigured external modules identify their availability rather than returning fabricated metrics.
       responses:
         '200':
-          description: Waluube workflow metrics, attention items, and role-visible module tiles
+          description: Manager overview metrics, attention items, and module tiles
           content:
             application/json:
               schema:
@@ -2682,6 +3085,915 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /me/invoices:
+    get:
+      tags: [Finance]
+      operationId: listMyInvoices
+      x-required-roles: [SUBMITTER]
+      summary: List the signed-in submitter's invoices
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/InvoiceStatus'
+      responses:
+        '200':
+          description: The submitter's invoices
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoicePage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /me/invoices/{id}:
+    get:
+      tags: [Finance]
+      operationId: getMyInvoice
+      x-required-roles: [SUBMITTER]
+      summary: Get one owned invoice
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The owned invoice
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /me/invoices/{id}/proof:
+    post:
+      tags: [Finance]
+      operationId: uploadMyPaymentProof
+      x-required-roles: [SUBMITTER]
+      summary: Upload proof of payment
+      description: |
+        Allowed once while the invoice is `WAITING_FOR_PROOF`. The invoice moves to
+        `WAITING_FOR_CHECK`. A second proof upload returns `409`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PaymentProofUpload'
+      responses:
+        '201':
+          description: The invoice after the proof was stored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          description: The proof file exceeds 15 MB
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /me/invoices/{id}/proof/file:
+    get:
+      tags: [Finance]
+      operationId: downloadMyPaymentProof
+      x-required-roles: [SUBMITTER]
+      summary: Download the owned invoice's payment proof
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The stored proof file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /me/invoices/{id}/receipt:
+    get:
+      tags: [Finance]
+      operationId: getMyReceipt
+      x-required-roles: [SUBMITTER]
+      summary: Get the receipt metadata for an owned invoice
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The receipt metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Receipt'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /me/invoices/{id}/receipt/download:
+    get:
+      tags: [Finance]
+      operationId: downloadMyReceipt
+      x-required-roles: [SUBMITTER]
+      summary: Download the receipt as text
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The printable receipt
+          content:
+            text/plain:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /invoices:
+    post:
+      tags: [Finance]
+      operationId: createInvoice
+      x-required-roles: [ADMINISTRATOR, FINANCE_OFFICER]
+      summary: Create an invoice
+      description: |
+        Creates an invoice in `WAITING_FOR_PROOF` for the customer email. The `number` is
+        allocated by the server. `sourceType` and optional `sourceId` identify the originating
+        request, booking, session or job.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInvoiceRequest'
+      responses:
+        '201':
+          description: The new invoice
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    get:
+      tags: [Finance]
+      operationId: listInvoices
+      x-required-roles: [ADMINISTRATOR, FINANCE_OFFICER]
+      summary: List all invoices
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/InvoiceStatus'
+      responses:
+        '200':
+          description: All invoices
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoicePage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /invoices/{id}:
+    get:
+      tags: [Finance]
+      operationId: getInvoice
+      x-required-roles: [ADMINISTRATOR, FINANCE_OFFICER]
+      summary: Get an invoice
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The invoice
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /invoices/{id}/evidence:
+    post:
+      tags: [Finance]
+      operationId: uploadInvoiceEvidence
+      x-required-roles: [SUBMITTER]
+      summary: Upload proof of payment using the D4 endpoint alias
+      description: |
+        Alias for `POST /me/invoices/{id}/proof`. The invoice must belong to the authenticated
+        submitter and be `WAITING_FOR_PROOF`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PaymentProofUpload'
+      responses:
+        '201':
+          description: The invoice after the proof was stored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          description: The proof file exceeds 15 MB
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /invoices/{id}/verify:
+    post:
+      tags: [Finance]
+      operationId: verifyInvoicePayment
+      x-required-roles: [ADMINISTRATOR, FINANCE_OFFICER]
+      summary: Verify the payment proof
+      description: Moves an invoice in `WAITING_FOR_CHECK` to `PAID` when the proof covers the invoice amount.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: proofId
+          in: query
+          required: true
+          description: The payment proof the reviewer inspected; a newer proof makes the request conflict.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The invoice after verification
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /invoices/{id}/reject:
+    post:
+      tags: [Finance]
+      operationId: rejectInvoicePayment
+      x-required-roles: [ADMINISTRATOR, FINANCE_OFFICER]
+      summary: Reject the payment proof
+      description: Rejects the proof and returns the invoice to `WAITING_FOR_PROOF`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejectPaymentRequest'
+      responses:
+        '200':
+          description: The invoice after rejection
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /invoices/{id}/receipt:
+    post:
+      tags: [Finance]
+      operationId: issueInvoiceReceipt
+      x-required-roles: [ADMINISTRATOR, FINANCE_OFFICER]
+      summary: Issue a receipt for a paid invoice
+      description: Moves an invoice in `PAID` to `RECEIPTED`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The receipted invoice
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /invoices/{id}/proof/file:
+    get:
+      tags: [Finance]
+      operationId: downloadInvoiceProof
+      x-required-roles: [ADMINISTRATOR, FINANCE_OFFICER]
+      summary: Download payment proof as finance staff
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The stored proof file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /invoices/{id}/receipt/download:
+    get:
+      tags: [Finance]
+      operationId: downloadInvoiceReceipt
+      x-required-roles: [ADMINISTRATOR, FINANCE_OFFICER]
+      summary: Download a receipt as finance staff
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The printable receipt
+          content:
+            text/plain:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /finance/summary:
+    get:
+      tags: [Finance]
+      operationId: getFinanceSummary
+      x-required-roles: [ADMINISTRATOR, FINANCE_OFFICER]
+      summary: Invoice totals and collected income
+      responses:
+        '200':
+          description: The invoice and income totals
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FinanceSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /facilities:
+    get:
+      tags: [Facilities]
+      operationId: listFacilities
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, DEPARTMENT_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, FINANCE_OFFICER, SUBMITTER, OBSERVER]
+      summary: List facilities
+      responses:
+        '200':
+          description: All facilities
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Facility'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Facilities]
+      operationId: createFacility
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, DEPARTMENT_COORDINATOR, SECTOR_OFFICER]
+      summary: Create a facility
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFacilityRequest'
+      responses:
+        '201':
+          description: The new facility
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Facility'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /facilities/{id}/status:
+    patch:
+      tags: [Facilities]
+      operationId: updateFacilityStatus
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, DEPARTMENT_COORDINATOR, SECTOR_OFFICER]
+      summary: Change a facility's status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateFacilityStatusRequest'
+      responses:
+        '200':
+          description: The updated facility
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Facility'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /me/bookings:
+    get:
+      tags: [Facilities]
+      operationId: listMyBookings
+      x-required-roles: [SUBMITTER]
+      summary: List the signed-in submitter's bookings
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: The submitter's bookings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Facilities]
+      operationId: createMyBooking
+      x-required-roles: [SUBMITTER]
+      summary: Request a facility booking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBookingRequest'
+      responses:
+        '201':
+          description: The new booking in `PENDING`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /me/bookings/{id}:
+    get:
+      tags: [Facilities]
+      operationId: getMyBooking
+      x-required-roles: [SUBMITTER]
+      summary: Get one owned booking
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The owned booking
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /me/bookings/{id}/cancel:
+    post:
+      tags: [Facilities]
+      operationId: cancelMyBooking
+      x-required-roles: [SUBMITTER]
+      summary: Cancel an owned booking
+      description: Only a pending or approved booking can be cancelled by its owner.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The cancelled booking
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /bookings:
+    post:
+      tags: [Facilities]
+      operationId: createBooking
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, DEPARTMENT_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, FINANCE_OFFICER, SUBMITTER]
+      summary: Create a booking for the authenticated user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBookingRequest'
+      responses:
+        '201':
+          description: The new booking
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    get:
+      tags: [Facilities]
+      operationId: listBookings
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, DEPARTMENT_COORDINATOR, RECEPTIONIST, SECTOR_OFFICER, FINANCE_OFFICER, OBSERVER]
+      summary: List all bookings
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/BookingStatus'
+        - name: date
+          in: query
+          required: false
+          description: Filter to bookings that overlap this local date.
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: All bookings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /bookings/{id}:
+    get:
+      tags: [Facilities]
+      operationId: getBooking
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, DEPARTMENT_COORDINATOR, RECEPTIONIST, SECTOR_OFFICER, FINANCE_OFFICER, OBSERVER]
+      summary: Get a booking
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The booking
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /bookings/{id}/approve:
+    post:
+      tags: [Facilities]
+      operationId: approveBooking
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, DEPARTMENT_COORDINATOR, SECTOR_OFFICER]
+      summary: Approve a pending booking
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The approved booking
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /bookings/{id}/reject:
+    post:
+      tags: [Facilities]
+      operationId: rejectBooking
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, DEPARTMENT_COORDINATOR, SECTOR_OFFICER]
+      summary: Reject a pending booking
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejectBookingRequest'
+      responses:
+        '200':
+          description: The rejected booking
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /bookings/{id}/reschedule:
+    post:
+      tags: [Facilities]
+      operationId: rescheduleBooking
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, DEPARTMENT_COORDINATOR, SECTOR_OFFICER]
+      summary: Change a booking's time
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RescheduleBookingRequest'
+      responses:
+        '200':
+          description: The rescheduled booking
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /bookings/{id}/check-in:
+    post:
+      tags: [Facilities]
+      operationId: checkInBooking
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, DEPARTMENT_COORDINATOR, SECTOR_OFFICER]
+      summary: Check a booking in
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The checked-in booking
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /bookings/{id}/check-out:
+    post:
+      tags: [Facilities]
+      operationId: checkOutBooking
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, DEPARTMENT_COORDINATOR, SECTOR_OFFICER]
+      summary: Check a booking out
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The completed booking
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 components:
   securitySchemes:
     bearerAuth:
@@ -2721,6 +4033,13 @@ components:
       schema:
         type: string
         format: uuid
+    ReviewerId:
+      name: reviewerId
+      in: path
+      required: true
+      description: The reviewer's account email
+      schema:
+        type: string
   schemas:
     TrainingOverview:
       type: object
@@ -3119,12 +4438,14 @@ components:
       enum:
         - ADMINISTRATOR
         - INNOVATION_COORDINATOR
+        - DEPARTMENT_COORDINATOR
         - RECEPTIONIST
         - FACT_FINDING_OFFICER
         - REVIEWER
         - SECTOR_OFFICER
         - IP_LIAISON
         - SUBMITTER
+        - FINANCE_OFFICER
         - OBSERVER
     CreateSubmissionRequest:
       type: object
@@ -3186,10 +4507,14 @@ components:
           type: [string, 'null']
           maxLength: 5000
           description: What the requester expects the hub to deliver.
+        preferredAt:
+          type: [string, 'null']
+          format: date-time
+          description: Preferred date and time for a service request. Required before the brief is registered or submitted.
         acceptedRulesVersion:
           type: [string, 'null']
           maxLength: 32
-          description: Version of the intake rules the submitter accepted.
+          description: Version of the intake rules the submitter accepted. Required before the brief is registered or submitted.
       allOf:
         - if:
             properties:
@@ -3457,6 +4782,9 @@ components:
         expectedResult:
           type: [string, 'null']
           maxLength: 5000
+        preferredAt:
+          type: [string, 'null']
+          format: date-time
         acceptedRulesVersion:
           type: [string, 'null']
           maxLength: 32
@@ -3495,10 +4823,18 @@ components:
       description: Who is asking for a service.
     SubmissionStage:
       type: string
-      enum: [DRAFT, SUBMITTED, AWAITING_INFORMATION, RECEIVED, REGISTERED, FACT_FINDING, UNDER_REVIEW, REFINEMENT_REQUESTED, FURTHER_HANDLING, FORWARDED, IN_PROGRESS, CONFIRMED_AS_PROJECT, REJECTED, COMPLETED]
+      description: |
+        Canonical brief lifecycle. `RECEIVED`, `REGISTERED`, and `REJECTED` are
+        retired; rejection now closes the brief as `CLOSED`.
+      enum: [DRAFT, SUBMITTED, AWAITING_INFORMATION, FORWARDED, IN_FACT_FINDING, READY_FOR_REVIEW, IN_REVIEW, IMPROVEMENT_REQUESTED, RESUBMITTED, CONFIRMED_AS_PROJECT, AWAITING_PAYMENT, IN_PROGRESS, COMPLETED, CLOSED]
     CaseStage:
       type: string
-      enum: [RECEIVED, REGISTERED, FACT_FINDING, UNDER_REVIEW, REFINEMENT_REQUESTED, FURTHER_HANDLING, COMPLETED]
+      description: |
+        Canonical case-file stage. The case-file stepper groups
+        `AWAITING_INFORMATION` under `SUBMITTED`, `RESUBMITTED` under `IN_REVIEW`,
+        `AWAITING_PAYMENT` under `CONFIRMED_AS_PROJECT`, and `CLOSED` under
+        `COMPLETED`; `DRAFT` has no stepper step.
+      enum: [DRAFT, SUBMITTED, AWAITING_INFORMATION, FORWARDED, IN_FACT_FINDING, READY_FOR_REVIEW, IN_REVIEW, IMPROVEMENT_REQUESTED, RESUBMITTED, CONFIRMED_AS_PROJECT, AWAITING_PAYMENT, IN_PROGRESS, COMPLETED, CLOSED]
     OutcomeStatus:
       type: string
       enum: [NOT_STARTED, IN_PROGRESS, DECIDED]
@@ -3577,6 +4913,9 @@ components:
         expectedResult:
           type: [string, 'null']
           maxLength: 5000
+        preferredAt:
+          type: [string, 'null']
+          format: date-time
         note:
           type: [string, 'null']
           maxLength: 2000
@@ -3587,7 +4926,7 @@ components:
         projectCode:
           type: [string, 'null']
           maxLength: 32
-          description: Optional project code. A `PRJ-<year>-<sequence>` code is allocated when blank.
+          description: Optional project code. A category-prefixed `(STU|GEN|SRV)-<year>-<sequence>` code is allocated when blank.
         note:
           type: [string, 'null']
           maxLength: 2000
@@ -3790,7 +5129,7 @@ components:
           format: uuid
         type:
           type: string
-          enum: [BRIEF_SUBMITTED, DOCUMENT_REQUESTED, BRIEF_FORWARDED, REVIEWER_ASSIGNED, REVIEW_SUBMITTED, IMPROVEMENT_REQUESTED, NEW_VERSION_RECEIVED, PROJECT_CONFIRMED, PAYMENT_PROOF_UPLOADED, PAYMENT_CONFIRMED, PAYMENT_REJECTED, BOOKING_APPROVED, EQUIPMENT_APPROVAL_REQUESTED, FAULT_REPORTED, LOW_STOCK, AGREEMENT_EXPIRING]
+          enum: [BRIEF_SUBMITTED, DOCUMENT_REQUESTED, BRIEF_FORWARDED, REVIEWER_ASSIGNED, REVIEW_SUBMITTED, IMPROVEMENT_REQUESTED, NEW_VERSION_RECEIVED, PROJECT_CONFIRMED, PAYMENT_PROOF_UPLOADED, PAYMENT_CONFIRMED, PAYMENT_REJECTED, BOOKING_APPROVED, BOOKING_REJECTED, BOOKING_RESCHEDULED, EQUIPMENT_APPROVAL_REQUESTED, FAULT_REPORTED, LOW_STOCK, AGREEMENT_EXPIRING]
         title:
           type: string
         body:
@@ -3959,6 +5298,9 @@ components:
           type: [string, 'null']
         expectedResult:
           type: [string, 'null']
+        preferredAt:
+          type: [string, 'null']
+          format: date-time
         projectCode:
           type: [string, 'null']
         briefVersion:
@@ -4233,59 +5575,38 @@ components:
           minimum: 0
     DashboardOverview:
       type: object
-      required: [totalSubmissions, byStage, studentSubmissions, generalSubmissions, awaitingActionCount, forwardedCount, completedCount, recentlyUpdatedCount, awaitingReviewCount, refinementRequestedCount, pipelineAtAGlance, needsAttention, operations, finance, recentActivity]
+      required: [totalBriefs, waitingForReview, needingImprovement, completedThisMonth, pipeline, needsAttention, overdueEquipmentReturns, recentActivity]
       properties:
-        totalSubmissions:
+        totalBriefs:
           type: integer
           format: int64
-        byStage:
+          description: Count of all non-draft briefs.
+        waitingForReview:
+          type: integer
+          format: int64
+          description: READY_FOR_REVIEW and IN_REVIEW cases waiting for assessment and review.
+        needingImprovement:
+          type: integer
+          format: int64
+          description: IMPROVEMENT_REQUESTED cases.
+        completedThisMonth:
+          type: integer
+          format: int64
+          description: Cases that entered COMPLETED during the current calendar month in the application clock's timezone.
+        pipeline:
           type: object
-          additionalProperties:
-            type: integer
-            format: int64
-        studentSubmissions:
-          type: integer
-          format: int64
-        generalSubmissions:
-          type: integer
-          format: int64
-        awaitingActionCount:
-          type: integer
-          format: int64
-        forwardedCount:
-          type: integer
-          format: int64
-        completedCount:
-          type: integer
-          format: int64
-        recentlyUpdatedCount:
-          type: integer
-          format: int64
-        awaitingReviewCount:
-          type: integer
-          format: int64
-          description: Fact-Finding and FORWARDED cases visible to the caller
-        refinementRequestedCount:
-          type: integer
-          format: int64
-        pipelineAtAGlance:
-          type: object
-          description: Six grouped lifecycle counts; intake combines RECEIVED and REGISTERED, Fact-Finding combines FACT_FINDING and FORWARDED, and review combines UNDER_REVIEW and IN_PROGRESS.
+          description: Six grouped lifecycle counts; intake combines SUBMITTED and AWAITING_INFORMATION, Fact-Finding combines FORWARDED and IN_FACT_FINDING, review combines READY_FOR_REVIEW and IN_REVIEW, and further handling combines CONFIRMED_AS_PROJECT, AWAITING_PAYMENT, and IN_PROGRESS.
           additionalProperties:
             type: integer
             format: int64
         needsAttention:
           type: array
           maxItems: 5
+          description: Oldest open cases not updated for more than 14 days.
           items:
             $ref: '#/components/schemas/DashboardAttentionCase'
-        operations:
-          $ref: '#/components/schemas/DashboardOperations'
-        finance:
-          oneOf:
-            - $ref: '#/components/schemas/DashboardFinance'
-            - type: 'null'
-          description: Present only for Administrators and Innovation Coordinators.
+        overdueEquipmentReturns:
+          $ref: '#/components/schemas/DashboardEquipmentReturns'
         recentActivity:
           $ref: '#/components/schemas/DashboardActivityFeed'
     DashboardAttentionCase:
@@ -4306,49 +5627,18 @@ components:
         updatedAt:
           type: string
           format: date-time
-    DashboardOperations:
+    DashboardEquipmentReturns:
       type: object
-      required: [availability, reason, equipmentUnderRepair, bookingsToday, facilitiesFreeNow]
+      required: [availability, reason, overdueCount]
       properties:
         availability:
           type: string
           enum: [AVAILABLE, NOT_CONFIGURED]
         reason:
           type: [string, 'null']
-        equipmentUnderRepair:
+        overdueCount:
           type: [integer, 'null']
           format: int64
-        bookingsToday:
-          type: [integer, 'null']
-          format: int64
-        facilitiesFreeNow:
-          type: [integer, 'null']
-          format: int64
-    DashboardFinance:
-      type: object
-      required: [availability, reason, incomeMonthToDate, incomeBars]
-      properties:
-        availability:
-          type: string
-          enum: [AVAILABLE, NOT_CONFIGURED]
-        reason:
-          type: [string, 'null']
-        incomeMonthToDate:
-          type: [number, 'null']
-          format: double
-        incomeBars:
-          type: array
-          items:
-            $ref: '#/components/schemas/DashboardIncomeBar'
-    DashboardIncomeBar:
-      type: object
-      required: [period, income]
-      properties:
-        period:
-          type: string
-        income:
-          type: number
-          format: double
     DashboardActivityFeed:
       type: object
       required: [availability, reason, items]
@@ -4384,7 +5674,7 @@ components:
           format: uuid
         code:
           type: [string, 'null']
-          pattern: '^(STU|GEN|SRV)-[0-9]{4}-[0-9]{6,19}$'
+          pattern: '^(BRF|STU|GEN|SRV)-[0-9]{4}-[0-9]{6,19}$'
         category:
           type: string
           enum: [student, general, service_request]
@@ -4429,6 +5719,10 @@ components:
           type: [string, 'null']
         expectedResult:
           type: [string, 'null']
+        preferredAt:
+          type: [string, 'null']
+          format: date-time
+          description: Preferred date and time supplied for a service request.
         projectCode:
           type: [string, 'null']
           description: Project reference assigned when the brief is confirmed as a project.
@@ -4493,10 +5787,10 @@ components:
           description: Uploads are allowed only while the brief is DRAFT, SUBMITTED, or AWAITING_INFORMATION.
         canUploadPaymentProof:
           type: boolean
-          description: False while the invoices and payments module reports NOT_CONFIGURED.
+          description: True when the invoices and payments module is available.
         canBook:
           type: boolean
-          description: False while the bookings module reports NOT_CONFIGURED.
+          description: True when the bookings module is available.
         modules:
           type: array
           items:
@@ -4620,6 +5914,361 @@ components:
           format: int64
           minimum: 0
           description: Current version of the open draft check.
+    InvoiceStatus:
+      type: string
+      enum: [WAITING_FOR_PROOF, WAITING_FOR_CHECK, PAID, RECEIPTED]
+    InvoiceSourceType:
+      type: string
+      enum: [REQUEST, BOOKING, SESSION, JOB]
+    PaymentProofStatus:
+      type: string
+      enum: [PENDING, VERIFIED, REJECTED]
+    PaymentProof:
+      type: object
+      required: [id, reference, amount, paidOn, status, uploadedBy, uploadedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        reference:
+          type: string
+        amount:
+          type: integer
+          format: int64
+        paidOn:
+          type: string
+          format: date
+        contentType:
+          type: [string, 'null']
+        fileSize:
+          type: integer
+          format: int64
+        originalFilename:
+          type: [string, 'null']
+        status:
+          $ref: '#/components/schemas/PaymentProofStatus'
+        rejectionReason:
+          type: [string, 'null']
+        uploadedBy:
+          type: string
+        uploadedAt:
+          type: string
+          format: date-time
+        verifiedBy:
+          type: [string, 'null']
+        verifiedAt:
+          type: [string, 'null']
+          format: date-time
+    Receipt:
+      type: object
+      required: [id, invoiceId, receiptNumber, issuedBy, issuedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        invoiceId:
+          type: string
+          format: uuid
+        receiptNumber:
+          type: string
+        issuedBy:
+          type: string
+        issuedAt:
+          type: string
+          format: date-time
+    Invoice:
+      type: object
+      required: [id, number, customerEmail, description, amount, currency, sourceType, status, statusLabel, issuedBy, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        number:
+          type: string
+        customerEmail:
+          type: string
+          format: email
+        customerName:
+          type: [string, 'null']
+        department:
+          type: [string, 'null']
+        description:
+          type: string
+        amount:
+          type: integer
+          format: int64
+        currency:
+          type: string
+          example: UGX
+        sourceType:
+          $ref: '#/components/schemas/InvoiceSourceType'
+        sourceId:
+          type: [string, 'null']
+        status:
+          $ref: '#/components/schemas/InvoiceStatus'
+        statusLabel:
+          type: string
+        issuedBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        paymentProof:
+          oneOf:
+            - $ref: '#/components/schemas/PaymentProof'
+            - type: 'null'
+        receipt:
+          oneOf:
+            - $ref: '#/components/schemas/Receipt'
+            - type: 'null'
+    InvoicePage:
+      type: object
+      required: [items, page, size, totalElements, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Invoice'
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+    CreateInvoiceRequest:
+      type: object
+      required: [customerEmail, description, amount, sourceType]
+      properties:
+        customerEmail:
+          type: string
+          format: email
+          maxLength: 254
+        customerName:
+          type: string
+          maxLength: 255
+        department:
+          type: string
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 1000
+        amount:
+          type: integer
+          format: int64
+          minimum: 1
+        sourceType:
+          $ref: '#/components/schemas/InvoiceSourceType'
+        sourceId:
+          type: string
+          maxLength: 64
+    RejectPaymentRequest:
+      type: object
+      required: [proofId, reason]
+      properties:
+        proofId:
+          type: string
+          format: uuid
+          description: The payment proof the reviewer inspected; a newer proof makes the request conflict.
+        reason:
+          type: string
+          maxLength: 500
+    PaymentProofUpload:
+      type: object
+      required: [reference, amount, paidOn, file]
+      properties:
+        reference:
+          type: string
+          maxLength: 120
+        amount:
+          type: integer
+          format: int64
+          minimum: 1
+        paidOn:
+          type: string
+          format: date
+        file:
+          type: string
+          format: binary
+    FinanceSummary:
+      type: object
+      required: [totalInvoices, waitingForProof, waitingForCheck, paid, receipted, outstandingUgx, collectedUgx]
+      properties:
+        totalInvoices:
+          type: integer
+          format: int64
+        waitingForProof:
+          type: integer
+          format: int64
+        waitingForCheck:
+          type: integer
+          format: int64
+        paid:
+          type: integer
+          format: int64
+        receipted:
+          type: integer
+          format: int64
+        outstandingUgx:
+          type: integer
+          format: int64
+        collectedUgx:
+          type: integer
+          format: int64
+    FacilityStatus:
+      type: string
+      enum: [AVAILABLE, BOOKED, MAINTENANCE]
+    BookingStatus:
+      type: string
+      enum: [PENDING, APPROVED, REJECTED, CHECKED_IN, COMPLETED, CANCELLED]
+    Facility:
+      type: object
+      required: [id, name, capacity, status, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        location:
+          type: [string, 'null']
+        capacity:
+          type: integer
+        status:
+          $ref: '#/components/schemas/FacilityStatus'
+        department:
+          type: [string, 'null']
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CreateFacilityRequest:
+      type: object
+      required: [name, capacity, status]
+      properties:
+        name:
+          type: string
+          maxLength: 160
+        location:
+          type: string
+          maxLength: 160
+        capacity:
+          type: integer
+          minimum: 1
+        status:
+          $ref: '#/components/schemas/FacilityStatus'
+        department:
+          type: string
+          maxLength: 100
+    UpdateFacilityStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          $ref: '#/components/schemas/FacilityStatus'
+    Booking:
+      type: object
+      required: [id, reference, facilityId, facilityName, requesterId, purpose, startsAt, endsAt, attendees, status, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        reference:
+          type: string
+        facilityId:
+          type: string
+          format: uuid
+        facilityName:
+          type: string
+        facilityLocation:
+          type: [string, 'null']
+        requesterId:
+          type: string
+        purpose:
+          type: string
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+        attendees:
+          type: integer
+        operator:
+          type: [string, 'null']
+        status:
+          $ref: '#/components/schemas/BookingStatus'
+        rejectionReason:
+          type: [string, 'null']
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    BookingPage:
+      type: object
+      required: [items, page, size, totalElements, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Booking'
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+    CreateBookingRequest:
+      type: object
+      required: [facilityId, purpose, startsAt, endsAt, attendees]
+      properties:
+        facilityId:
+          type: string
+          format: uuid
+        purpose:
+          type: string
+          maxLength: 1000
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+        attendees:
+          type: integer
+          minimum: 1
+        operator:
+          type: string
+          maxLength: 254
+    RescheduleBookingRequest:
+      type: object
+      required: [startsAt, endsAt]
+      properties:
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+    RejectBookingRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          maxLength: 500
     Problem:
       type: object
       required: [type, title, status, detail]
@@ -4800,6 +6449,323 @@ components:
           type: [string, 'null']
           maxLength: 500
           description: Reference to the signed MOU. Replaces the previous one; leave out to clear it.
+    ReviewMode:
+      type: string
+      enum: [PARALLEL, SEQUENTIAL]
+    ReviewDecision:
+      type: string
+      enum: [RECOMMENDED, CHANGES_NEEDED, NOT_RECOMMENDED]
+    ReviewAssignmentStatus:
+      type: string
+      enum: [NOT_STARTED, SUBMITTED]
+    ReviewQuorum:
+      type: object
+      required: [configured, round, required, completed, met]
+      properties:
+        configured:
+          type: boolean
+        round:
+          type: [integer, 'null']
+          description: Latest round, or null when the brief has no review settings
+        required:
+          type: integer
+        completed:
+          type: integer
+        met:
+          type: boolean
+    ReviewQuorumSummary:
+      type: object
+      required: [required, completed, met]
+      properties:
+        required:
+          type: integer
+        completed:
+          type: integer
+        met:
+          type: boolean
+    SubmitReviewRequest:
+      type: object
+      required: [decision, comment, assignmentVersion]
+      description: Unknown properties are ignored, including server-owned reviewerId, round, status, and submittedAt.
+      properties:
+        decision:
+          $ref: '#/components/schemas/ReviewDecision'
+        comment:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        assignmentVersion:
+          type: integer
+          format: int64
+          minimum: 0
+    ReviewSubmissionResponse:
+      type: object
+      required: [briefId, round, reviewerId, decision, comment, submittedAt, position, quorum]
+      properties:
+        briefId:
+          type: string
+          format: uuid
+        round:
+          type: integer
+        reviewerId:
+          type: string
+        decision:
+          $ref: '#/components/schemas/ReviewDecision'
+        comment:
+          type: string
+        submittedAt:
+          type: string
+          format: date-time
+        position:
+          type: integer
+        quorum:
+          $ref: '#/components/schemas/ReviewQuorumSummary'
+    MyReviewResponse:
+      type: object
+      required: [briefId, round, position, department, status, assignmentVersion, mode, dueDate, decision, comment, submittedAt]
+      properties:
+        briefId:
+          type: string
+          format: uuid
+        round:
+          type: integer
+        position:
+          type: integer
+        department:
+          type: [string, 'null']
+        status:
+          $ref: '#/components/schemas/ReviewAssignmentStatus'
+        assignmentVersion:
+          type: integer
+          format: int64
+        mode:
+          $ref: '#/components/schemas/ReviewMode'
+        dueDate:
+          type: [string, 'null']
+          format: date
+        decision:
+          oneOf:
+            - $ref: '#/components/schemas/ReviewDecision'
+            - type: 'null'
+        comment:
+          type: [string, 'null']
+        submittedAt:
+          type: [string, 'null']
+          format: date-time
+    AddFollowUpNoteRequest:
+      type: object
+      required: [note]
+      description: Unknown properties are ignored, including server-owned id, reviewId, createdBy, and createdAt.
+      properties:
+        note:
+          type: string
+          minLength: 1
+          maxLength: 1000
+    FollowUpNoteResponse:
+      type: object
+      required: [id, note, createdBy, createdAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        note:
+          type: string
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    ReviewersPanelResponse:
+      type: object
+      required: [briefId, configured, round, mode, reviewsNeeded, dueDate, version, quorum, reviewers]
+      properties:
+        briefId:
+          type: string
+          format: uuid
+        configured:
+          type: boolean
+        round:
+          type: [integer, 'null']
+        mode:
+          oneOf:
+            - $ref: '#/components/schemas/ReviewMode'
+            - type: 'null'
+        reviewsNeeded:
+          type: [integer, 'null']
+        dueDate:
+          type: [string, 'null']
+          format: date
+        version:
+          type: [integer, 'null']
+          format: int64
+        quorum:
+          $ref: '#/components/schemas/ReviewQuorumSummary'
+        reviewers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReviewPanelReviewer'
+    ReviewPanelReviewer:
+      type: object
+      required: [reviewerId, department, position, status, assignedBy, decision, submittedAt]
+      properties:
+        reviewerId:
+          type: string
+        department:
+          type: [string, 'null']
+        position:
+          type: integer
+        status:
+          $ref: '#/components/schemas/ReviewAssignmentStatus'
+        assignedBy:
+          type: string
+        decision:
+          oneOf:
+            - $ref: '#/components/schemas/ReviewDecision'
+            - type: 'null'
+        submittedAt:
+          type: [string, 'null']
+          format: date-time
+    SaveReviewSettingsRequest:
+      type: object
+      required: [mode, reviewsNeeded]
+      description: Omit version when creating round one; include the current version when updating. Unknown properties are ignored, including server-owned round and setBy.
+      properties:
+        mode:
+          $ref: '#/components/schemas/ReviewMode'
+        reviewsNeeded:
+          type: integer
+          minimum: 1
+          maximum: 20
+        dueDate:
+          type: [string, 'null']
+          format: date
+        version:
+          type: [integer, 'null']
+          format: int64
+          minimum: 0
+    AssignReviewerRequest:
+      type: object
+      additionalProperties: false
+      required: [reviewerId]
+      description: reviewerId must be the email of an active reviewer account. Server-owned fields round, position, status, and assignedBy are ignored.
+      properties:
+        reviewerId:
+          type: string
+          minLength: 1
+          description: The reviewer's account email
+        department:
+          type: [string, 'null']
+          maxLength: 100
+    CoordinatorReviewsResponse:
+      type: object
+      required: [briefId, configured, round, mode, reviewsNeeded, dueDate, latestRound, quorum, reviews, notSubmittedCount]
+      properties:
+        briefId:
+          type: string
+          format: uuid
+        configured:
+          type: boolean
+        round:
+          type: [integer, 'null']
+        mode:
+          oneOf:
+            - $ref: '#/components/schemas/ReviewMode'
+            - type: 'null'
+        reviewsNeeded:
+          type: [integer, 'null']
+        dueDate:
+          type: [string, 'null']
+          format: date
+        latestRound:
+          type: [integer, 'null']
+        quorum:
+          $ref: '#/components/schemas/ReviewQuorumSummary'
+        reviews:
+          type: array
+          items:
+            $ref: '#/components/schemas/CoordinatorReviewItem'
+        notSubmittedCount:
+          type: integer
+    CoordinatorReviewItem:
+      type: object
+      required: [reviewerId, department, position, decision, comment, submittedAt, followUpNotes]
+      properties:
+        reviewerId:
+          type: string
+        department:
+          type: [string, 'null']
+        position:
+          type: integer
+        decision:
+          $ref: '#/components/schemas/ReviewDecision'
+        comment:
+          type: string
+        submittedAt:
+          type: string
+          format: date-time
+        followUpNotes:
+          type: array
+          items:
+            $ref: '#/components/schemas/FollowUpNoteResponse'
+    ReviewQueueResponse:
+      type: object
+      required: [assignedToMe, waitingForMyReview, rows]
+      properties:
+        assignedToMe:
+          type: integer
+          format: int64
+          description: Number of rows assigned to the caller across all pages
+        waitingForMyReview:
+          type: integer
+          format: int64
+          description: Number of assigned rows the caller can still submit
+        rows:
+          $ref: '#/components/schemas/ReviewQueuePage'
+    ReviewQueuePage:
+      type: object
+      required: [items, page, size, totalElements, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReviewQueueRow'
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+    ReviewQueueRow:
+      type: object
+      required: [briefId, title, trackingReference, briefType, round, position, dueDate, status, stage, canSubmit]
+      properties:
+        briefId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        trackingReference:
+          type: [string, 'null']
+          description: The brief's code, or null until it has one
+        briefType:
+          type: string
+          enum: [student, general, service_request]
+        round:
+          type: integer
+        position:
+          type: integer
+        dueDate:
+          type: [string, 'null']
+          format: date
+        status:
+          $ref: '#/components/schemas/ReviewAssignmentStatus'
+        stage:
+          $ref: '#/components/schemas/SubmissionStage'
+        canSubmit:
+          type: boolean
   responses:
     ValidationFailed:
       description: One or more request values are invalid. The body lists each field in `errors`.

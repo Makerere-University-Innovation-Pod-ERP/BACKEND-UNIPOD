@@ -52,7 +52,7 @@ public class ReviewPanelQueryService {
     }
 
     /** Builds the panel without a visibility check; callers must already have loaded the brief. */
-    ReviewersPanelResponse panelFor(UUID briefId) {
+    public ReviewersPanelResponse panelFor(UUID briefId) {
         return settings.findTopByBriefIdOrderByRoundDesc(briefId)
                 .map(latest -> configuredPanel(briefId, latest))
                 .orElseGet(() -> new ReviewersPanelResponse(

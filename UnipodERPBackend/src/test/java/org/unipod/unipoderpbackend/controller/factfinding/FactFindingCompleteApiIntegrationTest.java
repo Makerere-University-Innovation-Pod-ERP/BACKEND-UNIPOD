@@ -77,7 +77,7 @@ class FactFindingCompleteApiIntegrationTest {
 
     @Test
     void officerCompletesOnFactFindingBrief() throws Exception {
-        Submission brief = createBrief("CASE-FF-D1", "Solar dryer", SubmissionStage.FACT_FINDING);
+        Submission brief = createBrief("CASE-FF-D1", "Solar dryer", SubmissionStage.IN_FACT_FINDING);
         long version = savedVersion(saveAnswers(brief, answers("one"), OFFICER));
 
         complete(brief.getId(), versionBody(version), OFFICER, "FACT_FINDING_OFFICER")
@@ -106,7 +106,7 @@ class FactFindingCompleteApiIntegrationTest {
         FactFindingCheck stored = latestCheck(brief.getId());
         assertEquals(FactFindingResult.READY_FOR_REVIEW, stored.getResult());
         assertNotNull(stored.getCompletedAt());
-        assertEquals(SubmissionStage.UNDER_REVIEW, storedStage(brief.getId()));
+        assertEquals(SubmissionStage.READY_FOR_REVIEW, storedStage(brief.getId()));
     }
 
     @Test
@@ -119,13 +119,13 @@ class FactFindingCompleteApiIntegrationTest {
                 .andExpect(jsonPath("$.state").value("COMPLETED"))
                 .andExpect(jsonPath("$.result").value("READY_FOR_REVIEW"));
 
-        assertEquals(SubmissionStage.UNDER_REVIEW, storedStage(brief.getId()));
+        assertEquals(SubmissionStage.READY_FOR_REVIEW, storedStage(brief.getId()));
         assertEquals("FORWARDED", historyField(brief.getId(), "from_stage"));
     }
 
     @Test
     void completionRecordsStageHistoryWithActor() throws Exception {
-        Submission brief = createBrief("CASE-FF-D3", "Grain mill", SubmissionStage.FACT_FINDING);
+        Submission brief = createBrief("CASE-FF-D3", "Grain mill", SubmissionStage.IN_FACT_FINDING);
         long version = savedVersion(saveAnswers(brief, answers("one"), OFFICER));
 
         complete(brief.getId(), versionBody(version), OFFICER, "FACT_FINDING_OFFICER")
@@ -135,8 +135,8 @@ class FactFindingCompleteApiIntegrationTest {
                 "SELECT from_stage, to_stage, changed_by, note FROM case_stage_history WHERE submission_id = ?",
                 brief.getId()
         );
-        assertEquals("FACT_FINDING", row.get("from_stage"));
-        assertEquals("UNDER_REVIEW", row.get("to_stage"));
+        assertEquals("IN_FACT_FINDING", row.get("from_stage"));
+        assertEquals("READY_FOR_REVIEW", row.get("to_stage"));
         assertEquals(OFFICER, row.get("changed_by"));
         assertEquals("Fact-finding complete: ready for review.", row.get("note"));
         assertEquals(1L, historyCount(brief.getId()));
@@ -145,7 +145,7 @@ class FactFindingCompleteApiIntegrationTest {
     @ParameterizedTest
     @ValueSource(strings = {"titleClear", "purposeClear", "evidenceEnough", "relevantToHub"})
     void unansweredQuestionIsRejectedNamingTheField(String field) throws Exception {
-        Submission brief = createBrief("CASE-FF-D4", "Unanswered " + field, SubmissionStage.FACT_FINDING);
+        Submission brief = createBrief("CASE-FF-D4", "Unanswered " + field, SubmissionStage.IN_FACT_FINDING);
         Map<String, Object> body = answers("one");
         body.put(field, null);
         long version = savedVersion(saveAnswers(brief, body, OFFICER));
@@ -161,13 +161,13 @@ class FactFindingCompleteApiIntegrationTest {
         FactFindingCheck stored = latestCheck(brief.getId());
         assertNull(stored.getCompletedAt());
         assertNull(stored.getResult());
-        assertEquals(SubmissionStage.FACT_FINDING, storedStage(brief.getId()));
+        assertEquals(SubmissionStage.IN_FACT_FINDING, storedStage(brief.getId()));
         assertEquals(0L, historyCount(brief.getId()));
     }
 
     @Test
     void everyUnansweredQuestionIsNamed() throws Exception {
-        Submission brief = createBrief("CASE-FF-D5", "Two unanswered", SubmissionStage.FACT_FINDING);
+        Submission brief = createBrief("CASE-FF-D5", "Two unanswered", SubmissionStage.IN_FACT_FINDING);
         Map<String, Object> body = answers("one");
         body.put("evidenceEnough", null);
         body.put("relevantToHub", null);
@@ -182,7 +182,7 @@ class FactFindingCompleteApiIntegrationTest {
 
     @Test
     void negativeAnswersStillComplete() throws Exception {
-        Submission brief = createBrief("CASE-FF-D6", "All false", SubmissionStage.FACT_FINDING);
+        Submission brief = createBrief("CASE-FF-D6", "All false", SubmissionStage.IN_FACT_FINDING);
         Map<String, Object> body = answers("negative");
         body.put("titleClear", false);
         body.put("purposeClear", false);
@@ -201,7 +201,7 @@ class FactFindingCompleteApiIntegrationTest {
 
     @Test
     void notesAreOptionalWhenCompleting() throws Exception {
-        Submission brief = createBrief("CASE-FF-D7", "No notes", SubmissionStage.FACT_FINDING);
+        Submission brief = createBrief("CASE-FF-D7", "No notes", SubmissionStage.IN_FACT_FINDING);
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("titleClear", true);
         body.put("purposeClear", false);
@@ -226,7 +226,7 @@ class FactFindingCompleteApiIntegrationTest {
 
     @Test
     void completeWithoutSavedDraftIsConflict() throws Exception {
-        Submission brief = createBrief("CASE-FF-D8", "No draft", SubmissionStage.FACT_FINDING);
+        Submission brief = createBrief("CASE-FF-D8", "No draft", SubmissionStage.IN_FACT_FINDING);
 
         complete(brief.getId(), versionBody(0L), OFFICER, "FACT_FINDING_OFFICER")
                 .andExpect(status().isConflict())
@@ -236,12 +236,12 @@ class FactFindingCompleteApiIntegrationTest {
                 .andExpect(jsonPath("$.detail").value(NO_CHECK));
 
         assertEquals(0L, countChecks(brief.getId()));
-        assertEquals(SubmissionStage.FACT_FINDING, storedStage(brief.getId()));
+        assertEquals(SubmissionStage.IN_FACT_FINDING, storedStage(brief.getId()));
     }
 
     @Test
     void alreadyCompletedCheckIsConflictAndUnchanged() throws Exception {
-        Submission brief = createBrief("CASE-FF-D9", "Completed", SubmissionStage.FACT_FINDING);
+        Submission brief = createBrief("CASE-FF-D9", "Completed", SubmissionStage.IN_FACT_FINDING);
         FactFindingCheck completed = new FactFindingCheck(brief.getId(), 1, OFFICER);
         completed.setTitleClear(true);
         completed.setPurposeClear(true);
@@ -261,13 +261,13 @@ class FactFindingCompleteApiIntegrationTest {
         assertEquals(FactFindingResult.READY_FOR_REVIEW, stored.getResult());
         assertEquals(completedAt, stored.getCompletedAt());
         assertEquals(0L, stored.getVersion());
-        assertEquals(SubmissionStage.FACT_FINDING, storedStage(brief.getId()));
+        assertEquals(SubmissionStage.IN_FACT_FINDING, storedStage(brief.getId()));
         assertEquals(0L, historyCount(brief.getId()));
     }
 
     @Test
     void missingVersionIsUnprocessable() throws Exception {
-        Submission brief = createBrief("CASE-FF-D10", "No version", SubmissionStage.FACT_FINDING);
+        Submission brief = createBrief("CASE-FF-D10", "No version", SubmissionStage.IN_FACT_FINDING);
         saveAnswers(brief, answers("one"), OFFICER);
 
         complete(brief.getId(), Map.of(), OFFICER, "FACT_FINDING_OFFICER")
@@ -281,7 +281,7 @@ class FactFindingCompleteApiIntegrationTest {
 
     @Test
     void staleVersionIsConflict() throws Exception {
-        Submission brief = createBrief("CASE-FF-D11", "Stale", SubmissionStage.FACT_FINDING);
+        Submission brief = createBrief("CASE-FF-D11", "Stale", SubmissionStage.IN_FACT_FINDING);
         long version = savedVersion(saveAnswers(brief, answers("one"), OFFICER));
 
         complete(brief.getId(), versionBody(version + 5), OFFICER, "FACT_FINDING_OFFICER")
@@ -295,7 +295,7 @@ class FactFindingCompleteApiIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"REGISTERED", "UNDER_REVIEW"})
+    @ValueSource(strings = {"SUBMITTED", "IN_REVIEW"})
     void briefInOtherStageCannotBeCompleted(String stage) throws Exception {
         Submission brief = createBrief("CASE-FF-D12-" + stage, "Wrong stage", SubmissionStage.valueOf(stage));
 
@@ -310,7 +310,7 @@ class FactFindingCompleteApiIntegrationTest {
 
     @Test
     void anotherOfficerCompletesWithoutTakingOwnership() throws Exception {
-        Submission brief = createBrief("CASE-FF-D13", "Handover", SubmissionStage.FACT_FINDING);
+        Submission brief = createBrief("CASE-FF-D13", "Handover", SubmissionStage.IN_FACT_FINDING);
         long version = savedVersion(saveAnswers(brief, answers("one"), OFFICER));
 
         complete(brief.getId(), versionBody(version), OTHER_OFFICER, "FACT_FINDING_OFFICER")
@@ -326,7 +326,7 @@ class FactFindingCompleteApiIntegrationTest {
     @ParameterizedTest
     @ValueSource(strings = {"INNOVATION_COORDINATOR", "ADMINISTRATOR"})
     void coordinatorAndAdministratorCannotComplete(String role) throws Exception {
-        Submission brief = createBrief("CASE-FF-D14", "Read only roles", SubmissionStage.FACT_FINDING);
+        Submission brief = createBrief("CASE-FF-D14", "Read only roles", SubmissionStage.IN_FACT_FINDING);
         long draftVersion = savedVersion(saveAnswers(brief, answers("one"), OFFICER));
 
         complete(brief.getId(), versionBody(draftVersion), "reader", role)
@@ -338,13 +338,13 @@ class FactFindingCompleteApiIntegrationTest {
                 .andExpect(jsonPath("$.detail").value("You do not have permission to perform this action."));
 
         assertNull(latestCheck(brief.getId()).getCompletedAt());
-        assertEquals(SubmissionStage.FACT_FINDING, storedStage(brief.getId()));
+        assertEquals(SubmissionStage.IN_FACT_FINDING, storedStage(brief.getId()));
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"SUBMITTER", "RECEPTIONIST", "REVIEWER", "SECTOR_OFFICER", "IP_LIAISON", "OBSERVER"})
     void otherExistingRolesCannotComplete(String role) throws Exception {
-        Submission brief = createBrief("CASE-FF-D15", "Internal notes", SubmissionStage.FACT_FINDING);
+        Submission brief = createBrief("CASE-FF-D15", "Internal notes", SubmissionStage.IN_FACT_FINDING);
         long draftVersion = savedVersion(saveAnswers(brief, answers("one"), OFFICER));
 
         complete(brief.getId(), versionBody(draftVersion), "other", role)
@@ -381,7 +381,7 @@ class FactFindingCompleteApiIntegrationTest {
 
     @Test
     void unauthenticatedRequestReturnsUnauthorizedProblemDetail() throws Exception {
-        Submission brief = createBrief("CASE-FF-D16", "Unauthenticated", SubmissionStage.FACT_FINDING);
+        Submission brief = createBrief("CASE-FF-D16", "Unauthenticated", SubmissionStage.IN_FACT_FINDING);
         long draftVersion = savedVersion(saveAnswers(brief, answers("one"), OFFICER));
 
         mockMvc.perform(post("/cases/{id}/fact-finding/complete", brief.getId())
@@ -397,7 +397,7 @@ class FactFindingCompleteApiIntegrationTest {
 
     @Test
     void malformedJsonReturnsBadRequest() throws Exception {
-        Submission brief = createBrief("CASE-FF-D17", "Malformed", SubmissionStage.FACT_FINDING);
+        Submission brief = createBrief("CASE-FF-D17", "Malformed", SubmissionStage.IN_FACT_FINDING);
 
         mockMvc.perform(post("/cases/{id}/fact-finding/complete", brief.getId())
                         .with(user(OFFICER).roles("FACT_FINDING_OFFICER"))
@@ -411,7 +411,7 @@ class FactFindingCompleteApiIntegrationTest {
 
     @Test
     void serverOwnedFieldsInTheBodyAreIgnored() throws Exception {
-        Submission brief = createBrief("CASE-FF-D18", "Server owned", SubmissionStage.FACT_FINDING);
+        Submission brief = createBrief("CASE-FF-D18", "Server owned", SubmissionStage.IN_FACT_FINDING);
         long draftVersion = savedVersion(saveAnswers(brief, answers("one"), OFFICER));
         Map<String, Object> body = versionBody(draftVersion);
         body.put("result", "NEEDS_MORE_INFORMATION");
@@ -432,7 +432,7 @@ class FactFindingCompleteApiIntegrationTest {
 
     @Test
     void completedCheckIsReadableButNoLongerEditable() throws Exception {
-        Submission brief = createBrief("CASE-FF-D19", "Read back", SubmissionStage.FACT_FINDING);
+        Submission brief = createBrief("CASE-FF-D19", "Read back", SubmissionStage.IN_FACT_FINDING);
         long draftVersion = savedVersion(saveAnswers(brief, answers("one"), OFFICER));
         complete(brief.getId(), versionBody(draftVersion), OFFICER, "FACT_FINDING_OFFICER")
                 .andExpect(status().isOk());
@@ -554,13 +554,11 @@ class FactFindingCompleteApiIntegrationTest {
                 null,
                 Instant.parse("2026-11-01T08:00:00Z")
         );
+        brief.applyIntakeDetails(null, null, null, null, null, null, "2026-01");
         brief.register(code, Instant.parse("2026-11-01T09:00:00Z"), "receptionist@example.test");
-        if (targetStage == SubmissionStage.REGISTERED) {
-            brief.transitionTo(SubmissionStage.REGISTERED, Instant.parse("2026-11-01T10:00:00Z"));
-        } else if (targetStage == SubmissionStage.FACT_FINDING) {
-            brief.transitionTo(SubmissionStage.REGISTERED, Instant.parse("2026-11-01T10:00:00Z"));
-            brief.transitionTo(SubmissionStage.FACT_FINDING, Instant.parse("2026-11-01T11:00:00Z"));
-        } else if (targetStage == SubmissionStage.FORWARDED) {
+        if (targetStage == SubmissionStage.FORWARDED
+                || targetStage == SubmissionStage.IN_FACT_FINDING
+                || targetStage == SubmissionStage.IN_REVIEW) {
             Sector sector = sectors.saveAndFlush(new Sector(
                     UUID.randomUUID(),
                     "Sector " + code,
@@ -570,10 +568,13 @@ class FactFindingCompleteApiIntegrationTest {
                     Instant.parse("2026-11-01T08:00:00Z")
             ));
             brief.forward(sector, Instant.parse("2026-11-01T10:00:00Z"));
-        } else if (targetStage == SubmissionStage.UNDER_REVIEW) {
-            brief.transitionTo(SubmissionStage.REGISTERED, Instant.parse("2026-11-01T10:00:00Z"));
-            brief.transitionTo(SubmissionStage.FACT_FINDING, Instant.parse("2026-11-01T11:00:00Z"));
-            brief.transitionTo(SubmissionStage.UNDER_REVIEW, Instant.parse("2026-11-01T12:00:00Z"));
+            if (targetStage == SubmissionStage.IN_FACT_FINDING
+                    || targetStage == SubmissionStage.IN_REVIEW) {
+                brief.transitionTo(SubmissionStage.IN_FACT_FINDING, Instant.parse("2026-11-01T11:00:00Z"));
+            }
+            if (targetStage == SubmissionStage.IN_REVIEW) {
+                brief.transitionTo(SubmissionStage.IN_REVIEW, Instant.parse("2026-11-01T12:00:00Z"));
+            }
         }
         return submissions.saveAndFlush(brief);
     }
