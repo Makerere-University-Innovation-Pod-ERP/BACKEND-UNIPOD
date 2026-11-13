@@ -20,7 +20,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.unipod.unipoderpbackend.dto.dashboard.DashboardOverviewResponse;
 import org.unipod.unipoderpbackend.dto.reception.ReceptionQueueResponse;
 import org.unipod.unipoderpbackend.dto.sector.SectorResponse;
 import org.unipod.unipoderpbackend.dto.submission.CaseFileResponse;
@@ -895,11 +894,6 @@ public class SubmissionService {
                 counts.awaitingAction(),
                 counts.recentlyUpdated()
         );
-    }
-
-    @Transactional(readOnly = true)
-    public DashboardOverviewResponse overview() {
-        return metrics.overview(clock.instant().minus(Duration.ofDays(14)));
     }
 
     private void applyIntakeDetails(Submission submission, CreateSubmissionRequest request) {
