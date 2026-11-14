@@ -15,6 +15,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.unipod.unipoderpbackend.dto.finance.InvoiceFromPriceRequest;
+import org.unipod.unipoderpbackend.dto.finance.InvoiceResponse;
 import org.unipod.unipoderpbackend.dto.finance.PriceListItemRequest;
 import org.unipod.unipoderpbackend.dto.finance.PriceListItemResponse;
 import org.unipod.unipoderpbackend.dto.finance.PriceListItemUpdateRequest;
@@ -48,6 +50,17 @@ public class PriceListController {
     @PreAuthorize("isAuthenticated()")
     public PriceListItemResponse create(@Valid @RequestBody PriceListItemRequest request, Authentication authentication) {
         return priceList.create(currentActor.from(authentication), request);
+    }
+
+    @PostMapping("/{id}/invoice")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("isAuthenticated()")
+    public InvoiceResponse invoice(
+            @PathVariable UUID id,
+            @Valid @RequestBody InvoiceFromPriceRequest request,
+            Authentication authentication
+    ) {
+        return priceList.invoice(currentActor.from(authentication), id, request);
     }
 
     @PutMapping("/{id}")
