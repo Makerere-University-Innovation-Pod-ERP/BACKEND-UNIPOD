@@ -152,8 +152,8 @@ Drafts are private to their owner and do not appear in the queue. The list is or
 | GET    | `/api/me/invoices/{id}/receipt`      | Returns receipt metadata for an owned invoice.          |
 | POST   | `/api/invoices`                      | Creates an invoice as finance staff.                    |
 | GET    | `/api/invoices`                      | Lists invoices as finance staff, optionally by `status`. |
-| POST   | `/api/invoices/{id}/verify`          | Verifies payment proof.                                 |
-| POST   | `/api/invoices/{id}/reject`          | Rejects payment proof with a reason.                    |
+| POST   | `/api/invoices/{id}/verify`          | Verifies payment proof (`proofId` query parameter).     |
+| POST   | `/api/invoices/{id}/reject`          | Rejects payment proof (`reason` and `proofId` in body). |
 | POST   | `/api/invoices/{id}/receipt`         | Issues a receipt after payment is verified.             |
 | GET    | `/api/finance/summary`               | Returns invoice and income totals.                      |
 | GET    | `/api/facilities`                    | Lists facilities.                                       |
@@ -563,9 +563,11 @@ owner-scoped `/api/me/invoices/{id}/proof/file` and
 
 Finance Officers and Administrators create invoices with `POST /api/invoices`,
 list them with `GET /api/invoices?status=`, verify or reject payment with
-`POST /api/invoices/{id}/verify|reject`, and issue a receipt with
-`POST /api/invoices/{id}/receipt`. Receipts are issued only after payment is
-`PAID`. `GET /api/finance/summary` returns invoice and income totals.
+`POST /api/invoices/{id}/verify?proofId=` or
+`POST /api/invoices/{id}/reject` (`reason` + `proofId`), and issue a receipt with
+`POST /api/invoices/{id}/receipt`. The `proofId` is the `paymentProof.id`
+returned on the invoice. Receipts are issued only after payment is `PAID`.
+`GET /api/finance/summary` returns invoice and income totals.
 
 Submitters list and create their own facility bookings with
 `GET|POST /api/me/bookings`, read one with `GET /api/me/bookings/{id}`, and
