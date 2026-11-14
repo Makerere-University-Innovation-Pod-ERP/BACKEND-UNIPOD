@@ -41,6 +41,7 @@ public class AuthenticationService {
     private static final Duration MAX_TOKEN_TTL = Duration.ofHours(1);
     private static final Duration PASSWORD_SETUP_TTL = Duration.ofHours(72);
     private static final Duration PASSWORD_RESET_TTL = Duration.ofHours(1);
+    private static final String DEFAULT_PUBLIC_BASE_URL = "http://localhost:5173";
     private static final String TEMPORARY_PASSWORD_ALPHABET =
             "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&*";
     private static final int TEMPORARY_PASSWORD_LENGTH = 16;
@@ -67,16 +68,10 @@ public class AuthenticationService {
             @Value("${jwt.audience}") String audience,
             @Value("${jwt.access-token-ttl}") Duration tokenTtl,
             NotificationOutbox notificationOutbox,
-            @Value("${app.public-base-url:}") String publicBaseUrl
+            @Value("${app.public-base-url:http://localhost:5173}") String publicBaseUrl
     ) {
         if (tokenTtl.isNegative() || tokenTtl.isZero() || tokenTtl.compareTo(MAX_TOKEN_TTL) > 0) {
             throw new IllegalArgumentException("JWT_ACCESS_TOKEN_TTL must be positive and no longer than one hour.");
-        }
-        if (publicBaseUrl == null || publicBaseUrl.isBlank()) {
-            throw new IllegalStateException(
-                    "app.public-base-url must be configured (APP_PUBLIC_BASE_URL) "
-                            + "before issuing password-setup links."
-            );
         }
         this.users = users;
         this.passwordEncoder = passwordEncoder;
@@ -86,7 +81,10 @@ public class AuthenticationService {
         this.audience = audience;
         this.tokenTtl = tokenTtl;
         this.notificationOutbox = notificationOutbox;
-        this.publicBaseUrl = publicBaseUrl.trim();
+        String configuredPublicBaseUrl = publicBaseUrl == null ? "" : publicBaseUrl.trim();
+        this.publicBaseUrl = configuredPublicBaseUrl.isEmpty()
+                ? DEFAULT_PUBLIC_BASE_URL
+                : configuredPublicBaseUrl;
     }
 
     @Transactional(readOnly = true)
@@ -256,16 +254,9 @@ public class AuthenticationService {
     }
 
     private String passwordSetupUrl(String token) {
-        String base = publicBaseUrl;
-        if (base == null || base.isBlank()) {
-            throw new IllegalStateException(
-                    "app.public-base-url must be configured (APP_PUBLIC_BASE_URL) "
-                            + "before issuing password-setup links."
-            );
-        }
-        String normalized = base.endsWith("/")
-                ? base.substring(0, base.length() - 1)
-                : base;
+        String normalized = publicBaseUrl.endsWith("/")
+                ? publicBaseUrl.substring(0, publicBaseUrl.length() - 1)
+                : publicBaseUrl;
         return normalized + "/set-password?token=" + token;
     }
 

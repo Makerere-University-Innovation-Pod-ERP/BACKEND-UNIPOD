@@ -170,21 +170,24 @@ class AuthenticationServiceTest {
     }
 
     @Test
-    void createAssistedSubmitterFailsWhenBaseUrlIsNotConfigured() {
-        assertThrows(
-                IllegalStateException.class,
-                () -> new AuthenticationService(
-                        users,
-                        passwordEncoder,
-                        jwtEncoder,
-                        clock,
-                        "https://api.example.test",
-                        "unipod-erp-api",
-                        Duration.ofMinutes(15),
-                        null,
-                        "  "
-                )
+    void createAssistedSubmitterUsesLocalhostWhenBaseUrlIsNotConfigured() {
+        AuthenticationService withoutBaseUrl = new AuthenticationService(
+                users,
+                passwordEncoder,
+                jwtEncoder,
+                clock,
+                "https://api.example.test",
+                "unipod-erp-api",
+                Duration.ofMinutes(15),
+                null,
+                "  "
         );
+        when(users.existsByEmailIgnoreCase("walkin@example.test")).thenReturn(false);
+        when(users.saveAndFlush(any(ApiUser.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var account = withoutBaseUrl.createAssistedSubmitter("walkin@example.test");
+
+        assertTrue(account.setPasswordUrl().startsWith("http://localhost:5173/set-password?token="));
     }
 
     @Test
