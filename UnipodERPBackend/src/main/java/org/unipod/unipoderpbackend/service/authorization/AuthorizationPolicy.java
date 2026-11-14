@@ -17,6 +17,7 @@ import static org.unipod.unipoderpbackend.model.authorization.AuthorizationActio
 import static org.unipod.unipoderpbackend.model.authorization.AuthorizationAction.CASE_VIEW;
 import static org.unipod.unipoderpbackend.model.authorization.AuthorizationAction.PRICE_LIST_MANAGE;
 import static org.unipod.unipoderpbackend.model.authorization.AuthorizationAction.PRICE_LIST_PROPOSE;
+import static org.unipod.unipoderpbackend.model.authorization.AuthorizationAction.REPORT_VIEW;
 
 @Component
 public class AuthorizationPolicy {
@@ -34,7 +35,8 @@ public class AuthorizationPolicy {
                 CASE_EDIT, Scope.ALL,
                 CASE_ASSIGN_REVIEWER, Scope.ALL,
                 CASE_DECIDE, Scope.ALL,
-                AUDIT_VIEW, Scope.ALL
+                AUDIT_VIEW, Scope.ALL,
+                REPORT_VIEW, Scope.ALL
         ));
         rules.put(ApiUserRole.RECEPTIONIST, Map.of(
                 CASE_VIEW, Scope.ALL,
@@ -58,7 +60,8 @@ public class AuthorizationPolicy {
         ));
         rules.put(ApiUserRole.OBSERVER, Map.of(
                 CASE_VIEW, Scope.ALL,
-                AUDIT_VIEW, Scope.ALL
+                AUDIT_VIEW, Scope.ALL,
+                REPORT_VIEW, Scope.ALL
         ));
         rules.put(ApiUserRole.DEPARTMENT_COORDINATOR, Map.of(
                 CASE_VIEW, Scope.DEPARTMENT,
