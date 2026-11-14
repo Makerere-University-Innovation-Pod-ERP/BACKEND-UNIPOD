@@ -1003,7 +1003,7 @@ class WaluubeApiIntegrationTest {
                             .value(org.hamcrest.Matchers.lessThanOrEqualTo(5)))
                     .andExpect(jsonPath("$.overdueEquipmentReturns.availability")
                             .value("NOT_CONFIGURED"))
-                    .andExpect(jsonPath("$.recentActivity.availability").value("NOT_CONFIGURED"))
+                    .andExpect(jsonPath("$.recentActivity.availability").value("AVAILABLE"))
                     .andExpect(jsonPath("$.studentSubmissions").doesNotExist())
                     .andExpect(jsonPath("$.byStage").doesNotExist())
                     .andExpect(jsonPath("$.operations").doesNotExist())
@@ -1078,7 +1078,7 @@ class WaluubeApiIntegrationTest {
                 .andExpect(jsonPath("$.needsAttention[0].id").value(id))
                 .andExpect(jsonPath("$.needsAttention[0].reason").value("Fact-finding in progress"))
                 .andExpect(jsonPath("$.overdueEquipmentReturns.availability").value("NOT_CONFIGURED"))
-                .andExpect(jsonPath("$.recentActivity.availability").value("NOT_CONFIGURED"));
+                .andExpect(jsonPath("$.recentActivity.availability").value("AVAILABLE"));
 
         jdbcTemplate.update("UPDATE submissions SET stage = 'READY_FOR_REVIEW' WHERE id = ?",
                 UUID.fromString(id));
