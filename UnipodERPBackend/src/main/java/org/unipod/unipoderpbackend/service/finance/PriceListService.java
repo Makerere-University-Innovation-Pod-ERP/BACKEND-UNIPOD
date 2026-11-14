@@ -4,12 +4,16 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import org.unipod.unipoderpbackend.dto.finance.CreateInvoiceRequest;
+import org.unipod.unipoderpbackend.dto.finance.InvoiceFromPriceRequest;
+import org.unipod.unipoderpbackend.dto.finance.InvoiceResponse;
 import org.unipod.unipoderpbackend.dto.finance.PriceListItemRequest;
 import org.unipod.unipoderpbackend.dto.finance.PriceListItemResponse;
 import org.unipod.unipoderpbackend.dto.finance.PriceListItemUpdateRequest;
@@ -17,6 +21,7 @@ import org.unipod.unipoderpbackend.model.audit.AuditEvent;
 import org.unipod.unipoderpbackend.model.authorization.Actor;
 import org.unipod.unipoderpbackend.model.authorization.AuthorizationAction;
 import org.unipod.unipoderpbackend.model.authorization.AuthorizationResource;
+import org.unipod.unipoderpbackend.model.finance.InvoiceSourceType;
 import org.unipod.unipoderpbackend.model.finance.PriceItemStatus;
 import org.unipod.unipoderpbackend.model.finance.PriceListItem;
 import org.unipod.unipoderpbackend.repository.finance.PriceListItemRepository;
@@ -32,6 +37,7 @@ public class PriceListService {
     private final SectorService departments;
     private final AuthorizationService authorization;
     private final AuditService audit;
+    private final InvoiceService invoices;
     private final Clock clock;
 
     public PriceListService(
@@ -39,12 +45,14 @@ public class PriceListService {
             SectorService departments,
             AuthorizationService authorization,
             AuditService audit,
+            InvoiceService invoices,
             Clock clock
     ) {
         this.items = items;
         this.departments = departments;
         this.authorization = authorization;
         this.audit = audit;
+        this.invoices = invoices;
         this.clock = clock;
     }
 
@@ -107,6 +115,40 @@ public class PriceListService {
         audit.log(new AuditEvent(actor, "price_list_item.changed", ENTITY, item.getId(),
                 before, PriceListItemResponse.snapshot(item), item.getDepartmentId()));
         return PriceListItemResponse.from(item);
+    }
+
+    @Transactional
+    public InvoiceResponse invoice(Actor actor, UUID id, InvoiceFromPriceRequest request) {
+        PriceListItem item = require(id);
+        authorization.authorize(actor, AuthorizationAction.PRICE_LIST_MANAGE, resource(item.getDepartmentId()));
+        return invoiceFor(id, request.customerEmail(), request.customerName(),
+                request.quantity() == null ? 1 : request.quantity(), request.sourceType(), request.sourceId(), actor.email());
+    }
+
+    /**
+     * For other modules (bookings, training, media): bill a customer from an active price.
+     * The amount is the price times the quantity, and the invoice is created through the
+     * finance module's InvoiceService, so it follows the normal proof, check and receipt steps.
+     */
+    @Transactional
+    public InvoiceResponse invoiceFor(UUID priceItemId, String customerEmail, String customerName, int quantity,
+                                      InvoiceSourceType sourceType, String sourceId, String issuedBy) {
+        if (quantity < 1) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT, "Quantity must be at least 1.");
+        }
+        PriceListItem item = requireActive(priceItemId);
+        String department = departments.requireActive(item.getDepartmentId()).getName();
+        String description = "%s x %d (%s)".formatted(
+                item.getService(), quantity, item.getUnit().name().toLowerCase(Locale.ROOT).replace('_', ' '));
+        return invoices.create(new CreateInvoiceRequest(
+                customerEmail.trim().toLowerCase(Locale.ROOT),
+                customerName,
+                department,
+                description,
+                Math.multiplyExact(item.getPriceUgx(), quantity),
+                sourceType,
+                sourceId
+        ), issuedBy);
     }
 
     @Transactional(readOnly = true)
