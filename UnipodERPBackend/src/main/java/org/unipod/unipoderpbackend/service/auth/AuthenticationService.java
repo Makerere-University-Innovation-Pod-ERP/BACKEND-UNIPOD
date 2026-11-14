@@ -12,8 +12,6 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -27,8 +25,6 @@ import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
-import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
-import org.springframework.web.util.UriComponents;
 import org.unipod.unipoderpbackend.dto.auth.ApiUserResponse;
 import org.unipod.unipoderpbackend.dto.auth.ChangePasswordRequest;
 import org.unipod.unipoderpbackend.dto.auth.CreateApiUserRequest;
@@ -42,10 +38,10 @@ import org.unipod.unipoderpbackend.repository.submission.NotificationOutbox;
 
 @Service
 public class AuthenticationService {
-    private static final Logger log = LoggerFactory.getLogger(AuthenticationService.class);
     private static final Duration MAX_TOKEN_TTL = Duration.ofHours(1);
     private static final Duration PASSWORD_SETUP_TTL = Duration.ofHours(72);
     private static final Duration PASSWORD_RESET_TTL = Duration.ofHours(1);
+    private static final String DEFAULT_PUBLIC_BASE_URL = "http://localhost:5173";
     private static final String TEMPORARY_PASSWORD_ALPHABET =
             "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&*";
     private static final int TEMPORARY_PASSWORD_LENGTH = 16;
@@ -62,22 +58,6 @@ public class AuthenticationService {
     private final NotificationOutbox notificationOutbox;
     private final String publicBaseUrl;
 
-    /**
-     * Test-friendly constructor used where password setup delivery is not
-     * exercised.
-     */
-    public AuthenticationService(
-            ApiUserRepository users,
-            PasswordEncoder passwordEncoder,
-            JwtEncoder jwtEncoder,
-            Clock clock,
-            String issuer,
-            String audience,
-            Duration tokenTtl
-    ) {
-        this(users, passwordEncoder, jwtEncoder, clock, issuer, audience, tokenTtl, null, "");
-    }
-
     @Autowired
     public AuthenticationService(
             ApiUserRepository users,
@@ -88,7 +68,7 @@ public class AuthenticationService {
             @Value("${jwt.audience}") String audience,
             @Value("${jwt.access-token-ttl}") Duration tokenTtl,
             NotificationOutbox notificationOutbox,
-            @Value("${app.public-base-url:}") String publicBaseUrl
+            @Value("${app.public-base-url:http://localhost:5173}") String publicBaseUrl
     ) {
         if (tokenTtl.isNegative() || tokenTtl.isZero() || tokenTtl.compareTo(MAX_TOKEN_TTL) > 0) {
             throw new IllegalArgumentException("JWT_ACCESS_TOKEN_TTL must be positive and no longer than one hour.");
@@ -101,7 +81,10 @@ public class AuthenticationService {
         this.audience = audience;
         this.tokenTtl = tokenTtl;
         this.notificationOutbox = notificationOutbox;
-        this.publicBaseUrl = publicBaseUrl == null ? "" : publicBaseUrl.trim();
+        String configuredPublicBaseUrl = publicBaseUrl == null ? "" : publicBaseUrl.trim();
+        this.publicBaseUrl = configuredPublicBaseUrl.isEmpty()
+                ? DEFAULT_PUBLIC_BASE_URL
+                : configuredPublicBaseUrl;
     }
 
     @Transactional(readOnly = true)
@@ -271,41 +254,10 @@ public class AuthenticationService {
     }
 
     private String passwordSetupUrl(String token) {
-        String base = publicBaseUrl.isBlank() ? requestBaseUrl() : publicBaseUrl;
-        if (base == null || base.isBlank()) {
-            throw new IllegalStateException(
-                    "app.public-base-url must be configured (APP_PUBLIC_BASE_URL) "
-                            + "before issuing password-setup links."
-            );
-        }
-        String normalized = base.endsWith("/")
-                ? base.substring(0, base.length() - 1)
-                : base;
+        String normalized = publicBaseUrl.endsWith("/")
+                ? publicBaseUrl.substring(0, publicBaseUrl.length() - 1)
+                : publicBaseUrl;
         return normalized + "/set-password?token=" + token;
-    }
-
-    private static String requestBaseUrl() {
-        UriComponents components;
-        try {
-            components = ServletUriComponentsBuilder.fromCurrentContextPath().build();
-        } catch (IllegalStateException noRequest) {
-            return null;
-        }
-        if (components.getScheme() == null || components.getHost() == null) {
-            return null;
-        }
-        StringBuilder base = new StringBuilder(components.getScheme())
-                .append("://")
-                .append(components.getHost());
-        if (components.getPort() != -1) {
-            base.append(':').append(components.getPort());
-        }
-        log.warn(
-                "APP_PUBLIC_BASE_URL is not set; password-setup links will use the request origin {}. "
-                        + "Configure the public frontend URL to link submitters to the portal.",
-                base
-        );
-        return base.toString();
     }
 
     private static String temporaryPassword() {

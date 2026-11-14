@@ -20,6 +20,7 @@ public class WaluubeAuditLog {
             "/cases",
             "/cases/**",
             "/queues/reception",
+            "/queues/reception/**",
             "/me/submissions",
             "/me/capabilities",
             "/me/invoices",
