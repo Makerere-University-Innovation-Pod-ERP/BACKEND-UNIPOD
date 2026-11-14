@@ -20,6 +20,7 @@ import org.unipod.unipoderpbackend.service.audit.AuditTrail;
 public class ImprovementAudit {
     public static final String ENTITY_TYPE = "improvement";
     public static final String IMPROVEMENT_REQUESTED = "submission.improvement_requested";
+    public static final String IMPROVED_VERSION_SUBMITTED = "submission.improved_version_submitted";
 
     private final AuditTrail trail;
 
@@ -35,5 +36,12 @@ public class ImprovementAudit {
         details.put("dueDate", request.getDueDate().toString());
         details.put("adopted", adopted);
         trail.record(actor, IMPROVEMENT_REQUESTED, ENTITY_TYPE, request.getBriefId(), null, details);
+    }
+
+    void improvedVersionSubmitted(String actor, RefinementRequest request, int versionNumber) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("cycle", request.getCycle());
+        details.put("versionNumber", versionNumber);
+        trail.record(actor, IMPROVED_VERSION_SUBMITTED, ENTITY_TYPE, request.getBriefId(), null, details);
     }
 }

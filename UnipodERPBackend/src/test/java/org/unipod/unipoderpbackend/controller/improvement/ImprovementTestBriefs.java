@@ -25,6 +25,9 @@ final class ImprovementTestBriefs {
                     SubmissionStage.IN_FACT_FINDING, SubmissionStage.READY_FOR_REVIEW)),
             Map.entry(SubmissionStage.IN_REVIEW, List.of(SubmissionStage.FORWARDED,
                     SubmissionStage.IN_FACT_FINDING, SubmissionStage.READY_FOR_REVIEW, SubmissionStage.IN_REVIEW)),
+            Map.entry(SubmissionStage.IMPROVEMENT_REQUESTED, List.of(SubmissionStage.FORWARDED,
+                    SubmissionStage.IN_FACT_FINDING, SubmissionStage.READY_FOR_REVIEW, SubmissionStage.IN_REVIEW,
+                    SubmissionStage.IMPROVEMENT_REQUESTED)),
             Map.entry(SubmissionStage.RESUBMITTED, List.of(SubmissionStage.FORWARDED,
                     SubmissionStage.IN_FACT_FINDING, SubmissionStage.READY_FOR_REVIEW, SubmissionStage.IN_REVIEW,
                     SubmissionStage.IMPROVEMENT_REQUESTED, SubmissionStage.RESUBMITTED)),
@@ -43,6 +46,18 @@ final class ImprovementTestBriefs {
     }
 
     static Submission inStage(SubmissionStage target, String codePrefix) {
+        return build(target, codePrefix, SUBMITTER, false);
+    }
+
+    /**
+     * A brief owned by {@code owner} with the owner's email recorded, so Waluube's reply (which re-checks that
+     * the brief has contact details) accepts an answer from that submitter.
+     */
+    static Submission ownedBy(String owner, SubmissionStage target, String codePrefix) {
+        return build(target, codePrefix, owner, true);
+    }
+
+    private static Submission build(SubmissionStage target, String codePrefix, String owner, boolean withEmail) {
         Submission brief = new Submission(
                 UUID.randomUUID(),
                 SubmissionCategory.GENERAL,
@@ -50,13 +65,16 @@ final class ImprovementTestBriefs {
                 "Purpose",
                 "Problem",
                 "receptionist@example.test",
-                SUBMITTER,
+                owner,
                 null,
                 null,
                 null,
                 null,
                 Instant.parse("2026-11-01T08:00:00Z")
         );
+        if (withEmail) {
+            brief.updateSubmitterEmail(owner);
+        }
         if (target == SubmissionStage.DRAFT) {
             return brief;
         }
