@@ -617,6 +617,11 @@ Configure the following environment variables in the deployment environment.
 | `APP_PUBLIC_BASE_URL` | Public frontend base URL used in password-setup links, for example `https://app.example.test`. When unset, assisted accounts fall back to the origin of the incoming API request and log a warning. |
 | `JWT_ROLES_CLAIM` | JWT claim containing role names. Defaults to `roles`. |
 | `JWT_SUBJECT_CLAIM` | JWT claim used as the authenticated user identifier. Defaults to `sub`. |
+| `DOCUMENTS_ORGANISATION_NAME` | Name printed at the top of invoice, receipt and report PDFs. |
+| `DOCUMENTS_ADDRESS` | Address lines for printed documents; separate lines with `\|`. |
+| `DOCUMENTS_CONTACT` | Phone and email line for printed documents. |
+| `DOCUMENTS_BANK_DETAILS` | How to pay, printed on invoices; separate lines with `\|` (bank, account name, account number, branch). |
+| `DOCUMENTS_FOOTER` | Footer text on every printed document. |
 | `NOTIFICATION_EMAIL_ENABLED` | Enables the scheduled outbox email worker; defaults to `false`. |
 | `NOTIFICATION_EMAIL_PROVIDER` | How the worker sends email: `smtp` (default) or `emailjs`. Use `emailjs` on hosts that block outbound SMTP. |
 | `EMAILJS_SERVICE_ID`, `EMAILJS_TEMPLATE_ID` | EmailJS service and template. The template uses `{{to_email}}` as To, `{{subject}}` as Subject and `{{message}}` as Content. |
