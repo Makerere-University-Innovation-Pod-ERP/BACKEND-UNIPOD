@@ -40,6 +40,7 @@ import org.unipod.unipoderpbackend.util.CaseCodeGenerator;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -58,6 +59,7 @@ class CaseFileServiceTest {
     private final MissingItemRepository missingItems = mock(MissingItemRepository.class);
     private final CaseFileEnrichmentProvider enrichment = mock(CaseFileEnrichmentProvider.class);
     private final FactFindingGuard factFindingGuard = mock(FactFindingGuard.class);
+    private final ReceptionChecklistService receptionChecklists = mock(ReceptionChecklistService.class);
     private final NotificationOutbox notificationOutbox = mock(NotificationOutbox.class);
     private final SectorService sectorsCatalog = mock(SectorService.class);
     private final CaseCodeGenerator caseCodeGenerator = mock(CaseCodeGenerator.class);
@@ -65,7 +67,7 @@ class CaseFileServiceTest {
     private final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
     private final CaseFileService service = new CaseFileService(
             submissions, documents, history, missingItems, enrichment, factFindingGuard,
-            notificationOutbox, sectorsCatalog, caseCodeGenerator, audit, clock
+            receptionChecklists, notificationOutbox, sectorsCatalog, caseCodeGenerator, audit, clock
     );
     private Submission submission;
 
@@ -173,6 +175,42 @@ class CaseFileServiceTest {
                 CASE_ID,
                 new CaseTransitionRequest(CaseStage.IMPROVEMENT_REQUESTED, "Missing evidence", 4L),
                 officer
+        );
+
+        assertEquals(SubmissionStage.IMPROVEMENT_REQUESTED, result.submission().stage());
+        verify(factFindingGuard, org.mockito.Mockito.never()).isComplete(any());
+    }
+
+    @Test
+    void factFindingOfficerStartsFactFindingFromForwardedInsteadOfSkippingIt() {
+        Authentication officer = authentication("officer", "ROLE_FACT_FINDING_OFFICER");
+        ReflectionTestUtils.setField(submission, "stage", SubmissionStage.FORWARDED);
+        when(submissions.findVisibleById(CASE_ID, "ALL", "officer"))
+                .thenReturn(Optional.of(submission));
+        when(submissions.findByIdForUpdate(CASE_ID)).thenReturn(Optional.of(submission));
+
+        assertEquals(
+                List.of(CaseStage.IN_FACT_FINDING),
+                service.allowedTransitions(CASE_ID, officer).allowedTransitions()
+        );
+        assertThrows(AccessDeniedException.class, () -> service.transition(
+                CASE_ID,
+                new CaseTransitionRequest(CaseStage.IMPROVEMENT_REQUESTED, "Skip fact finding", 4L),
+                officer
+        ));
+        assertEquals(SubmissionStage.FORWARDED, submission.getStage());
+    }
+
+    @Test
+    void coordinatorCanAskForMoreChangesAfterResubmission() {
+        Authentication coordinator = authentication("coordinator", "ROLE_INNOVATION_COORDINATOR");
+        ReflectionTestUtils.setField(submission, "stage", SubmissionStage.RESUBMITTED);
+        when(submissions.findByIdForUpdate(CASE_ID)).thenReturn(Optional.of(submission));
+
+        var result = service.transition(
+                CASE_ID,
+                new CaseTransitionRequest(CaseStage.IMPROVEMENT_REQUESTED, "Still missing data", 4L),
+                coordinator
         );
 
         assertEquals(SubmissionStage.IMPROVEMENT_REQUESTED, result.submission().stage());
@@ -511,6 +549,63 @@ class CaseFileServiceTest {
         assertEquals(List.of(), service.allowedTransitions(CASE_ID, reviewer).allowedTransitions());
         verify(submissions, times(2))
                 .findVisibleById(CASE_ID, "REVIEWER", "reviewer");
+    }
+
+    @Test
+    void draftOwnerCanEditOnlyTheirOwnDraft() {
+        ReflectionTestUtils.setField(submission, "stage", SubmissionStage.DRAFT);
+        Authentication owner = authentication("owner", "ROLE_SUBMITTER");
+        when(submissions.findVisibleById(CASE_ID, "SUBMITTER", "owner"))
+                .thenReturn(Optional.of(submission));
+
+        var capabilities = service.capabilities(CASE_ID, owner);
+
+        assertTrue(capabilities.canEditDraft());
+        assertFalse(capabilities.canRespondInfo());
+        assertEquals(
+                "This brief is not awaiting information.",
+                capabilities.lockReasons().get("canRespondInfo")
+        );
+        assertFalse(capabilities.canReceptionForward());
+        assertEquals(
+                "Only reception can forward a brief.",
+                capabilities.lockReasons().get("canReceptionForward")
+        );
+    }
+
+    @Test
+    void receptionCanForwardASubmittedBriefButCannotEditIt() {
+        ReflectionTestUtils.setField(submission, "stage", SubmissionStage.SUBMITTED);
+        Authentication receptionist = authentication("desk", "ROLE_RECEPTIONIST");
+        when(submissions.findVisibleById(CASE_ID, "ALL", "desk"))
+                .thenReturn(Optional.of(submission));
+        when(receptionChecklists.isComplete(CASE_ID)).thenReturn(true);
+
+        var capabilities = service.capabilities(CASE_ID, receptionist);
+
+        assertTrue(capabilities.canReceptionForward());
+        assertFalse(capabilities.canEditDraft());
+        assertEquals(
+                "This brief is no longer a draft.",
+                capabilities.lockReasons().get("canEditDraft")
+        );
+    }
+
+    @Test
+    void receptionCannotForwardUntilEveryReceptionCheckIsComplete() {
+        ReflectionTestUtils.setField(submission, "stage", SubmissionStage.SUBMITTED);
+        Authentication receptionist = authentication("desk", "ROLE_RECEPTIONIST");
+        when(submissions.findVisibleById(CASE_ID, "ALL", "desk"))
+                .thenReturn(Optional.of(submission));
+        when(receptionChecklists.isComplete(CASE_ID)).thenReturn(false);
+
+        var capabilities = service.capabilities(CASE_ID, receptionist);
+
+        assertFalse(capabilities.canReceptionForward());
+        assertEquals(
+                "Complete all four reception checks before forwarding this brief.",
+                capabilities.lockReasons().get("canReceptionForward")
+        );
     }
 
     private static Authentication authentication(String subject, String role) {

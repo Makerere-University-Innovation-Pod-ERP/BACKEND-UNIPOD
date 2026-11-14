@@ -9,6 +9,8 @@ import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.web.multipart.MultipartFile;
@@ -23,6 +25,7 @@ import org.unipod.unipoderpbackend.model.submission.MissingItemStatus;
 import org.unipod.unipoderpbackend.model.submission.Submission;
 import org.unipod.unipoderpbackend.model.submission.SubmissionCategory;
 import org.unipod.unipoderpbackend.model.submission.SubmissionDocument;
+import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
 import org.unipod.unipoderpbackend.repository.submission.MissingItemRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionDocumentRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
@@ -242,6 +245,151 @@ class UploadedDocumentServiceTest {
                 file("application/octet-stream", "payload.exe"), "actor"
         ));
         verifyNoInteractions(storage);
+    }
+
+    @Test
+    void submitterCanAttachARevisionWhileImprovementIsRequested() throws Exception {
+        UUID id = UUID.randomUUID();
+        Submission submission = new Submission(
+                id, SubmissionCategory.GENERAL, "Title", "Purpose", "Problem",
+                "actor", "actor", null, null, null, Instant.parse("2026-03-01T00:00:00Z")
+        );
+        ReflectionTestUtils.setField(submission, "stage", SubmissionStage.IMPROVEMENT_REQUESTED);
+        when(submissions.findByIdForUpdate(id)).thenReturn(Optional.of(submission));
+        when(storage.upload(any())).thenReturn("opaque-object");
+        when(documents.saveAndFlush(any(SubmissionDocument.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.upload(id, "revision", DocumentType.OTHER, DocumentStatus.SUBMITTED, file(), "actor", true);
+
+        verify(documents).saveAndFlush(any(SubmissionDocument.class));
+    }
+
+    @Test
+    void submitterCannotAttachDocumentsAfterResubmitting() throws Exception {
+        UUID id = UUID.randomUUID();
+        Submission submission = new Submission(
+                id, SubmissionCategory.GENERAL, "Title", "Purpose", "Problem",
+                "actor", "actor", null, null, null, Instant.parse("2026-03-01T00:00:00Z")
+        );
+        ReflectionTestUtils.setField(submission, "stage", SubmissionStage.RESUBMITTED);
+        when(submissions.findByIdForUpdate(id)).thenReturn(Optional.of(submission));
+
+        assertThrows(AccessDeniedException.class, () -> service.upload(
+                id, "revision", DocumentType.OTHER, DocumentStatus.SUBMITTED, file(), "actor", true
+        ));
+        verifyNoInteractions(storage);
+    }
+
+    @Test
+    void targetedUploadRejectsAMissingItemThatIsNotOnTheSubmission() throws Exception {
+        UUID id = UUID.randomUUID();
+        UUID missingItemId = UUID.randomUUID();
+        Submission submission = new Submission(
+                id, SubmissionCategory.GENERAL, "Title", "Purpose", "Problem",
+                "actor", null, null, null, null, Instant.parse("2026-03-01T00:00:00Z")
+        );
+        when(submissions.findByIdForUpdate(id)).thenReturn(Optional.of(submission));
+        when(storage.upload(any())).thenReturn("opaque-object");
+        when(documents.saveAndFlush(any(SubmissionDocument.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(missingItems.findByIdAndSubmissionId(missingItemId, id)).thenReturn(Optional.empty());
+
+        assertThrows(InvalidSubmissionException.class, () -> service.upload(
+                id,
+                "brief",
+                DocumentType.PROJECT_BRIEF,
+                DocumentStatus.SUBMITTED,
+                file(),
+                "actor",
+                false,
+                missingItemId
+        ));
+    }
+
+    @Test
+    void targetedUploadRejectsAnAlreadyResolvedMissingItem() throws Exception {
+        UUID id = UUID.randomUUID();
+        UUID missingItemId = UUID.randomUUID();
+        Submission submission = new Submission(
+                id, SubmissionCategory.GENERAL, "Title", "Purpose", "Problem",
+                "actor", null, null, null, null, Instant.parse("2026-03-01T00:00:00Z")
+        );
+        MissingItem resolved = MissingItem.document(
+                missingItemId,
+                id,
+                "Project brief",
+                null,
+                DocumentType.PROJECT_BRIEF,
+                "receptionist-1",
+                FIXED_TIME
+        );
+        resolved.resolve("receptionist-1", "Already supplied", FIXED_TIME);
+        when(submissions.findByIdForUpdate(id)).thenReturn(Optional.of(submission));
+        when(storage.upload(any())).thenReturn("opaque-object");
+        when(documents.saveAndFlush(any(SubmissionDocument.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(missingItems.findByIdAndSubmissionId(missingItemId, id)).thenReturn(Optional.of(resolved));
+
+        assertThrows(InvalidSubmissionException.class, () -> service.upload(
+                id,
+                "brief",
+                DocumentType.PROJECT_BRIEF,
+                DocumentStatus.SUBMITTED,
+                file(),
+                "actor",
+                false,
+                missingItemId
+        ));
+    }
+
+    @Test
+    void targetedUploadResolvesOnlyTheNamedItemOfTheSameType() throws Exception {
+        UUID id = UUID.randomUUID();
+        UUID missingItemId = UUID.randomUUID();
+        Submission submission = new Submission(
+                id, SubmissionCategory.GENERAL, "Title", "Purpose", "Problem",
+                "actor", null, null, null, null, Instant.parse("2026-03-01T00:00:00Z")
+        );
+        MissingItem target = MissingItem.document(
+                missingItemId,
+                id,
+                "Project brief",
+                null,
+                DocumentType.PROJECT_BRIEF,
+                "receptionist-1",
+                FIXED_TIME
+        );
+        MissingItem other = MissingItem.document(
+                UUID.randomUUID(),
+                id,
+                "Signed project brief",
+                null,
+                DocumentType.PROJECT_BRIEF,
+                "receptionist-1",
+                FIXED_TIME
+        );
+        when(submissions.findByIdForUpdate(id)).thenReturn(Optional.of(submission));
+        when(storage.upload(any())).thenReturn("opaque-object");
+        when(documents.saveAndFlush(any(SubmissionDocument.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(missingItems.findByIdAndSubmissionId(missingItemId, id)).thenReturn(Optional.of(target));
+
+        service.upload(
+                id,
+                "brief",
+                DocumentType.PROJECT_BRIEF,
+                DocumentStatus.SUBMITTED,
+                file(),
+                "actor",
+                false,
+                missingItemId
+        );
+
+        assertEquals(MissingItemStatus.RESOLVED, target.getStatus());
+        assertEquals(MissingItemStatus.OPEN, other.getStatus());
+        verify(missingItems).save(target);
+        verify(missingItems, org.mockito.Mockito.never()).saveAll(any());
     }
 
     private static MultipartFile file() throws Exception {
