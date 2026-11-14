@@ -18,10 +18,12 @@ import org.unipod.unipoderpbackend.dto.review.AssignReviewerRequest;
 import org.unipod.unipoderpbackend.dto.review.CoordinatorReviewsResponse;
 import org.unipod.unipoderpbackend.dto.review.ReviewersPanelResponse;
 import org.unipod.unipoderpbackend.dto.review.SaveReviewSettingsRequest;
+import org.unipod.unipoderpbackend.dto.review.StartReviewRoundRequest;
 import org.unipod.unipoderpbackend.service.review.CoordinatorReviewsQueryService;
 import org.unipod.unipoderpbackend.service.review.ReviewCommandService;
 import org.unipod.unipoderpbackend.service.review.ReviewPanelQueryService;
 import org.unipod.unipoderpbackend.service.review.ReviewQuorum;
+import org.unipod.unipoderpbackend.service.review.ReviewRoundService;
 
 @RestController
 @RequestMapping("/cases/{id}")
@@ -34,15 +36,30 @@ public class ReviewController {
     private final ReviewPanelQueryService panels;
     private final ReviewCommandService commands;
     private final CoordinatorReviewsQueryService submittedReviews;
+    private final ReviewRoundService rounds;
 
     public ReviewController(
             ReviewPanelQueryService panels,
             ReviewCommandService commands,
-            CoordinatorReviewsQueryService submittedReviews
+            CoordinatorReviewsQueryService submittedReviews,
+            ReviewRoundService rounds
     ) {
         this.panels = panels;
         this.commands = commands;
         this.submittedReviews = submittedReviews;
+        this.rounds = rounds;
+    }
+
+    /** Starts the next review round after an improved version was accepted; earlier rounds stay as they are. */
+    @PostMapping("/review-rounds")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize(REVIEW_PANEL_WRITE_ROLES)
+    public ReviewersPanelResponse startRound(
+            @PathVariable UUID id,
+            @RequestBody StartReviewRoundRequest request,
+            Authentication authentication
+    ) {
+        return rounds.start(id, request, authentication);
     }
 
     @GetMapping("/review-quorum")

@@ -28,6 +28,7 @@ public class ReviewAudit {
     public static final String REVIEWER_REMOVED = "submission.reviewer_removed";
     public static final String REVIEW_SUBMITTED = "submission.review_submitted";
     public static final String REVIEW_FOLLOW_UP_ADDED = "submission.review_follow_up_added";
+    public static final String REVIEW_ROUND_STARTED = "submission.review_round_started";
 
     private final AuditTrail trail;
 
@@ -48,6 +49,11 @@ public class ReviewAudit {
     /** {@code before} is null when the settings were just created. */
     void settingsSaved(String actor, UUID briefId, Map<String, Object> before, ReviewSettings saved) {
         trail.record(actor, SETTINGS_SAVED, ENTITY_TYPE, briefId, before, settingsDetails(saved));
+    }
+
+    /** Details {round, mode, reviewsNeeded, dueDate} of the new round; no reviewer data. */
+    void roundStarted(String actor, ReviewSettings round) {
+        trail.record(actor, REVIEW_ROUND_STARTED, ENTITY_TYPE, round.getBriefId(), null, settingsDetails(round));
     }
 
     void reviewerAssigned(String actor, ReviewAssignment assignment) {
