@@ -11,6 +11,8 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 import org.unipod.unipoderpbackend.dto.submission.DocumentResponse;
 import org.unipod.unipoderpbackend.dto.submission.ReplySubmissionRequest;
@@ -21,7 +23,6 @@ import org.unipod.unipoderpbackend.exception.submission.SubmissionNotFoundExcept
 import org.unipod.unipoderpbackend.model.submission.DocumentStatus;
 import org.unipod.unipoderpbackend.model.submission.DocumentType;
 import org.unipod.unipoderpbackend.model.submission.MissingItem;
-import org.unipod.unipoderpbackend.model.submission.MissingItemKind;
 import org.unipod.unipoderpbackend.model.submission.MissingItemStatus;
 import org.unipod.unipoderpbackend.model.submission.Submission;
 import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
@@ -98,17 +99,17 @@ public class InformationResponseService {
             );
         }
 
-        List<MissingItem> openDocuments = missingItems
-                .findAllBySubmissionIdAndKindAndStatusOrderByRequestedAtAscIdAsc(
+        List<MissingItem> openItems = missingItems
+                .findAllBySubmissionIdAndStatusOrderByRequestedAtAscIdAsc(
                         submissionId,
-                        MissingItemKind.DOCUMENT,
                         MissingItemStatus.OPEN
                 );
         Map<UUID, MissingItem> openById = new HashMap<>();
-        for (MissingItem item : openDocuments) {
+        for (MissingItem item : openItems) {
             openById.put(item.getId(), item);
         }
         List<String> uploadedReferences = new ArrayList<>();
+        boolean rollbackCleanupRegistered = false;
         try {
             for (int index = 0; index < suppliedFiles.size(); index++) {
                 UUID itemId = itemIds.get(index);
@@ -134,6 +135,9 @@ public class InformationResponseService {
                         itemId
                 );
                 uploadedReferences.add(uploaded.fileReference());
+                if (!rollbackCleanupRegistered) {
+                    rollbackCleanupRegistered = registerRollbackCleanup(uploadedReferences);
+                }
                 openById.remove(itemId);
             }
             return submissionService.reply(
@@ -145,11 +149,28 @@ public class InformationResponseService {
                     actor
             );
         } catch (RuntimeException exception) {
-            // The reply joins this transaction, so a later failure rolls back the
-            // document rows but not objects already written to storage.
-            deleteUploadedObjects(uploadedReferences, exception);
+            // Inside a transaction the rollback cleanup runs once from the
+            // afterCompletion callback, including when the commit itself fails.
+            if (!rollbackCleanupRegistered) {
+                deleteUploadedObjects(uploadedReferences, exception);
+            }
             throw exception;
         }
+    }
+
+    private boolean registerRollbackCleanup(List<String> references) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return false;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status != TransactionSynchronization.STATUS_COMMITTED) {
+                    deleteUploadedObjects(references, null);
+                }
+            }
+        });
+        return true;
     }
 
     private void deleteUploadedObjects(List<String> references, RuntimeException cause) {
@@ -157,7 +178,9 @@ public class InformationResponseService {
             try {
                 storage.delete(reference);
             } catch (RuntimeException cleanupFailure) {
-                cause.addSuppressed(cleanupFailure);
+                if (cause != null) {
+                    cause.addSuppressed(cleanupFailure);
+                }
                 log.warn("Failed to clean up stored object {}", reference, cleanupFailure);
             }
         }

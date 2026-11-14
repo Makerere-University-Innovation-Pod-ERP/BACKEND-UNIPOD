@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.security.core.Authentication;
 import org.unipod.unipoderpbackend.dto.submission.SubmissionResponse;
 import org.unipod.unipoderpbackend.dto.submission.WalkInSubmissionRequest;
+import org.unipod.unipoderpbackend.dto.submission.WalkInSubmissionResponse;
 import org.unipod.unipoderpbackend.exception.submission.InvalidSubmissionException;
 import org.unipod.unipoderpbackend.model.auth.AccountKind;
 import org.unipod.unipoderpbackend.model.auth.ApiUser;
@@ -21,7 +22,10 @@ import org.unipod.unipoderpbackend.repository.auth.ApiUserRepository;
 import org.unipod.unipoderpbackend.repository.auth.UserProfileRepository;
 import org.unipod.unipoderpbackend.service.auth.AuthenticationService;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -121,11 +125,53 @@ class WalkInSubmissionServiceTest {
     }
 
     @Test
+    void createsAnAccountAndProfileForANewWalkInSubmitter() {
+        String email = "new-walk-in@example.test";
+        ApiUser createdUser = user(email);
+        String temporaryPassword = "temporary";
+        String setPasswordToken = "token";
+        String setPasswordUrl = "https://portal.example.test/set-password?token=token";
+        when(users.findByEmailIgnoreCase(email))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(createdUser));
+        when(authentication.createAssistedSubmitter(email))
+                .thenReturn(new AuthenticationService.AssistedAccount(
+                        email, true, temporaryPassword, setPasswordToken, setPasswordUrl
+                ));
+        when(profiles.findAllByNormalizedPhone(PHONE)).thenReturn(List.of());
+        SubmissionResponse draft = mock(SubmissionResponse.class);
+        UUID draftId = UUID.randomUUID();
+        when(draft.id()).thenReturn(draftId);
+        when(submissions.create(any(), eq(ACTOR), eq(false))).thenReturn(draft);
+        SubmissionResponse submitted = mock(SubmissionResponse.class);
+        when(submissions.submit(draftId, ACTOR, false)).thenReturn(submitted);
+
+        WalkInSubmissionResponse response = service.submit(
+                request(email, AccountKind.PUBLIC, "2026-01"),
+                actor
+        );
+
+        verify(authentication).createAssistedSubmitter(email);
+        verify(profiles).save(argThat(profile ->
+                profile.getUserId().equals(createdUser.getId())
+                        && profile.getAccountKind() == AccountKind.PUBLIC
+                        && PHONE.equals(profile.getPhone())
+                        && "2026-01".equals(profile.getRulesVersion())
+        ));
+        verify(submissions).create(any(), eq(ACTOR), eq(false));
+        verify(submissions).submit(draftId, ACTOR, false);
+        assertSame(submitted, response.submission());
+        assertTrue(response.account().created());
+        assertEquals(email, response.account().email());
+        assertEquals(temporaryPassword, response.account().temporaryPassword());
+        assertEquals(setPasswordToken, response.account().setPasswordToken());
+        assertEquals(setPasswordUrl, response.account().setPasswordUrl());
+    }
+
+    @Test
     void createsAStudentProfileWithTheDetailsTheSchemaRequires() {
         String email = "student@example.test";
         ApiUser user = user(email);
-        when(authentication.createAssistedSubmitter(email))
-                .thenReturn(new AuthenticationService.AssistedAccount(email, true, "temporary", "token", "https://portal.example.test/set-password?token=token"));
         when(users.findByEmailIgnoreCase(email)).thenReturn(Optional.of(user));
         when(profiles.findById(user.getId())).thenReturn(Optional.empty());
         when(profiles.existsByStudentNumberIgnoreCase("S123")).thenReturn(false);
@@ -165,6 +211,18 @@ class WalkInSubmissionServiceTest {
                 )
         );
         verify(profiles, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void rejectsAWalkInWithNoMatchingAccountAndNoEmailToCreateOne() {
+        when(profiles.findAllByNormalizedPhone(PHONE)).thenReturn(List.of());
+
+        assertThrows(
+                InvalidSubmissionException.class,
+                () -> service.submit(request(null, AccountKind.PUBLIC, "2026-01"), actor)
+        );
+
+        verifyNoInteractions(authentication);
     }
 
     @Test

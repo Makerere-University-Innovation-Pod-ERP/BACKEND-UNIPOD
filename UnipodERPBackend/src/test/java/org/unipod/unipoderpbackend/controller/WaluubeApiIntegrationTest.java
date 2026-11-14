@@ -527,16 +527,14 @@ class WaluubeApiIntegrationTest {
                 .andExpect(jsonPath("$.submission.stage").value("IMPROVEMENT_REQUESTED"));
 
         // The pending action comes from the transition path, which does not set
-        // outcomeNote, so the link is what carries the guidance and due date.
+        // outcomeNote, so the link points at the case where the guidance lives.
         mockMvc.perform(get("/me/submissions/{id}", id).with(submitterUser))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.stage").value("IMPROVEMENT_REQUESTED"))
                 .andExpect(jsonPath("$.pendingAction").value("PROVIDE_INFORMATION"))
-                .andExpect(jsonPath("$.pendingActionHref")
-                        .value("/cases/" + id + "/my-improvement"))
+                .andExpect(jsonPath("$.pendingActionHref").value("/cases/" + id))
                 .andExpect(jsonPath("$.waitingForYou").value(
-                        "Reviewers requested an improved version. "
-                                + "Open the improvement request for the guidance and due date."));
+                        "Reviewers requested an improved version. Open the case for the guidance."));
 
         mockMvc.perform(post("/submissions/{id}/documents", id)
                         .with(submitterUser)
@@ -562,7 +560,7 @@ class WaluubeApiIntegrationTest {
                 .getContentAsString();
 
         assertEquals(
-                "Your improved version has been received and is ready for the next review.",
+                "Your reply has been received and the brief is back with reception.",
                 jdbcTemplate.queryForObject(
                         "SELECT payload ->> 'message' FROM notification_outbox "
                                 + "WHERE aggregate_id = ? AND event_type = 'submission.reply_received' "
@@ -586,7 +584,7 @@ class WaluubeApiIntegrationTest {
     }
 
     @Test
-    void submitterCanCompleteRequestedDraftAndReceptionCanForwardItAtomically() throws Exception {
+    void submitterCanCompleteRequestedInformationAndReceptionCanForwardItAtomically() throws Exception {
         String submitter = "owner-" + UUID.randomUUID() + "@example.test";
         String receptionist = "reception-" + UUID.randomUUID();
         var submitterUser = user(submitter).roles("SUBMITTER");
@@ -601,9 +599,15 @@ class WaluubeApiIntegrationTest {
                                   "title": "Submitter intake test",
                                   "purpose": "Complete the requested student details",
                                   "problemAddressed": "Validate submitter ownership and intake",
-                                  "submitterId": "%s"
+                                  "submitterId": "%s",
+                                  "submitterEmail": "%s",
+                                  "studentNumber": "STU-00001",
+                                  "programme": "Engineering",
+                                  "supervisor": "Dr Example",
+                                  "recommendationLetterStatus": "SUBMITTED",
+                                  "acceptedRulesVersion": "2026-01"
                                 }
-                                """.formatted(submitter)))
+                                """.formatted(submitter, submitter)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.stage").value("DRAFT"))
                 .andExpect(jsonPath("$.code").value(org.hamcrest.Matchers.startsWith("BRF-")))
@@ -619,6 +623,20 @@ class WaluubeApiIntegrationTest {
         String id = idMatcher.group(1);
         String code = codeMatcher.group(1);
 
+        // A draft has not been submitted, so reception cannot ask for more
+        // information yet: the request would be unreachable.
+        mockMvc.perform(post("/submissions/{id}/request-information", id)
+                        .with(receptionistUser)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"note":"Please provide your student number and supervisor."}
+                                """))
+                .andExpect(status().isConflict());
+
+        mockMvc.perform(post("/submissions/{id}/submit", id).with(submitterUser))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stage").value("SUBMITTED"));
+
         mockMvc.perform(post("/submissions/{id}/request-information", id)
                         .with(receptionistUser)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -626,6 +644,7 @@ class WaluubeApiIntegrationTest {
                                 {"note":"Please provide your student number and supervisor."}
                                 """))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stage").value("AWAITING_INFORMATION"))
                 .andExpect(jsonPath("$.informationRequestedNote")
                         .value("Please provide your student number and supervisor."))
                 .andExpect(jsonPath("$.informationRequestedBy").doesNotExist());
@@ -660,6 +679,17 @@ class WaluubeApiIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.documentType").value("RECOMMENDATION_LETTER"));
 
+        // The submitter answers the request; the brief returns to reception.
+        mockMvc.perform(post("/submissions/{id}/reply", id)
+                        .with(submitterUser)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(code))
+                .andExpect(jsonPath("$.stage").value("SUBMITTED"))
+                .andExpect(jsonPath("$.informationRequestedNote").doesNotExist())
+                .andExpect(jsonPath("$.informationRequestedBy").doesNotExist());
+
         String completedDraft = """
                 {
                   "category": "student",
@@ -674,16 +704,6 @@ class WaluubeApiIntegrationTest {
                   "acceptedRulesVersion": "2026-01"
                 }
                 """;
-        mockMvc.perform(put("/submissions/{id}", id)
-                        .with(submitterUser)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(completedDraft))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(code))
-                .andExpect(jsonPath("$.submitterId").value(submitter))
-                .andExpect(jsonPath("$.informationRequestedNote").doesNotExist())
-                .andExpect(jsonPath("$.informationRequestedBy").doesNotExist());
-
         mockMvc.perform(put("/submissions/{id}", id)
                         .with(user("another-owner").roles("SUBMITTER"))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -730,7 +750,8 @@ class WaluubeApiIntegrationTest {
                 Integer.class,
                 submissionId
         ));
-        assertEquals(4, jdbcTemplate.queryForObject(
+        // DRAFT, SUBMITTED, AWAITING_INFORMATION, SUBMITTED, FORWARDED.
+        assertEquals(5, jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM case_stage_history WHERE submission_id = ?",
                 Integer.class,
                 submissionId
@@ -1445,7 +1466,7 @@ class WaluubeApiIntegrationTest {
     }
 
     @Test
-    void updatingAndSubmittingADraftClearsInformationItems() throws Exception {
+    void informationRequestOnADraftIsRejectedWithoutCreatingItems() throws Exception {
         String submitter = "draft-items-" + UUID.randomUUID() + "@example.test";
         var submitterUser = user(submitter).roles("SUBMITTER");
         var receptionist = user("reception-draft-items-" + UUID.randomUUID()).roles("RECEPTIONIST");
@@ -1457,7 +1478,7 @@ class WaluubeApiIntegrationTest {
                                 {
                                   "category": "general",
                                   "title": "Draft with requested items",
-                                  "purpose": "Verify item resolution on draft update",
+                                  "purpose": "Verify draft-stage requests are refused",
                                   "problemAddressed": "Reception needs one more detail",
                                   "submitterId": "%s",
                                   "submitterEmail": "%s",
@@ -1476,13 +1497,13 @@ class WaluubeApiIntegrationTest {
                         .content("""
                                 {"items":[{"label":"Student number"}]}
                                 """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.stage").value("DRAFT"));
+                .andExpect(status().isConflict());
 
-        mockMvc.perform(get("/me/submissions/{id}", id).with(submitterUser))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.pendingAction").value("PROVIDE_INFORMATION"))
-                .andExpect(jsonPath("$.waitingForYou").value("Reception needs: Student number."));
+        assertEquals(0, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM missing_items WHERE submission_id = ?",
+                Integer.class,
+                UUID.fromString(id)
+        ));
 
         mockMvc.perform(put("/submissions/{id}", id)
                         .with(submitterUser)
@@ -1491,7 +1512,7 @@ class WaluubeApiIntegrationTest {
                                 {
                                   "category": "general",
                                   "title": "Draft with requested items completed",
-                                  "purpose": "Verify item resolution on draft update",
+                                  "purpose": "Verify draft-stage requests are refused",
                                   "problemAddressed": "Reception needs one more detail"
                                 }
                                 """))
@@ -1500,19 +1521,6 @@ class WaluubeApiIntegrationTest {
         mockMvc.perform(post("/submissions/{id}/submit", id).with(submitterUser))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.stage").value("SUBMITTED"));
-
-        mockMvc.perform(get("/me/submissions/{id}", id).with(submitterUser))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.pendingAction").value(org.hamcrest.Matchers.nullValue()))
-                .andExpect(jsonPath("$.waitingForYou").value(org.hamcrest.Matchers.nullValue()))
-                .andExpect(jsonPath("$.waitingSince").value(org.hamcrest.Matchers.nullValue()));
-
-        assertEquals(0, jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM missing_items WHERE submission_id = ? "
-                        + "AND kind = 'INFORMATION' AND status = 'OPEN'",
-                Integer.class,
-                UUID.fromString(id)
-        ));
     }
 
     private void completeReceptionChecklist(String id, RequestPostProcessor principal) throws Exception {

@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import jakarta.mail.internet.AddressException;
@@ -73,6 +74,24 @@ import org.unipod.unipoderpbackend.util.CaseCodeGenerator;
 @Service
 public class SubmissionService {
     private static final ZoneId CASE_CODE_ZONE = ZoneId.of("Africa/Kampala");
+    /**
+     * Stages in which a brief has left the submitter's draft and can be
+     * treated as routed to a destination department.
+     */
+    private static final Set<SubmissionStage> ROUTED_STAGES = Set.of(
+            SubmissionStage.SUBMITTED,
+            SubmissionStage.AWAITING_INFORMATION,
+            SubmissionStage.FORWARDED,
+            SubmissionStage.IN_FACT_FINDING,
+            SubmissionStage.READY_FOR_REVIEW,
+            SubmissionStage.IN_REVIEW,
+            SubmissionStage.IMPROVEMENT_REQUESTED,
+            SubmissionStage.RESUBMITTED,
+            SubmissionStage.CONFIRMED_AS_PROJECT,
+            SubmissionStage.AWAITING_PAYMENT,
+            SubmissionStage.IN_PROGRESS,
+            SubmissionStage.COMPLETED
+    );
     private static final Instant FAR_FUTURE = Instant.parse("9999-12-31T23:59:59Z");
     private static final String DEFAULT_DEPARTMENT = "Innovation";
 
@@ -451,7 +470,6 @@ public class SubmissionService {
         SubmissionStage previousStage = submission.getStage();
         submission.reply(now);
         SubmissionStage resultingStage = submission.getStage();
-        boolean improvementReply = previousStage == SubmissionStage.IMPROVEMENT_REQUESTED;
         String note = clean(request.note()) == null ? "Submitter replied with the requested information." : clean(request.note());
         stageHistory.save(new CaseStageHistory(
                 UUID.randomUUID(),
@@ -466,24 +484,16 @@ public class SubmissionService {
         notifySubmitter(
                 submission,
                 "submission.reply_received",
-                improvementReply
-                        ? "Improved version received for submission " + submission.getCode()
-                        : "Reply received for submission " + submission.getCode(),
-                improvementReply
-                        ? "Your improved version has been received and is ready for the next review."
-                        : "Your reply has been received and the brief is back with reception.",
+                "Reply received for submission " + submission.getCode(),
+                "Your reply has been received and the brief is back with reception.",
                 actor,
                 now
         );
         notifyReception(
                 submission,
                 "submission.reply_received",
-                improvementReply
-                        ? "Improved version received for " + submission.getCode()
-                        : "Reply received for " + submission.getCode(),
-                improvementReply
-                        ? "The submitter uploaded an improved version; the case is ready for the next review."
-                        : "The submitter replied with the requested information; the brief is back in the reception queue.",
+                "Reply received for " + submission.getCode(),
+                "The submitter replied with the requested information; the brief is back in the reception queue.",
                 actor,
                 now
         );
@@ -766,7 +776,9 @@ public class SubmissionService {
         UUID destinationId = submission.getResponsibleSectorId();
         String destinationName = submission.getResponsibleSectorName();
         String whatsappGroupUrl = submission.getResponsibleSectorWhatsappGroupUrl();
-        if (destinationId == null && clean(submission.getDepartment()) != null) {
+        if (destinationId == null
+                && ROUTED_STAGES.contains(submission.getStage())
+                && clean(submission.getDepartment()) != null) {
             Sector suggested = sectorsCatalog.activeSectorByName(submission.getDepartment())
                     .orElse(null);
             if (suggested != null) {
@@ -1073,7 +1085,7 @@ public class SubmissionService {
             String improvementNote = clean(submission.getOutcomeNote());
             String message = improvementNote != null
                     ? improvementNote
-                    : "Reviewers requested an improved version. Open the improvement request for the guidance and due date.";
+                    : "Reviewers requested an improved version. Open the case for the guidance.";
             Instant since = submission.getOutcomeDecidedAt() == null
                     ? submission.getUpdatedAt()
                     : submission.getOutcomeDecidedAt();
@@ -1096,7 +1108,7 @@ public class SubmissionService {
     }
 
     private static String improvementHref(Submission submission) {
-        return "/cases/" + submission.getId() + "/my-improvement";
+        return "/cases/" + submission.getId();
     }
 
     private static boolean submitterCanAct(SubmissionStage stage) {
@@ -1495,13 +1507,8 @@ public class SubmissionService {
     }
 
     static void requireSubmitterOwnership(Submission submission, String actor, boolean submitter) {
-        if (submitter) {
-            if (!submission.getSubmitterId().equals(actor)) {
-                throw new AccessDeniedException("Submitters may only modify their own submissions.");
-            }
-            if (submission.getStage() != SubmissionStage.DRAFT) {
-                throw new AccessDeniedException("Submitters may only modify their own draft submissions.");
-            }
+        if (submitter && !submission.getSubmitterId().equals(actor)) {
+            throw new AccessDeniedException("Submitters may only modify their own submissions.");
         }
     }
 

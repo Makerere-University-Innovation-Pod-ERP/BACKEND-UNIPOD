@@ -8,6 +8,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.unipod.unipoderpbackend.dto.sector.AdminSectorResponse;
 import org.unipod.unipoderpbackend.dto.sector.SectorRequest;
 import org.unipod.unipoderpbackend.dto.sector.SectorResponse;
 import org.unipod.unipoderpbackend.dto.sector.SectorFilterOption;
@@ -33,10 +34,10 @@ public class SectorService {
     }
 
     @Transactional(readOnly = true)
-    public List<SectorResponse> allSectors() {
+    public List<AdminSectorResponse> allSectors() {
         return sectors.findAllByOrderByNameAsc()
                 .stream()
-                .map(SectorResponse::from)
+                .map(AdminSectorResponse::from)
                 .toList();
     }
 
@@ -62,7 +63,7 @@ public class SectorService {
     }
 
     @Transactional
-    public SectorResponse create(SectorRequest request) {
+    public AdminSectorResponse create(SectorRequest request) {
         String name = request.name().trim();
         if (sectors.existsByNameIgnoreCase(name)) {
             throw new SectorConflictException();
@@ -78,14 +79,14 @@ public class SectorService {
                     now,
                     now
             ));
-            return SectorResponse.from(sector);
+            return AdminSectorResponse.from(sector);
         } catch (DataIntegrityViolationException exception) {
             throw conflictIfNameConstraint(exception);
         }
     }
 
     @Transactional
-    public SectorResponse update(UUID id, SectorRequest request) {
+    public AdminSectorResponse update(UUID id, SectorRequest request) {
         Sector sector = sectors.findById(id).orElseThrow(() -> new SectorNotFoundException(id));
         if (request.version() == null || request.version() != sector.getVersion()) {
             throw new SectorConflictException();
@@ -108,7 +109,7 @@ public class SectorService {
         );
         try {
             sectors.flush();
-            return SectorResponse.from(sector);
+            return AdminSectorResponse.from(sector);
         } catch (DataIntegrityViolationException exception) {
             throw conflictIfNameConstraint(exception);
         } catch (ObjectOptimisticLockingFailureException exception) {

@@ -15,7 +15,6 @@ import java.time.Instant;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class SubmissionTest {
@@ -68,7 +67,7 @@ class SubmissionTest {
     }
 
     @Test
-    void registrationKeepsTrackingReferenceAndClearsInformationRequest() {
+    void registrationKeepsTrackingReference() {
         Instant createdAt = Instant.parse("2026-11-04T00:00:00Z");
         Instant requestedAt = Instant.parse("2026-11-04T01:00:00Z");
         Submission submission = new Submission(
@@ -86,22 +85,17 @@ class SubmissionTest {
                 createdAt
         );
         submission.assignTrackingReference("GEN-2026-000001");
-        submission.requestInformation("Please attach a brief.", "receptionist-1", requestedAt);
         submission.applyIntakeDetails(null, null, null, null, null, null, "2026-01");
 
         submission.register("GEN-2026-000001", requestedAt.plusSeconds(60), "receptionist-1");
 
         assertEquals("GEN-2026-000001", submission.getCode());
         assertEquals(SubmissionStage.SUBMITTED, submission.getStage());
-        assertNull(submission.getInformationRequestedNote());
-        assertNull(submission.getInformationRequestedBy());
-        assertNull(submission.getInformationRequestedAt());
     }
 
     @Test
-    void draftUpdatePreservesAnOutstandingInformationRequestUntilSubmitterResponds() {
+    void requestInformationRejectsDraftSubmissions() {
         Instant createdAt = Instant.parse("2026-11-04T00:00:00Z");
-        Instant updatedAt = Instant.parse("2026-11-04T02:00:00Z");
         Submission submission = new Submission(
                 UUID.randomUUID(),
                 SubmissionCategory.GENERAL,
@@ -116,23 +110,15 @@ class SubmissionTest {
                 null,
                 createdAt
         );
-        submission.requestInformation("Please attach a brief.", "receptionist-1", createdAt.plusSeconds(60));
 
-        submission.updateDraft(
-                "Updated idea",
-                "Improve access",
-                "Current access is limited",
-                null,
-                null,
-                null,
-                null,
-                updatedAt
+        assertThrows(
+                SubmissionConflictException.class,
+                () -> submission.requestInformation(
+                        "Please attach a brief.",
+                        "receptionist-1",
+                        createdAt.plusSeconds(60)
+                )
         );
-
-        assertEquals("Updated idea", submission.getTitle());
-        assertEquals("Please attach a brief.", submission.getInformationRequestedNote());
-        assertEquals("receptionist-1", submission.getInformationRequestedBy());
-        assertEquals(createdAt.plusSeconds(60), submission.getInformationRequestedAt());
     }
 
     @Test

@@ -1236,10 +1236,11 @@ paths:
       description: |
         The owning submitter uploads one or more `files` (or a single `file`)
         together with an optional reply `note`. Each uploaded file must name the
-        open requested item it answers through `documentItemIds`; the item
-        supplies the file's document type and is the only item the file
-        resolves. The brief returns from `AWAITING_INFORMATION` to `SUBMITTED`
-        and reception is notified. Sent as `multipart/form-data`.
+        open requested item it answers through `documentItemIds`; a document
+        item supplies the file's document type, an information item defaults it
+        to `OTHER`, and the named item is the only item the file resolves. The
+        brief returns from `AWAITING_INFORMATION` to `SUBMITTED` and reception
+        is notified. Sent as `multipart/form-data`.
       security:
         - bearerAuth: []
       parameters:
@@ -1257,7 +1258,7 @@ paths:
                 documentItemIds:
                   type: array
                   description: >-
-                    One open document item id per uploaded file, in the same
+                    One open requested item id per uploaded file, in the same
                     order as `files`/`file`. Required when a file is uploaded.
                   items:
                     type: string
@@ -1299,7 +1300,8 @@ paths:
         What the submitter sees after submitting: the `tracking_reference`,
         `submitted_at`, the destination department and that department's
         WhatsApp group invite link. The link is null when the department has no
-        configured group.
+        configured group. A draft brief is not routed, so it never receives the
+        department link through this fallback.
       security:
         - bearerAuth: []
       parameters:
@@ -2487,7 +2489,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Sector'
+                $ref: '#/components/schemas/AdminSector'
         '400':
           $ref: '#/components/responses/BadRequest'
         '422':
@@ -2513,7 +2515,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Sector'
+                  $ref: '#/components/schemas/AdminSector'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2564,7 +2566,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Sector'
+                $ref: '#/components/schemas/AdminSector'
         '400':
           $ref: '#/components/responses/BadRequest'
         '422':
@@ -4960,6 +4962,7 @@ components:
         missing_items:
           type: array
           minItems: 1
+          maxItems: 50
           items:
             type: string
             maxLength: 255
@@ -5607,7 +5610,11 @@ components:
         whatsappGroupUrl:
           type: [string, 'null']
           maxLength: 500
-          description: WhatsApp group invite link shared with submitters routed to this department.
+          pattern: '^$|^[Hh][Tt][Tt][Pp][Ss]://[^/?#\s]+([/?#].*)?$'
+          description: >-
+            Absolute `https://` WhatsApp group invite link with a valid host,
+            shared with submitters routed to this department. Send an empty
+            string to clear it; omit it to keep the stored link.
         active:
           type: boolean
         version:
@@ -5616,20 +5623,63 @@ components:
           minimum: 0
           description: Expected sector version for updates; omit when creating a sector.
     Sector:
-      allOf:
-        - $ref: '#/components/schemas/SectorRequest'
-        - type: object
-          required: [id, version, createdAt, updatedAt]
-          properties:
-            id:
-              type: string
-              format: uuid
-            createdAt:
-              type: string
-              format: date-time
-            updatedAt:
-              type: string
-              format: date-time
+      type: object
+      additionalProperties: false
+      description: >-
+        Department directory entry shared with staff. The WhatsApp group invite
+        link is deliberately omitted; it is only shared with a submitter on the
+        confirmation screen for the department that received their brief.
+      required: [id, name, notificationEmail, active, version, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        notificationEmail:
+          type: string
+          format: email
+        active:
+          type: boolean
+        version:
+          type: integer
+          format: int64
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    AdminSector:
+      type: object
+      additionalProperties: false
+      description: >-
+        Administrator catalog entry. Unlike `Sector` it includes the stored
+        WhatsApp group invite link so the edit form can prefill it.
+      required: [id, name, notificationEmail, active, version, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        notificationEmail:
+          type: string
+          format: email
+        whatsappGroupUrl:
+          type: [string, 'null']
+          maxLength: 500
+        active:
+          type: boolean
+        version:
+          type: integer
+          format: int64
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
     SectorFilterOption:
       type: object
       additionalProperties: false

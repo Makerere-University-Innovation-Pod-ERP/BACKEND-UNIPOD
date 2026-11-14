@@ -580,8 +580,8 @@ public class Submission {
     }
 
     public void requestInformation(String note, String actor, Instant time) {
-        if (stage != SubmissionStage.DRAFT && stage != SubmissionStage.SUBMITTED) {
-            throw new SubmissionConflictException("Information can only be requested for a draft or submitted submission.");
+        if (stage != SubmissionStage.SUBMITTED) {
+            throw new SubmissionConflictException("Information can only be requested for a submitted submission.");
         }
         if (isBlank(note)) {
             throw new InvalidSubmissionException("A reason is required when requesting more information.");
@@ -589,9 +589,7 @@ public class Submission {
         this.informationRequestedNote = note.trim();
         this.informationRequestedBy = actor;
         this.informationRequestedAt = time;
-        if (stage == SubmissionStage.SUBMITTED) {
-            this.stage = SubmissionStage.AWAITING_INFORMATION;
-        }
+        this.stage = SubmissionStage.AWAITING_INFORMATION;
         this.updatedAt = time;
     }
 

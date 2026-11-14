@@ -57,22 +57,6 @@ public class AuthenticationService {
     private final NotificationOutbox notificationOutbox;
     private final String publicBaseUrl;
 
-    /**
-     * Test-friendly constructor used where password setup delivery is not
-     * exercised.
-     */
-    public AuthenticationService(
-            ApiUserRepository users,
-            PasswordEncoder passwordEncoder,
-            JwtEncoder jwtEncoder,
-            Clock clock,
-            String issuer,
-            String audience,
-            Duration tokenTtl
-    ) {
-        this(users, passwordEncoder, jwtEncoder, clock, issuer, audience, tokenTtl, null, "");
-    }
-
     @Autowired
     public AuthenticationService(
             ApiUserRepository users,
@@ -88,6 +72,12 @@ public class AuthenticationService {
         if (tokenTtl.isNegative() || tokenTtl.isZero() || tokenTtl.compareTo(MAX_TOKEN_TTL) > 0) {
             throw new IllegalArgumentException("JWT_ACCESS_TOKEN_TTL must be positive and no longer than one hour.");
         }
+        if (publicBaseUrl == null || publicBaseUrl.isBlank()) {
+            throw new IllegalStateException(
+                    "app.public-base-url must be configured (APP_PUBLIC_BASE_URL) "
+                            + "before issuing password-setup links."
+            );
+        }
         this.users = users;
         this.passwordEncoder = passwordEncoder;
         this.jwtEncoder = jwtEncoder;
@@ -96,7 +86,7 @@ public class AuthenticationService {
         this.audience = audience;
         this.tokenTtl = tokenTtl;
         this.notificationOutbox = notificationOutbox;
-        this.publicBaseUrl = publicBaseUrl == null ? "" : publicBaseUrl.trim();
+        this.publicBaseUrl = publicBaseUrl.trim();
     }
 
     @Transactional(readOnly = true)

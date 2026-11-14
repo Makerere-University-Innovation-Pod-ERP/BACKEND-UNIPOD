@@ -273,6 +273,11 @@ public class SubmissionController {
             @RequestParam(name = "file", required = false) List<MultipartFile> singleFiles,
             Authentication authentication
     ) {
+        if (files != null && !files.isEmpty() && singleFiles != null && !singleFiles.isEmpty()) {
+            throw new InvalidSubmissionException(
+                    "Send the missing files with either the 'files' or the 'file' parameter, not both."
+            );
+        }
         List<MultipartFile> uploads = new ArrayList<>();
         if (files != null) {
             uploads.addAll(files);

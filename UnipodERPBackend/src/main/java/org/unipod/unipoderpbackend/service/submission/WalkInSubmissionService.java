@@ -72,27 +72,40 @@ public class WalkInSubmissionService {
 
         ApiUser user = email == null ? null : users.findByEmailIgnoreCase(email).orElse(null);
         List<UserProfile> phoneProfiles = profiles.findAllByNormalizedPhone(phone);
-        if (phoneProfiles.size() > 1) {
-            throw new InvalidSubmissionException(
-                    "More than one account uses this phone number; capture the submitter's email address to identify them."
-            );
-        }
-        UserProfile phoneProfile = phoneProfiles.isEmpty() ? null : phoneProfiles.get(0);
+        UserProfile phoneProfile;
         if (user != null) {
-            if (phoneProfile != null && !phoneProfile.getUserId().equals(user.getId())) {
+            ApiUser emailUser = user;
+            List<UserProfile> userPhoneProfiles = phoneProfiles.stream()
+                    .filter(profile -> profile.getUserId().equals(emailUser.getId()))
+                    .toList();
+            if (!userPhoneProfiles.isEmpty()) {
+                // The email identifies the account when several profiles share
+                // the phone number.
+                phoneProfile = userPhoneProfiles.get(0);
+            } else if (!phoneProfiles.isEmpty()) {
                 throw new InvalidSubmissionException(
                         "The email address and phone number belong to different accounts. Correct the details and retry."
                 );
+            } else {
+                phoneProfile = null;
             }
-        } else if (phoneProfile != null) {
-            user = users.findById(phoneProfile.getUserId())
-                    .orElseThrow(() -> new InvalidSubmissionException(
-                            "The account registered with this phone number could not be loaded."
-                    ));
-            if (email != null && !user.getEmail().equalsIgnoreCase(email)) {
+        } else {
+            if (phoneProfiles.size() > 1) {
                 throw new InvalidSubmissionException(
-                        "The email address does not match the account registered with this phone number."
+                        "More than one account uses this phone number; capture the submitter's email address to identify them."
                 );
+            }
+            phoneProfile = phoneProfiles.isEmpty() ? null : phoneProfiles.get(0);
+            if (phoneProfile != null) {
+                user = users.findById(phoneProfile.getUserId())
+                        .orElseThrow(() -> new InvalidSubmissionException(
+                                "The account registered with this phone number could not be loaded."
+                        ));
+                if (email != null && !user.getEmail().equalsIgnoreCase(email)) {
+                    throw new InvalidSubmissionException(
+                            "The email address does not match the account registered with this phone number."
+                    );
+                }
             }
         }
 

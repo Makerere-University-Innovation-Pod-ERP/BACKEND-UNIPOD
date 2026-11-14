@@ -171,20 +171,19 @@ class AuthenticationServiceTest {
 
     @Test
     void createAssistedSubmitterFailsWhenBaseUrlIsNotConfigured() {
-        AuthenticationService withoutBaseUrl = new AuthenticationService(
-                users,
-                passwordEncoder,
-                jwtEncoder,
-                clock,
-                "https://api.example.test",
-                "unipod-erp-api",
-                Duration.ofMinutes(15)
-        );
-        when(users.existsByEmailIgnoreCase("walkin@example.test")).thenReturn(false);
-
         assertThrows(
                 IllegalStateException.class,
-                () -> withoutBaseUrl.createAssistedSubmitter("walkin@example.test")
+                () -> new AuthenticationService(
+                        users,
+                        passwordEncoder,
+                        jwtEncoder,
+                        clock,
+                        "https://api.example.test",
+                        "unipod-erp-api",
+                        Duration.ofMinutes(15),
+                        null,
+                        "  "
+                )
         );
     }
 

@@ -15,7 +15,6 @@ import org.unipod.unipoderpbackend.exception.submission.InvalidSubmissionExcepti
 import org.unipod.unipoderpbackend.model.submission.DocumentStatus;
 import org.unipod.unipoderpbackend.model.submission.DocumentType;
 import org.unipod.unipoderpbackend.model.submission.MissingItem;
-import org.unipod.unipoderpbackend.model.submission.MissingItemKind;
 import org.unipod.unipoderpbackend.model.submission.MissingItemStatus;
 import org.unipod.unipoderpbackend.model.submission.Submission;
 import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
@@ -127,6 +126,44 @@ class InformationResponseServiceTest {
     }
 
     @Test
+    void acceptsAnInformationItemThatTheSubmitterAnswersWithAFile() {
+        MissingItem requested = informationItem();
+        UUID requestedId = requested.getId();
+        stubOpenDocuments(requested);
+        when(uploads.upload(
+                eq(SUBMISSION_ID),
+                any(),
+                eq(DocumentType.OTHER),
+                eq(DocumentStatus.SUBMITTED),
+                any(),
+                eq(SUBMITTER),
+                eq(true),
+                eq(requestedId)
+        )).thenReturn(mock(DocumentResponse.class));
+        when(submissionService.reply(eq(SUBMISSION_ID), any(ReplySubmissionRequest.class), eq(SUBMITTER)))
+                .thenReturn(mock(SubmissionResponse.class));
+
+        service.respond(
+                SUBMISSION_ID,
+                null,
+                List.of(requestedId),
+                List.of(file("details.pdf")),
+                authentication
+        );
+
+        verify(uploads).upload(
+                eq(SUBMISSION_ID),
+                any(),
+                eq(DocumentType.OTHER),
+                eq(DocumentStatus.SUBMITTED),
+                any(),
+                eq(SUBMITTER),
+                eq(true),
+                eq(requestedId)
+        );
+    }
+
+    @Test
     void aNoteOnlyReplyNeedsNoRequestedItem() {
         when(submissionService.reply(eq(SUBMISSION_ID), any(ReplySubmissionRequest.class), eq(SUBMITTER)))
                 .thenReturn(mock(SubmissionResponse.class));
@@ -138,9 +175,8 @@ class InformationResponseServiceTest {
     }
 
     private void stubOpenDocuments(MissingItem... items) {
-        when(missingItems.findAllBySubmissionIdAndKindAndStatusOrderByRequestedAtAscIdAsc(
+        when(missingItems.findAllBySubmissionIdAndStatusOrderByRequestedAtAscIdAsc(
                 SUBMISSION_ID,
-                MissingItemKind.DOCUMENT,
                 MissingItemStatus.OPEN
         )).thenReturn(List.of(items));
     }
@@ -149,6 +185,13 @@ class InformationResponseServiceTest {
         MissingItem item = mock(MissingItem.class);
         when(item.getId()).thenReturn(UUID.randomUUID());
         when(item.getDocumentType()).thenReturn(documentType);
+        return item;
+    }
+
+    private static MissingItem informationItem() {
+        MissingItem item = mock(MissingItem.class);
+        when(item.getId()).thenReturn(UUID.randomUUID());
+        when(item.getDocumentType()).thenReturn(null);
         return item;
     }
 

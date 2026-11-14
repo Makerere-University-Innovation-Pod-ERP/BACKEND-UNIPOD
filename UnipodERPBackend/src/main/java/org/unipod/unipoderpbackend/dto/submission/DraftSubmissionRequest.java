@@ -22,8 +22,9 @@ public record DraftSubmissionRequest(
         @Size(max = 200) String programme,
         @Size(max = 255) String supervisor,
         RecommendationLetterStatus recommendationLetterStatus,
-        // Validated in the service after trimming, so a blank autosave value
-        // clears the address instead of failing bean validation.
+        // Staff-assisted drafts only; validated in the service after trimming so
+        // a blank autosave clears the address. Ignored for submitter-owned drafts,
+        // whose address comes from the authenticated actor.
         @Size(max = 254) String submitterEmail,
         @Size(max = 255) String submitterName,
         @Size(max = 40) String submitterPhone,
