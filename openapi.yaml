@@ -1148,6 +1148,166 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /reports/submissions-by-stage:
+    get:
+      tags: [Reports]
+      operationId: reportSubmissionsByStage
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, OBSERVER]
+      summary: Briefs by status [M3]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StageCountsReport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /reports/student-vs-public:
+    get:
+      tags: [Reports]
+      operationId: reportStudentVsPublic
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, OBSERVER]
+      summary: Student projects against public ideas [M3]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentVsPublicReport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /reports/completion-rate:
+    get:
+      tags: [Reports]
+      operationId: reportCompletionRate
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, OBSERVER]
+      summary: Share of submitted briefs completed or closed [M3]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompletionRateReport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /reports/income-trend:
+    get:
+      tags: [Reports]
+      operationId: reportIncomeTrend
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, OBSERVER]
+      summary: Confirmed payments per week, empty weeks as zero [M3]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: weeks
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 52
+            default: 12
+      responses:
+        '200':
+          description: Report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IncomeTrendReport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /reports/department-workload:
+    get:
+      tags: [Reports]
+      operationId: reportDepartmentWorkload
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, OBSERVER]
+      summary: Open cases and open invoices per department [M3]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DepartmentWorkloadReport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /exports:
+    post:
+      tags: [Reports]
+      operationId: createExport
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, OBSERVER]
+      summary: Export a report as CSV [M3]
+      description: Builds the file now and keeps it for download with `GET /exports/{id}`. Only CSV for now. Cells that start with = + - @ are prefixed with ' so spreadsheets do not run them as formulas.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExportRequest'
+      responses:
+        '201':
+          description: Export ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Export'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /exports/{id}:
+    get:
+      tags: [Reports]
+      operationId: downloadExport
+      x-required-roles: []
+      summary: Download an export
+      description: Only the person who requested it, or an administrator. Others get 404.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The CSV file
+          content:
+            text/csv:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /me/submissions:
     get:
       tags: [Submissions]
@@ -5261,7 +5421,7 @@ components:
       properties:
         action:
           type: string
-          enum: [CASE_VIEW, CASE_EDIT, CASE_FORWARD, CASE_ASSIGN_REVIEWER, CASE_REVIEW, CASE_DECIDE, AUDIT_VIEW, USER_MANAGE, PRICE_LIST_MANAGE, PRICE_LIST_PROPOSE]
+          enum: [CASE_VIEW, CASE_EDIT, CASE_FORWARD, CASE_ASSIGN_REVIEWER, CASE_REVIEW, CASE_DECIDE, AUDIT_VIEW, USER_MANAGE, PRICE_LIST_MANAGE, PRICE_LIST_PROPOSE, REPORT_VIEW]
         scope:
           type: string
           enum: [OWN, ASSIGNED, DEPARTMENT, ALL]
@@ -5419,6 +5579,130 @@ components:
         proposedBy:
           type: string
         updatedAt:
+          type: string
+          format: date-time
+    StageCountsReport:
+      type: object
+      required: [total, drafts, byStage]
+      properties:
+        total:
+          description: Briefs that left draft, the same rule as the managers' Overview.
+          type: integer
+          format: int64
+        drafts:
+          type: integer
+          format: int64
+        byStage:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+    StudentVsPublicReport:
+      type: object
+      required: [student, general, serviceRequests, total]
+      description: Counts briefs that left draft.
+      properties:
+        student:
+          type: integer
+          format: int64
+        general:
+          type: integer
+          format: int64
+        serviceRequests:
+          type: integer
+          format: int64
+        total:
+          type: integer
+          format: int64
+    CompletionRateReport:
+      type: object
+      required: [submitted, completed, closed, completionRate, closedRate]
+      properties:
+        submitted:
+          type: integer
+          format: int64
+        completed:
+          type: integer
+          format: int64
+        closed:
+          description: Completed or closed.
+          type: integer
+          format: int64
+        completionRate:
+          type: number
+        closedRate:
+          type: number
+    IncomeTrendReport:
+      type: object
+      required: [weeks, totalUgx, series]
+      properties:
+        weeks:
+          type: integer
+        totalUgx:
+          type: integer
+          format: int64
+        series:
+          type: array
+          items:
+            type: object
+            required: [weekStart, incomeUgx]
+            properties:
+              weekStart:
+                type: string
+                format: date
+              incomeUgx:
+                type: integer
+                format: int64
+    DepartmentWorkloadReport:
+      type: object
+      required: [departments]
+      properties:
+        departments:
+          type: array
+          items:
+            type: object
+            required: [departmentId, departmentName, openCases, openInvoices]
+            properties:
+              departmentId:
+                type: string
+                format: uuid
+              departmentName:
+                type: string
+              openCases:
+                type: integer
+                format: int64
+              openInvoices:
+                type: integer
+                format: int64
+    ExportRequest:
+      type: object
+      required: [report, format]
+      properties:
+        report:
+          type: string
+          enum: [SUBMISSIONS_BY_STAGE, STUDENT_VS_PUBLIC, COMPLETION_RATE, INCOME_TREND, DEPARTMENT_WORKLOAD]
+        format:
+          type: string
+          enum: [CSV]
+        weeks:
+          type: integer
+          minimum: 1
+          maximum: 52
+          description: For INCOME_TREND only; default 12.
+    Export:
+      type: object
+      required: [id, report, format, fileName, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        report:
+          type: string
+        format:
+          type: string
+        fileName:
+          type: string
+        createdAt:
           type: string
           format: date-time
     SignupRequest:
