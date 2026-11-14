@@ -504,6 +504,126 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/Conflict'
+  /submissions/drafts:
+    post:
+      tags: [Submissions]
+      operationId: createSubmissionDraft
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, SUBMITTER]
+      summary: Save a new brief as a draft
+      description: |
+        Creates a partially completed brief. A draft has no tracking reference,
+        is visible only to its submitter and intake staff, and is not placed in
+        the reception queue or announced to reception. `category` is required
+        to start a draft; every other field may be completed later through
+        `PATCH /submissions/drafts/{id}` and the brief is finalised with
+        `POST /submissions/{id}/submit`, which allocates the tracking reference.
+        A submitter's identity is taken from the authenticated principal.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DraftSubmissionRequest'
+      responses:
+        '201':
+          description: Draft created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /submissions/drafts/{id}:
+    patch:
+      tags: [Submissions]
+      operationId: patchSubmissionDraft
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, SUBMITTER]
+      summary: Autosave a draft
+      description: |
+        Partial update used by the draft editor's autosave. Only the supplied
+        fields change; omitted fields are left untouched. Returns 409 once the
+        brief has left the `DRAFT` stage, so a stale editor cannot overwrite a
+        submitted brief.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DraftSubmissionRequest'
+      responses:
+        '200':
+          description: Draft updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /submissions/walk-in:
+    post:
+      tags: [Submissions]
+      operationId: createWalkInSubmission
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
+      summary: Capture a walk-in brief for a submitter at reception
+      description: |
+        Receptionist-assisted intake. The submitter is matched by email first,
+        then by phone. When neither resolves to an account a minimal account of
+        the supplied `account_kind` (default `PUBLIC`) is created and the
+        temporary password or set-password link is returned once. `registered_by`
+        is the receptionist and `submitter_id` is the walk-in account. Unlike a
+        draft, the brief is submitted immediately and appears in the reception
+        queue. The request returns 400 when no account exists and no email is
+        supplied, when the email and phone belong to different accounts, when
+        more than one account shares the phone number, when the rules version is
+        missing, or when the account-kind details needed for the profile are
+        missing.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WalkInSubmissionRequest'
+      responses:
+        '201':
+          description: Submitted walk-in brief and its account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalkInSubmissionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /submissions/search:
     get:
       tags: [Submissions]
@@ -826,8 +946,11 @@ paths:
       description: |
         Returns only submissions whose `submitter_id` is the signed-in
         principal; staff-only fields are omitted. Each row includes
-        `pendingAction`, `waitingForYou`, and `waitingSince` so the home screen
-        can highlight work waiting for the submitter. Use `tab` to split the
+        `pendingAction`, `pendingActionHref`, `waitingForYou`, and
+        `waitingSince` so the home screen can highlight work waiting for the
+        submitter. `pendingActionHref` is an API path to follow for the details
+        behind the action (for example `/cases/{id}/my-improvement`); it is null
+        when no extra document is needed. Use `tab` to split the
         Briefs and Service requests tabs; Invoices and payments and Bookings are
         separate modules advertised by `GET /me/capabilities`.
       security:
@@ -845,7 +968,7 @@ paths:
             endpoint.
           schema:
             type: string
-            enum: [BRIEFS, SERVICE_REQUESTS]
+            enum: [ALL, BRIEFS, SERVICE_REQUESTS, DRAFTS, ACTION_REQUIRED]
       responses:
         '200':
           description: Submitter-owned submissions
@@ -905,6 +1028,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SubmitterCapabilities'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /me/submissions-summary:
+    get:
+      tags: [Submissions]
+      operationId: getSubmitterSubmissionsSummary
+      x-required-roles: [SUBMITTER]
+      summary: Tab counts and waiting-for-you banners for the submitter home
+      description: |
+        Counts for the submitter's tabs (All, Briefs, Service requests, Drafts,
+        Action required) and the banners for work that needs the submitter:
+        open missing-information requests, improvement requests, unpaid
+        invoices, upcoming facility bookings and upcoming training sessions.
+        Only banners with a non-zero count are returned.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Submitter summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionsSummary'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -987,11 +1135,14 @@ paths:
       x-required-roles: [SUBMITTER]
       summary: Reply to an information request
       description: |
-        Available to the owning submitter while the brief is `SUBMITTED` or
-        `AWAITING_INFORMATION`. Every field is optional so the submitter can send
-        only the missing detail. Open information requests are resolved
-        automatically; the brief returns to `SUBMITTED` and a
-        `submission.reply_received` notification is published.
+        Available to the owning submitter while the brief is `SUBMITTED`,
+        `AWAITING_INFORMATION`, or `IMPROVEMENT_REQUESTED`. Every field is
+        optional so the submitter can send only the missing detail. Open
+        information requests are resolved automatically; the brief returns to
+        `SUBMITTED`, or to `RESUBMITTED` when it answers an improvement request,
+        and a `submission.reply_received` notification is published. For an
+        improvement reply the notification confirms that the improved version
+        was received rather than saying the brief went back to reception.
       security:
         - bearerAuth: []
       parameters:
@@ -1213,6 +1364,221 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+  /submissions/{id}/reception-check:
+    put:
+      tags: [Submissions]
+      operationId: updateReceptionCheckLines
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
+      summary: Save the four named reception verification lines
+      description: |
+        Frontend-shaped alternative to `PUT /submissions/{id}/reception-checklist`.
+        Each line (`details_complete`, `documents_complete`, `files_readable`,
+        `correct_type`) is `{checked, note}`; at least one line must be supplied.
+        Forwarding remains locked until every line is checked. Changing the
+        checklist after the brief was forwarded returns 409.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReceptionCheckLinesRequest'
+      responses:
+        '200':
+          description: Updated reception checklist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceptionCheckResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /submissions/{id}/request-info:
+    post:
+      tags: [Submissions]
+      operationId: requestSubmissionInfo
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER]
+      summary: Request missing items with a due date and message
+      description: |
+        Frontend-shaped alternative to `POST /submissions/{id}/request-information`.
+        `missing_items` is a list of labels; each becomes an open missing item.
+        The optional `reason`, `due_date` and `message` are copied onto every
+        item. The brief moves from `SUBMITTED` to `AWAITING_INFORMATION`, the
+        change is audited, and the submitter is notified. An empty request
+        returns 400.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestInfoAliasRequest'
+      responses:
+        '200':
+          description: Brief awaiting the requested information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /submissions/{id}/remind:
+    post:
+      tags: [Submissions]
+      operationId: remindSubmissionSubmitter
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER]
+      summary: Remind the submitter about open missing information
+      description: |
+        Sends one reminder for the open missing-information request through the
+        email outbox and the in-app notification bell, and stamps
+        `lastRemindedAt` on each open item. The optional `note` is included in
+        the reminder. Returns 409 when there is no open request.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendReminderRequest'
+      responses:
+        '200':
+          description: Open missing items after the reminder
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissingItemsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /submissions/{id}/respond-info:
+    post:
+      tags: [Submissions]
+      operationId: respondToSubmissionInfoRequest
+      x-required-roles: [SUBMITTER]
+      summary: Upload the missing files and answer an information request
+      description: |
+        The owning submitter uploads one or more `files` (or a single `file`)
+        together with an optional reply `note`. Each uploaded file must name the
+        open requested item it answers through `documentItemIds`; a document
+        item supplies the file's document type, an information item defaults it
+        to `OTHER`, and the named item is the only item the file resolves. The
+        brief returns from `AWAITING_INFORMATION` to `SUBMITTED` and reception
+        is notified. Sent as `multipart/form-data`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                note:
+                  type: string
+                  maxLength: 2000
+                documentItemIds:
+                  type: array
+                  description: >-
+                    One open requested item id per uploaded file, in the same
+                    order as `files`/`file`. Required when a file is uploaded.
+                  items:
+                    type: string
+                    format: uuid
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Brief returned to the reception queue
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /submissions/{id}/confirmation:
+    get:
+      tags: [Submissions]
+      operationId: getSubmissionConfirmation
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, SUBMITTER, REVIEWER, SECTOR_OFFICER]
+      summary: Read the tracking reference and department invite link
+      description: |
+        What the submitter sees after submitting: the `tracking_reference`,
+        `submitted_at`, the destination department and that department's
+        WhatsApp group invite link. The link is null when the department has no
+        configured group. A draft brief is not routed, so it never receives the
+        department link through this fallback.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      responses:
+        '200':
+          description: Submission confirmation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionConfirmation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /submissions/{id}/missing-items:
     get:
       tags: [Submissions]
@@ -1576,12 +1942,14 @@ paths:
       summary: Move a case to its next allowed stage
       description: |
         Administrator and Innovation Coordinator may perform any valid canonical
-        transition. A Fact-Finding Officer may move an `IN_FACT_FINDING` or
-        `FORWARDED` case only to `READY_FOR_REVIEW` or `IMPROVEMENT_REQUESTED`.
-        Moving to `READY_FOR_REVIEW` or `IN_REVIEW` from fact-finding requires a
-        completed fact-finding check (FR-008), and `IMPROVEMENT_REQUESTED`
-        requires a non-blank note. The current version is required to reject stale
-        writes; a stale write returns 409. A transition the actor's role cannot
+        transition. A Fact-Finding Officer may start fact-finding (`IN_FACT_FINDING`)
+        from a `FORWARDED` case, then move an `IN_FACT_FINDING` case only to
+        `READY_FOR_REVIEW` or `IMPROVEMENT_REQUESTED`. Moving to `READY_FOR_REVIEW`
+        or `IN_REVIEW` from fact-finding requires a completed fact-finding check
+        (FR-008), and `IMPROVEMENT_REQUESTED` requires a non-blank note. Asking for
+        more changes directly after a `RESUBMITTED` version is allowed, so it does
+        not need an extra accept step. The current version is required to reject
+        stale writes; a stale write returns 409. A transition the actor's role cannot
         perform returns 403.
       parameters:
         - $ref: '#/components/parameters/SubmissionId'
@@ -2258,7 +2626,8 @@ paths:
         `application/octet-stream`); anything else returns `400`. Each upload receives
         the next per-type `version` and resolves a matching open document request.
         `documentType` defaults to `OTHER` when omitted. Submitters may upload only while their
-        brief is `DRAFT`, `SUBMITTED`, or `AWAITING_INFORMATION`.
+        brief is `DRAFT`, `SUBMITTED`, `AWAITING_INFORMATION`, or
+        `IMPROVEMENT_REQUESTED`, so an improved version can carry its files.
       parameters:
         - $ref: '#/components/parameters/SubmissionId'
       requestBody:
@@ -2380,7 +2749,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Sector'
+                $ref: '#/components/schemas/AdminSector'
         '400':
           $ref: '#/components/responses/BadRequest'
         '422':
@@ -2406,7 +2775,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Sector'
+                  $ref: '#/components/schemas/AdminSector'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2457,7 +2826,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Sector'
+                $ref: '#/components/schemas/AdminSector'
         '400':
           $ref: '#/components/responses/BadRequest'
         '422':
@@ -2574,6 +2943,33 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReceptionQueue'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /queues/reception/missing-docs:
+    get:
+      tags: [Reception]
+      operationId: getReceptionMissingDocsQueue
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
+      summary: Get briefs waiting on submitters for missing documents
+      description: |
+        Lists `AWAITING_INFORMATION` briefs with their open missing items. Each
+        row carries the earliest due date, the most recent reminder time and an
+        `overdue` flag; `overdueCount` covers the whole queue, not just this
+        page.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Missing-documents queue page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissingDocsQueue'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -4945,6 +5341,30 @@ components:
           minItems: 1
           items:
             $ref: '#/components/schemas/MissingItemRequest'
+    RequestInfoAliasRequest:
+      type: object
+      additionalProperties: false
+      description: |
+        Frontend-shaped request for more information. Each entry in
+        `missing_items` becomes an open missing item; `reason`, `due_date` and
+        `message` are copied onto every item.
+      properties:
+        missing_items:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            type: string
+            maxLength: 255
+        reason:
+          type: [string, 'null']
+          maxLength: 255
+        due_date:
+          type: [string, 'null']
+          format: date
+        message:
+          type: [string, 'null']
+          maxLength: 2000
     ReceptionCheckItemKey:
       type: string
       enum:
@@ -4974,6 +5394,31 @@ components:
           minItems: 1
           items:
             $ref: '#/components/schemas/ReceptionCheckItemRequest'
+    ReceptionCheckLinesRequest:
+      type: object
+      additionalProperties: false
+      description: |
+        The four named reception verification lines. Every line is optional so
+        progress can be saved, but at least one line must be supplied.
+      properties:
+        details_complete:
+          $ref: '#/components/schemas/ReceptionCheckLine'
+        documents_complete:
+          $ref: '#/components/schemas/ReceptionCheckLine'
+        files_readable:
+          $ref: '#/components/schemas/ReceptionCheckLine'
+        correct_type:
+          $ref: '#/components/schemas/ReceptionCheckLine'
+    ReceptionCheckLine:
+      type: object
+      additionalProperties: false
+      required: [checked]
+      properties:
+        checked:
+          type: boolean
+        note:
+          type: [string, 'null']
+          maxLength: 2000
     ReceptionCheckItemResponse:
       type: object
       required: [key, label, checked]
@@ -5204,6 +5649,151 @@ components:
           $ref: '#/components/schemas/Submission'
         account:
           $ref: '#/components/schemas/AssistedAccountResponse'
+    DraftSubmissionRequest:
+      type: object
+      additionalProperties: false
+      description: |
+        A partially completed brief. `category` is required when the draft is
+        created and may be omitted on later autosaves, which only send the field
+        that changed. The tracking reference is allocated on submit, not here.
+      properties:
+        category:
+          type: string
+          enum: [student, general, service_request]
+        title:
+          type: string
+          maxLength: 240
+        purpose:
+          type: string
+          maxLength: 5000
+        problemAddressed:
+          type: string
+          maxLength: 5000
+        submitterId:
+          type: [string, 'null']
+          maxLength: 255
+        studentNumber:
+          type: [string, 'null']
+          maxLength: 80
+        programme:
+          type: [string, 'null']
+          maxLength: 200
+        supervisor:
+          type: [string, 'null']
+          maxLength: 255
+        recommendationLetterStatus:
+          oneOf:
+            - $ref: '#/components/schemas/RecommendationLetterStatus'
+            - type: 'null'
+        submitterEmail:
+          type: [string, 'null']
+          format: email
+          maxLength: 254
+        submitterName:
+          type: [string, 'null']
+          maxLength: 255
+        submitterPhone:
+          type: [string, 'null']
+          maxLength: 40
+        serviceRequested:
+          type: [string, 'null']
+          maxLength: 255
+        serviceRequester:
+          oneOf:
+            - $ref: '#/components/schemas/ServiceRequester'
+            - type: 'null'
+        department:
+          type: [string, 'null']
+          maxLength: 255
+        expectedResult:
+          type: [string, 'null']
+          maxLength: 5000
+        preferredAt:
+          type: [string, 'null']
+          format: date-time
+        acceptedRulesVersion:
+          type: [string, 'null']
+          maxLength: 32
+    WalkInSubmissionRequest:
+      type: object
+      additionalProperties: false
+      required: [name, phone, category, title, purpose, problemAddressed]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        phone:
+          type: string
+          minLength: 1
+          maxLength: 20
+        email:
+          type: [string, 'null']
+          format: email
+          maxLength: 254
+          description: Used first to find or create the account; required when no account matches the phone.
+        account_kind:
+          $ref: '#/components/schemas/AccountKind'
+          description: >-
+            Defaults to `PUBLIC` for a new account. `STUDENT` requires
+            `studentNumber`, `programme` and `email`; `ORGANISATION` cannot be
+            created through walk-in intake and must sign up first.
+        category:
+          type: string
+          enum: [student, general, service_request]
+        title:
+          type: string
+          minLength: 1
+          maxLength: 240
+        purpose:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        problemAddressed:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        studentNumber:
+          type: [string, 'null']
+          maxLength: 80
+        programme:
+          type: [string, 'null']
+          maxLength: 200
+        supervisor:
+          type: [string, 'null']
+          maxLength: 255
+        recommendationLetterStatus:
+          oneOf:
+            - $ref: '#/components/schemas/RecommendationLetterStatus'
+            - type: 'null'
+        serviceRequested:
+          type: [string, 'null']
+          maxLength: 255
+        serviceRequester:
+          oneOf:
+            - $ref: '#/components/schemas/ServiceRequester'
+            - type: 'null'
+        department:
+          type: [string, 'null']
+          maxLength: 255
+        expectedResult:
+          type: [string, 'null']
+          maxLength: 5000
+        preferredAt:
+          type: [string, 'null']
+          format: date-time
+        acceptedRulesVersion:
+          type: [string, 'null']
+          maxLength: 32
+          description: Required; the version of the rules the submitter accepted at the desk.
+    WalkInSubmissionResponse:
+      type: object
+      required: [submission, account]
+      properties:
+        submission:
+          $ref: '#/components/schemas/Submission'
+        account:
+          $ref: '#/components/schemas/AssistedAccountResponse'
     RecommendationLetterStatus:
       type: string
       enum: [verified, submitted, one_file, not_required]
@@ -5407,6 +5997,14 @@ components:
           type: string
           format: email
           maxLength: 320
+        whatsappGroupUrl:
+          type: [string, 'null']
+          maxLength: 500
+          pattern: '^$|^[Hh][Tt][Tt][Pp][Ss]://[^/?#\s]+([/?#].*)?$'
+          description: >-
+            Absolute `https://` WhatsApp group invite link with a valid host,
+            shared with submitters routed to this department. Send an empty
+            string to clear it; omit it to keep the stored link.
         active:
           type: boolean
         version:
@@ -5415,20 +6013,63 @@ components:
           minimum: 0
           description: Expected sector version for updates; omit when creating a sector.
     Sector:
-      allOf:
-        - $ref: '#/components/schemas/SectorRequest'
-        - type: object
-          required: [id, version, createdAt, updatedAt]
-          properties:
-            id:
-              type: string
-              format: uuid
-            createdAt:
-              type: string
-              format: date-time
-            updatedAt:
-              type: string
-              format: date-time
+      type: object
+      additionalProperties: false
+      description: >-
+        Department directory entry shared with staff. The WhatsApp group invite
+        link is deliberately omitted; it is only shared with a submitter on the
+        confirmation screen for the department that received their brief.
+      required: [id, name, notificationEmail, active, version, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        notificationEmail:
+          type: string
+          format: email
+        active:
+          type: boolean
+        version:
+          type: integer
+          format: int64
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    AdminSector:
+      type: object
+      additionalProperties: false
+      description: >-
+        Administrator catalog entry. Unlike `Sector` it includes the stored
+        WhatsApp group invite link so the edit form can prefill it.
+      required: [id, name, notificationEmail, active, version, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        notificationEmail:
+          type: string
+          format: email
+        whatsappGroupUrl:
+          type: [string, 'null']
+          maxLength: 500
+        active:
+          type: boolean
+        version:
+          type: integer
+          format: int64
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
     SectorFilterOption:
       type: object
       additionalProperties: false
@@ -5702,6 +6343,13 @@ components:
           oneOf:
             - $ref: '#/components/schemas/SubmitterPendingAction'
             - type: 'null'
+        pendingActionHref:
+          type: [string, 'null']
+          description: |
+            Server-relative API path with the details behind the pending action,
+            appended to the API base URL. For `IMPROVEMENT_REQUESTED` this is
+            `/cases/{id}/my-improvement`, which returns the guidance, due date,
+            and requested items. Null when no extra document is needed.
         waitingForYou:
           type: [string, 'null']
           description: One-line highlight for the submitter home.
@@ -5748,6 +6396,62 @@ components:
             recentlyUpdatedCount:
               type: integer
               format: int64
+    MissingDocsQueue:
+      type: object
+      required: [items, page, size, totalElements, totalPages, overdueCount]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MissingDocsQueueItem'
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+        overdueCount:
+          type: integer
+          format: int64
+          description: Overdue briefs across the whole queue, not only this page.
+    MissingDocsQueueItem:
+      type: object
+      required: [submissionId, code, title, category, submitterEmail, overdue, missingItems]
+      properties:
+        submissionId:
+          type: string
+          format: uuid
+        code:
+          type: [string, 'null']
+        title:
+          type: string
+        category:
+          type: string
+          enum: [student, general, service_request]
+        submitterName:
+          type: [string, 'null']
+        submitterEmail:
+          type: [string, 'null']
+        submittedAt:
+          type: [string, 'null']
+          format: date-time
+        dueAt:
+          type: [string, 'null']
+          format: date-time
+          description: Earliest deadline across the open missing items.
+        lastRemindedAt:
+          type: [string, 'null']
+          format: date-time
+          description: Most recent reminder sent across the open missing items.
+        overdue:
+          type: boolean
+        missingItems:
+          type: array
+          items:
+            $ref: '#/components/schemas/MissingItemResponse'
     CaseStageHistory:
       type: object
       required: [id, toStage, changedBy, note, changedAt]
@@ -5851,7 +6555,7 @@ components:
           format: date-time
     CaseFileCapabilities:
       type: object
-      required: [nextStep, saveOutcome, updateDocumentStatus]
+      required: [nextStep, saveOutcome, updateDocumentStatus, canEditDraft, canRespondInfo, canUploadRevision, canReceptionForward, canFactFind, canAssignReviewers, canRecordDecision, canDepartmentRespond, lock_reasons]
       properties:
         nextStep:
           $ref: '#/components/schemas/Capability'
@@ -5859,6 +6563,38 @@ components:
           $ref: '#/components/schemas/Capability'
         updateDocumentStatus:
           $ref: '#/components/schemas/Capability'
+        canEditDraft:
+          type: boolean
+          description: The caller may edit the brief while it is a draft.
+        canRespondInfo:
+          type: boolean
+          description: The owning submitter may answer an open information request.
+        canUploadRevision:
+          type: boolean
+          description: The owning submitter may upload a revision after an improvement request.
+        canReceptionForward:
+          type: boolean
+          description: >-
+            Reception may forward a submitted brief to a department. False
+            until all four reception checks (details_complete,
+            documents_complete, files_readable, correct_type) are checked.
+        canFactFind:
+          type: boolean
+          description: A fact-finding officer may record fact-finding for this case.
+        canAssignReviewers:
+          type: boolean
+          description: The caller may assign reviewers while the brief is under review.
+        canRecordDecision:
+          type: boolean
+          description: The caller may record the review decision (the same gate as `saveOutcome`).
+        canDepartmentRespond:
+          type: boolean
+          description: The receiving department may respond to the forwarded case.
+        lock_reasons:
+          type: object
+          description: A reason for every capability that is false, keyed by the capability name.
+          additionalProperties:
+            type: string
     Capability:
       type: object
       required: [enabled, reason]
@@ -6160,6 +6896,66 @@ components:
         version:
           type: integer
           format: int64
+    SubmissionConfirmation:
+      type: object
+      required: [id, tracking_reference, submitted_at, destination_department_name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tracking_reference:
+          type: [string, 'null']
+          pattern: '^(BRF|STU|GEN|SRV)-[0-9]{4}-[0-9]{6,19}$'
+        submitted_at:
+          type: [string, 'null']
+          format: date-time
+        destination_department_id:
+          type: [string, 'null']
+          format: uuid
+        destination_department_name:
+          type: [string, 'null']
+        department_whatsapp_group_invite_link:
+          type: [string, 'null']
+    SubmissionsSummary:
+      type: object
+      required: [tabs, waitingForYou]
+      properties:
+        tabs:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubmissionsSummaryTab'
+        waitingForYou:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubmissionsSummaryBanner'
+    SubmissionsSummaryTab:
+      type: object
+      required: [key, label, count]
+      properties:
+        key:
+          type: string
+          enum: [ALL, BRIEFS, SERVICE_REQUESTS, DRAFTS, ACTION_REQUIRED]
+        label:
+          type: string
+        count:
+          type: integer
+          format: int64
+    SubmissionsSummaryBanner:
+      type: object
+      required: [type, title, message, count, href]
+      properties:
+        type:
+          type: string
+          enum: [MISSING_DOCUMENTS, IMPROVEMENT_REQUEST, UNPAID_INVOICE, UPCOMING_BOOKING, UPCOMING_SESSION]
+        title:
+          type: string
+        message:
+          type: string
+        count:
+          type: integer
+          format: int64
+        href:
+          type: string
     SubmitterCapabilities:
       type: object
       required: [canCreateBrief, canEditDraft, canSubmitDraft, canRespondToInformationRequest, canUploadDocuments, canUploadPaymentProof, canBook, modules, message]
@@ -6174,7 +6970,7 @@ components:
           type: boolean
         canUploadDocuments:
           type: boolean
-          description: Uploads are allowed only while the brief is DRAFT, SUBMITTED, or AWAITING_INFORMATION.
+          description: Uploads are allowed only while the brief is DRAFT, SUBMITTED, AWAITING_INFORMATION, or IMPROVEMENT_REQUESTED.
         canUploadPaymentProof:
           type: boolean
           description: True when the invoices and payments module is available.

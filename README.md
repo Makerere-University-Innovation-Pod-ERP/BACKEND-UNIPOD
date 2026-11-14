@@ -613,7 +613,7 @@ Configure the following environment variables in the deployment environment.
 | `BOOTSTRAP_ADMIN_EMAIL` | Email for the first Administrator account. |
 | `BOOTSTRAP_ADMIN_PASSWORD` | Initial Administrator password (minimum 12 characters). |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated list of exact browser origins allowed to call the API. |
-| `APP_PUBLIC_BASE_URL` | Public frontend base URL used in password-setup links, for example `https://app.example.test`. When unset, assisted accounts fall back to the origin of the incoming API request and log a warning. |
+| `APP_PUBLIC_BASE_URL` | Frontend base URL used in password-setup links; defaults to `http://localhost:5173` until a public frontend is deployed. |
 | `JWT_ROLES_CLAIM` | JWT claim containing role names. Defaults to `roles`. |
 | `JWT_SUBJECT_CLAIM` | JWT claim used as the authenticated user identifier. Defaults to `sub`. |
 | `NOTIFICATION_EMAIL_ENABLED` | Enables the scheduled outbox email worker; defaults to `false`. |
@@ -634,7 +634,7 @@ Configure the following environment variables in the deployment environment.
 | `S3_PATH_STYLE_ACCESS` | Enables path-style bucket addressing (defaults to `true`). |
 | `S3_MAX_FILE_BYTES` | Maximum stored file size in bytes (defaults to `15728640`, 15 MB). |
 | `S3_MAX_REQUEST_BYTES` | Multipart request envelope limit in bytes (defaults to `16777216`, 16 MB). |
-| `APP_PUBLIC_BASE_URL` | Public frontend base URL used to build password-setup links. When unset, assisted accounts fall back to the origin of the incoming API request and log a warning. |
+| `APP_PUBLIC_BASE_URL` | Frontend base URL used to build password-setup links; defaults to `http://localhost:5173` until a public frontend is deployed. |
 
 Use the AWS SDK default credential provider chain for S3 credentials (for
 example, a workload IAM role or `AWS_ACCESS_KEY_ID` and
@@ -709,7 +709,7 @@ connection details (do not use the external database URL):
 | `BOOTSTRAP_ADMIN_EMAIL` | Initial Administrator email |
 | `BOOTSTRAP_ADMIN_PASSWORD` | Initial password, at least 12 characters |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:3000` for localhost development |
-| `APP_PUBLIC_BASE_URL` | Public frontend URL used in password-setup links, for example `https://app.example.test` |
+| `APP_PUBLIC_BASE_URL` | `http://localhost:5173` while the frontend is local; password-setup links only work for users running the frontend at that address. |
 
 The database connection above uses the private Render hostname, port `5432`,
 and database `unipod_erp`. Keep the database inbound rule private for
