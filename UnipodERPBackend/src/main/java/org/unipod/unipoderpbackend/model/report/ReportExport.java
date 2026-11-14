@@ -37,6 +37,9 @@ public class ReportExport {
     @Column(name = "file_name", nullable = false, length = 120)
     private String fileName;
 
+    @Column(name = "content_type", nullable = false, length = 100)
+    private String contentType;
+
     @Basic(fetch = FetchType.LAZY)
     @Column(nullable = false)
     private byte[] content;
@@ -45,12 +48,13 @@ public class ReportExport {
     }
 
     public ReportExport(UUID id, ReportType report, ExportFormat format, String requestedBy,
-                        String fileName, byte[] content, Instant now) {
+                        String fileName, String contentType, byte[] content, Instant now) {
         this.id = id;
         this.report = report;
         this.format = format;
         this.requestedBy = requestedBy;
         this.fileName = fileName;
+        this.contentType = contentType;
         this.content = content;
         this.createdAt = now;
     }
@@ -77,6 +81,10 @@ public class ReportExport {
 
     public String getFileName() {
         return fileName;
+    }
+
+    public String getContentType() {
+        return contentType;
     }
 
     public byte[] getContent() {
