@@ -1059,6 +1059,51 @@ paths:
           $ref: '#/components/responses/NotFound'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /price-list-items/{id}/invoice:
+    post:
+      tags: [Finance]
+      operationId: invoiceFromPriceListItem
+      x-required-roles: [FINANCE_OFFICER, ADMINISTRATOR]
+      summary: Bill a customer from a price [FN1, FN2]
+      description: |
+        Creates an invoice in the finance module from an ACTIVE price: amount = price x
+        quantity, department = the price's department, description = service, quantity and
+        unit. The invoice then follows the normal proof, check and receipt steps.
+        409 if the price is not active.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvoiceFromPriceRequest'
+      responses:
+        '201':
+          description: Invoice created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /price-list-items/{id}:
     put:
       tags: [Finance]
@@ -5290,6 +5335,28 @@ components:
     PriceItemStatus:
       type: string
       enum: [PROPOSED, ACTIVE, RETIRED]
+    InvoiceFromPriceRequest:
+      type: object
+      required: [customerEmail, sourceType]
+      properties:
+        customerEmail:
+          type: string
+          format: email
+          maxLength: 254
+        customerName:
+          type: string
+          maxLength: 255
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 1
+        sourceType:
+          type: string
+          enum: [REQUEST, BOOKING, SESSION, JOB]
+        sourceId:
+          type: string
+          maxLength: 64
     PriceListItemRequest:
       type: object
       required: [departmentId, service, unit, priceUgx]
