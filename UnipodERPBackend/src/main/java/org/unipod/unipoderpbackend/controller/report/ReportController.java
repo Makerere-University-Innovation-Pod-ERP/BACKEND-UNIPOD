@@ -27,6 +27,7 @@ import org.unipod.unipoderpbackend.dto.report.ExportResponse;
 import org.unipod.unipoderpbackend.dto.report.IncomeTrendResponse;
 import org.unipod.unipoderpbackend.dto.report.StageCountsResponse;
 import org.unipod.unipoderpbackend.dto.report.StudentVsPublicResponse;
+import org.unipod.unipoderpbackend.model.report.ExportFormat;
 import org.unipod.unipoderpbackend.model.report.ReportExport;
 import org.unipod.unipoderpbackend.security.CurrentActor;
 import org.unipod.unipoderpbackend.service.report.ExportService;
@@ -88,7 +89,9 @@ public class ReportController {
     public ResponseEntity<byte[]> download(@PathVariable UUID id, Authentication authentication) {
         ReportExport export = exports.download(currentActor.from(authentication), id);
         return ResponseEntity.ok()
-                .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
+                .contentType(export.getFormat() == ExportFormat.PDF
+                        ? MediaType.APPLICATION_PDF
+                        : new MediaType("text", "csv", StandardCharsets.UTF_8))
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         ContentDisposition.attachment().filename(export.getFileName()).build().toString())
                 .body(export.getContent());

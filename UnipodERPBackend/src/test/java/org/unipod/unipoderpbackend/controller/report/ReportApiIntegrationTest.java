@@ -1,5 +1,6 @@
 package org.unipod.unipoderpbackend.controller.report;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -11,6 +12,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.time.LocalDate;
 import java.util.Map;
 import java.util.UUID;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.text.PDFTextStripper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -120,6 +124,25 @@ class ReportApiIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"report\": \"INCOME_TREND\", \"format\": \"CSV\"}"))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void exportsCanAlsoBePdf() throws Exception {
+        String body = mockMvc.perform(post("/exports").header("Authorization", coordinator)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"report\": \"INCOME_TREND\", \"format\": \"PDF\", \"weeks\": 4}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.fileName").value(containsString(".pdf")))
+                .andReturn().getResponse().getContentAsString();
+        byte[] pdf = mockMvc.perform(get("/exports/" + objectMapper.readTree(body).get("id").asString())
+                        .header("Authorization", coordinator))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+                .andReturn().getResponse().getContentAsByteArray();
+        try (PDDocument document = Loader.loadPDF(pdf)) {
+            assertThat(new PDFTextStripper().getText(document))
+                    .contains("Confirmed income per week", "week_start", "rep-coordinator@example.test");
+        }
     }
 
     private String paidInvoiceOf(long amount) throws Exception {

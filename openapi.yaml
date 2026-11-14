@@ -1256,8 +1256,8 @@ paths:
       tags: [Reports]
       operationId: createExport
       x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, OBSERVER]
-      summary: Export a report as CSV [M3]
-      description: Builds the file now and keeps it for download with `GET /exports/{id}`. Only CSV for now. Cells that start with = + - @ are prefixed with ' so spreadsheets do not run them as formulas.
+      summary: Export a report as CSV or PDF [M3]
+      description: Builds the file now and keeps it for download with `GET /exports/{id}`. Cells that start with = + - @ are prefixed with ' so spreadsheets do not run them as formulas.
       security:
         - bearerAuth: []
       requestBody:
@@ -1299,13 +1299,133 @@ paths:
             format: uuid
       responses:
         '200':
-          description: The CSV file
+          description: The exported file
           content:
             text/csv:
               schema:
                 type: string
+            application/pdf:
+              schema:
+                type: string
+                format: binary
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /invoices/{id}/pdf:
+    get:
+      tags: [Finance]
+      operationId: downloadInvoicePdf
+      x-required-roles: [ADMINISTRATOR, FINANCE_OFFICER]
+      summary: Invoice as PDF, with how to pay
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /invoices/{id}/receipt/pdf:
+    get:
+      tags: [Finance]
+      operationId: downloadReceiptPdf
+      x-required-roles: [ADMINISTRATOR, FINANCE_OFFICER]
+      summary: Receipt as PDF (404 until the receipt is issued)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /me/invoices/{id}/pdf:
+    get:
+      tags: [Finance]
+      operationId: downloadMyInvoicePdf
+      x-required-roles: [SUBMITTER]
+      summary: My invoice as PDF, with how to pay
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /me/invoices/{id}/receipt/pdf:
+    get:
+      tags: [Finance]
+      operationId: downloadMyReceiptPdf
+      x-required-roles: [SUBMITTER]
+      summary: My receipt as PDF (404 until the receipt is issued)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
   /me/submissions:
@@ -5683,7 +5803,7 @@ components:
           enum: [SUBMISSIONS_BY_STAGE, STUDENT_VS_PUBLIC, COMPLETION_RATE, INCOME_TREND, DEPARTMENT_WORKLOAD]
         format:
           type: string
-          enum: [CSV]
+          enum: [CSV, PDF]
         weeks:
           type: integer
           minimum: 1
