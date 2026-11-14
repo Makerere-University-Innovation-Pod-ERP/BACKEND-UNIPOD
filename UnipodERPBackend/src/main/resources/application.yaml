@@ -87,7 +87,7 @@ auth:
 
 # Public links (password setup, submitter portal)
 app:
-  public-base-url: ${APP_PUBLIC_BASE_URL:}
+  public-base-url: ${APP_PUBLIC_BASE_URL:http://localhost:5173}
 
 # CORS Configuration (Allowing your frontend app origins)
 cors:
