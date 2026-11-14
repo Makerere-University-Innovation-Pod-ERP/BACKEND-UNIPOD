@@ -83,6 +83,23 @@ public class ApiUser {
         this.updatedAt = now;
     }
 
+    public void changeRole(ApiUserRole newRole, Instant now) {
+        this.role = newRole;
+        this.updatedAt = now;
+    }
+
+    public void deactivate(Instant now) {
+        this.enabled = false;
+        this.passwordSetupTokenHash = null;
+        this.passwordSetupExpiresAt = null;
+        this.updatedAt = now;
+    }
+
+    public void reactivate(Instant now) {
+        this.enabled = true;
+        this.updatedAt = now;
+    }
+
     public void issuePasswordSetupToken(String tokenHash, Instant expiresAt, Instant now) {
         this.passwordSetupTokenHash = tokenHash;
         this.passwordSetupExpiresAt = expiresAt;
