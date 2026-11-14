@@ -10,5 +10,6 @@ public enum AuthorizationAction {
     AUDIT_VIEW,
     USER_MANAGE,
     PRICE_LIST_MANAGE,
-    PRICE_LIST_PROPOSE
+    PRICE_LIST_PROPOSE,
+    REPORT_VIEW
 }
