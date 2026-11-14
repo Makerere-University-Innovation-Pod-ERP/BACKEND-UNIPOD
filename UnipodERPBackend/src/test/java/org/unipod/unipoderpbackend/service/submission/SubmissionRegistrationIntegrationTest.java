@@ -17,7 +17,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.unipod.unipoderpbackend.dto.reception.ReceptionQueueResponse;
 import org.unipod.unipoderpbackend.dto.sector.SectorRequest;
-import org.unipod.unipoderpbackend.dto.sector.SectorResponse;
+import org.unipod.unipoderpbackend.dto.sector.AdminSectorResponse;
 import org.unipod.unipoderpbackend.dto.submission.CaseFileResponse;
 import org.unipod.unipoderpbackend.dto.submission.ConfirmProjectRequest;
 import org.unipod.unipoderpbackend.dto.submission.CreateDocumentRequest;
@@ -231,10 +231,19 @@ class SubmissionRegistrationIntegrationTest {
                         null,
                         null,
                         null,
-                        "submitter@example.test"
+                        "submitter@example.test",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "2026-01"
                 ),
                 "receptionist-1"
         );
+        submissions.register(created.id(), "receptionist-1");
 
         SubmissionResponse requested = submissions.requestInformation(
                 created.id(),
@@ -242,7 +251,7 @@ class SubmissionRegistrationIntegrationTest {
                 new TestingAuthenticationToken("receptionist-1", "n/a", "ROLE_RECEPTIONIST")
         );
 
-        assertEquals(SubmissionStage.DRAFT, requested.stage());
+        assertEquals(SubmissionStage.AWAITING_INFORMATION, requested.stage());
         assertEquals("Please attach a project brief.", requested.informationRequestedNote());
         assertEquals("receptionist-1", jdbcTemplate.queryForObject(
                 "SELECT information_requested_by FROM submissions WHERE id = ?",
@@ -261,7 +270,7 @@ class SubmissionRegistrationIntegrationTest {
                 String.class,
                 created.id()
         ));
-        assertEquals(2, stageHistory.countBySubmissionId(created.id()));
+        assertEquals(3, stageHistory.countBySubmissionId(created.id()));
     }
 
     @Test
@@ -281,12 +290,6 @@ class SubmissionRegistrationIntegrationTest {
                 ),
                 "receptionist-1"
         );
-        submissions.requestInformation(
-                created.id(),
-                new RequestInformationRequest("Please attach a project brief."),
-                new TestingAuthenticationToken("receptionist-1", "n/a", "ROLE_RECEPTIONIST")
-        );
-
         assertThrows(
                 AccessDeniedException.class,
                 () -> submissions.updateDraft(
@@ -305,12 +308,6 @@ class SubmissionRegistrationIntegrationTest {
                         false
                 )
         );
-
-        assertEquals("Please attach a project brief.", jdbcTemplate.queryForObject(
-                "SELECT information_requested_note FROM submissions WHERE id = ?",
-                String.class,
-                created.id()
-        ));
     }
 
     @Test
@@ -324,10 +321,21 @@ class SubmissionRegistrationIntegrationTest {
                         null,
                         null,
                         null,
-                        null
+                        null,
+                        null,
+                        null,
+                        null,
+                        "0700000000",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "2026-01"
                 ),
                 "receptionist-1"
         );
+        submissions.register(created.id(), "receptionist-1");
 
         assertThrows(
                 InvalidSubmissionException.class,
@@ -381,7 +389,7 @@ class SubmissionRegistrationIntegrationTest {
         );
         assertEquals(DocumentType.OTHER, document.documentType());
         submissions.register(draft.id(), "receptionist-2");
-        SectorResponse sector = sectors.create(new SectorRequest(
+        AdminSectorResponse sector = sectors.create(new SectorRequest(
                 "Integration test sector",
                 "sector@example.invalid",
                 true
@@ -545,7 +553,7 @@ class SubmissionRegistrationIntegrationTest {
                 generalRequest("Checklist gate", "2026-01"),
                 "receptionist-1"
         );
-        SectorResponse sector = sectors.create(new SectorRequest(
+        AdminSectorResponse sector = sectors.create(new SectorRequest(
                 "Checklist gate sector",
                 "checklist-gate@example.invalid",
                 true

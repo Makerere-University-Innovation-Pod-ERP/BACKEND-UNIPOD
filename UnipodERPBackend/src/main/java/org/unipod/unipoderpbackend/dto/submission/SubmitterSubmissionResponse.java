@@ -28,6 +28,7 @@ public record SubmitterSubmissionResponse(
         int briefVersion,
         SubmissionStage stage,
         SubmitterPendingAction pendingAction,
+        String pendingActionHref,
         String waitingForYou,
         Instant waitingSince,
         Instant receivedAt,
@@ -41,12 +42,27 @@ public record SubmitterSubmissionResponse(
         Instant updatedAt
 ) {
     public static SubmitterSubmissionResponse from(Submission submission) {
-        return from(submission, null, null, null);
+        return from(submission, null, null, null, null);
     }
 
     public static SubmitterSubmissionResponse from(
             Submission submission,
             SubmitterPendingAction pendingAction,
+            String waitingForYou,
+            Instant waitingSince
+    ) {
+        return from(submission, pendingAction, null, waitingForYou, waitingSince);
+    }
+
+    /**
+     * @param pendingActionHref server-relative API path that holds the details
+     *                           behind the pending action, or {@code null} when
+     *                           the action needs no extra document
+     */
+    public static SubmitterSubmissionResponse from(
+            Submission submission,
+            SubmitterPendingAction pendingAction,
+            String pendingActionHref,
             String waitingForYou,
             Instant waitingSince
     ) {
@@ -70,6 +86,7 @@ public record SubmitterSubmissionResponse(
                 submission.getBriefVersion(),
                 submission.getStage(),
                 pendingAction,
+                pendingActionHref,
                 waitingForYou,
                 waitingSince,
                 submission.getReceivedAt(),
