@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.unipod.unipoderpbackend.dto.sector.SectorFilterOption;
 import org.unipod.unipoderpbackend.dto.sector.SectorRequest;
-import org.unipod.unipoderpbackend.dto.sector.SectorResponse;
+import org.unipod.unipoderpbackend.dto.sector.AdminSectorResponse;
 import org.unipod.unipoderpbackend.service.config.ConfigService;
 import org.unipod.unipoderpbackend.service.sector.SectorService;
 
@@ -36,8 +36,8 @@ public class DepartmentController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasRole('ADMINISTRATOR')")
-    public SectorResponse create(@Valid @RequestBody SectorRequest request) {
-        SectorResponse created = sectors.create(request);
+    public AdminSectorResponse create(@Valid @RequestBody SectorRequest request) {
+        AdminSectorResponse created = sectors.create(request);
         config.refresh();
         return created;
     }
