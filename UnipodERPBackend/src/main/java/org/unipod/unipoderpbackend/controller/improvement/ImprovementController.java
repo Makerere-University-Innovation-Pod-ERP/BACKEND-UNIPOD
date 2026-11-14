@@ -11,6 +11,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.unipod.unipoderpbackend.dto.improvement.AcceptRevisionRequest;
+import org.unipod.unipoderpbackend.dto.improvement.AcceptRevisionResponse;
 import org.unipod.unipoderpbackend.dto.improvement.AskForChangesRequest;
 import org.unipod.unipoderpbackend.dto.improvement.ImprovedVersionResponse;
 import org.unipod.unipoderpbackend.dto.improvement.MyImprovementResponse;
@@ -20,6 +22,7 @@ import org.unipod.unipoderpbackend.dto.improvement.SubmitImprovedVersionRequest;
 import org.unipod.unipoderpbackend.service.improvement.ImprovementResponseService;
 import org.unipod.unipoderpbackend.service.improvement.RefinementHistoryService;
 import org.unipod.unipoderpbackend.service.improvement.RefinementRequestService;
+import org.unipod.unipoderpbackend.service.improvement.RevisionAcceptanceService;
 
 /** Improvement endpoints (FR-010): staff ask for changes and read the history; the submitter answers. */
 @RestController
@@ -29,19 +32,23 @@ public class ImprovementController {
             "hasAnyRole('FACT_FINDING_OFFICER', 'INNOVATION_COORDINATOR', 'ADMINISTRATOR')";
 
     private static final String SUBMITTER_ONLY = "hasRole('SUBMITTER')";
+    private static final String OPERATOR_ROLES = "hasAnyRole('INNOVATION_COORDINATOR', 'ADMINISTRATOR')";
 
     private final RefinementRequestService requests;
     private final RefinementHistoryService history;
     private final ImprovementResponseService responses;
+    private final RevisionAcceptanceService acceptance;
 
     public ImprovementController(
             RefinementRequestService requests,
             RefinementHistoryService history,
-            ImprovementResponseService responses
+            ImprovementResponseService responses,
+            RevisionAcceptanceService acceptance
     ) {
         this.requests = requests;
         this.history = history;
         this.responses = responses;
+        this.acceptance = acceptance;
     }
 
     @PostMapping("/refinement-requests")
@@ -78,5 +85,17 @@ public class ImprovementController {
             Authentication authentication
     ) {
         return responses.submit(id, request, authentication);
+    }
+
+    /** The coordinator accepts the latest improved version and returns the brief to review (existing round). */
+    @PostMapping("/revisions/{revisionId}/accept")
+    @PreAuthorize(OPERATOR_ROLES)
+    public AcceptRevisionResponse acceptRevision(
+            @PathVariable UUID id,
+            @PathVariable Long revisionId,
+            @RequestBody AcceptRevisionRequest request,
+            Authentication authentication
+    ) {
+        return acceptance.accept(id, revisionId, request, authentication);
     }
 }

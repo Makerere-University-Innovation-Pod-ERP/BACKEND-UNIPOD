@@ -17,6 +17,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.mockito.stubbing.Answer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -103,15 +104,24 @@ class RefinementRequestAtomicityTest {
     void failureInTheAuditRollsBackTheStageChange() throws Exception {
         UUID brief = briefInReview();
         Map<String, Object> before = state(brief);
+        // A repository spy is an interface proxy: pass other saves to its delegating default answer
+        // (callRealMethod is not possible on it), and fail only my own audit entry.
+        Answer<?> real = Mockito.mockingDetails(auditEntries).getMockCreationSettings().getDefaultAnswer();
         Mockito.doAnswer(invocation -> {
             AuditEntry entry = invocation.getArgument(0);
             if ("submission.improvement_requested".equals(entry.getAction())) {
                 throw new IllegalStateException("audit store unavailable");
             }
-            return invocation.callRealMethod();
+            return real.answer(invocation);
         }).when(auditEntries).save(Mockito.any(AuditEntry.class));
 
         expectServerError(ask(brief));
+
+        // Waluube's own audit entry was saved first, then mine was reached and failed.
+        Mockito.verify(auditEntries).save(Mockito.argThat(
+                (AuditEntry entry) -> entry != null && "submission.transitioned".equals(entry.getAction())));
+        Mockito.verify(auditEntries).save(Mockito.argThat(
+                (AuditEntry entry) -> entry != null && "submission.improvement_requested".equals(entry.getAction())));
 
         assertEquals(before, state(brief));
     }
