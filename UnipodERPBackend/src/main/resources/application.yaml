@@ -76,6 +76,7 @@ jwt:
   audience: ${JWT_AUDIENCE:unipod-erp-api}
   secret: ${JWT_SECRET:}
   access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:PT15M}
+  refresh-token-ttl: ${JWT_REFRESH_TOKEN_TTL:P14D}
   roles-claim: ${JWT_ROLES_CLAIM:roles}
   subject-claim: ${JWT_SUBJECT_CLAIM:sub}
 

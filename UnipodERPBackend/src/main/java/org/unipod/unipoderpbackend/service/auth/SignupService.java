@@ -35,7 +35,7 @@ public class SignupService {
     private final ApiUserRepository users;
     private final UserProfileRepository profiles;
     private final PasswordEncoder passwordEncoder;
-    private final AuthenticationService authentication;
+    private final SessionService sessions;
     private final AuditService audit;
     private final Clock clock;
 
@@ -43,14 +43,14 @@ public class SignupService {
             ApiUserRepository users,
             UserProfileRepository profiles,
             PasswordEncoder passwordEncoder,
-            AuthenticationService authentication,
+            SessionService sessions,
             AuditService audit,
             Clock clock
     ) {
         this.users = users;
         this.profiles = profiles;
         this.passwordEncoder = passwordEncoder;
-        this.authentication = authentication;
+        this.sessions = sessions;
         this.audit = audit;
         this.clock = clock;
     }
@@ -112,7 +112,7 @@ public class SignupService {
                 user.getId(),
                 Map.of("email", email, "accountKind", request.accountKind().name())
         ));
-        return authentication.issueToken(user);
+        return sessions.issue(user);
     }
 
     private static void checkKindDetails(SignupRequest request) {

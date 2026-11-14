@@ -47,6 +47,7 @@ public class UserAdministrationService {
     private final SectorMemberRepository sectorMembers;
     private final SectorService sectors;
     private final AuthorizationService authorization;
+    private final SessionService sessions;
     private final Clock clock;
 
     public UserAdministrationService(
@@ -57,6 +58,7 @@ public class UserAdministrationService {
             SectorMemberRepository sectorMembers,
             SectorService sectors,
             AuthorizationService authorization,
+            SessionService sessions,
             Clock clock
     ) {
         this.authentication = authentication;
@@ -66,6 +68,7 @@ public class UserAdministrationService {
         this.sectorMembers = sectorMembers;
         this.sectors = sectors;
         this.authorization = authorization;
+        this.sessions = sessions;
         this.clock = clock;
     }
 
@@ -134,6 +137,7 @@ public class UserAdministrationService {
         refuseLastAdministrator(user);
         user.deactivate(clock.instant());
         users.saveAndFlush(user);
+        sessions.endAllSessions(user.getId());
         audit.log(AuditEvent.changed(actor, "user.deactivated", "user", user.getId(),
                 Map.of("active", true), Map.of("active", false)));
         return summary(user);

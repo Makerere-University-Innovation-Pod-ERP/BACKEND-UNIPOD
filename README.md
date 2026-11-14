@@ -610,6 +610,7 @@ Configure the following environment variables in the deployment environment.
 | `JWT_ISSUER_URI` | Issuer URI embedded in and checked against each JWT. |
 | `JWT_AUDIENCE` | Audience required for this API; defaults to `unipod-erp-api`. |
 | `JWT_ACCESS_TOKEN_TTL` | Token lifetime as a Spring duration; defaults to `PT15M` and cannot exceed one hour. |
+| `JWT_REFRESH_TOKEN_TTL` | Refresh token lifetime as a Spring duration; defaults to `P14D` and cannot exceed 30 days. |
 | `BOOTSTRAP_ADMIN_EMAIL` | Email for the first Administrator account. |
 | `BOOTSTRAP_ADMIN_PASSWORD` | Initial Administrator password (minimum 12 characters). |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated list of exact browser origins allowed to call the API. |

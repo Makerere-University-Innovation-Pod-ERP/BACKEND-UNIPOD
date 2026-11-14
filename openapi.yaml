@@ -32,8 +32,10 @@ info:
        account with `POST /auth/signup`, which also returns a token.
     2. Send the returned `accessToken` on every protected request as
        `Authorization: Bearer <accessToken>`.
-    3. Tokens are short-lived (default 15 minutes, exposed as `expiresAt`). There is no refresh
-       endpoint; log in again before expiry.
+    3. Access tokens are short-lived (default 15 minutes, exposed as `expiresAt`). Login and
+       sign-up also return a `refreshToken` (default 14 days). Before the access token expires,
+       call `POST /auth/refresh` to get a new pair; each refresh token works once. Call
+       `POST /auth/logout` to end the session.
 
     Students, members of the public and organisations sign up with `POST /auth/signup`.
     Staff accounts are created by an Administrator with `POST /admin/users`.
@@ -264,6 +266,58 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '409':
           $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /auth/refresh:
+    post:
+      tags: [Authentication]
+      operationId: refreshSession
+      x-required-roles: []
+      summary: Swap a refresh token for a new access token and refresh token
+      description: |
+        Public endpoint. Each refresh token works once; the response carries a new one.
+        Presenting a refresh token that was already used ends every session of that
+        account, because it means the token was copied. Expired, unknown or revoked
+        tokens and deactivated accounts get 401.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '200':
+          description: New tokens
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /auth/logout:
+    post:
+      tags: [Authentication]
+      operationId: logout
+      x-required-roles: []
+      summary: End the session that owns this refresh token
+      description: Public endpoint; always 204, even for an unknown token. Changing or resetting the password ends every session.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '204':
+          description: Session ended
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /auth/forgot-password:
@@ -4979,6 +5033,12 @@ components:
           description: |
             True when the account was created through assisted submission and
             still uses its one-time temporary password.
+        refreshToken:
+          type: string
+          description: Single-use token for `POST /auth/refresh` and `POST /auth/logout`. Store it securely.
+        refreshExpiresAt:
+          type: string
+          format: date-time
     AccountKind:
       type: string
       enum: [STUDENT, PUBLIC, ORGANISATION]
@@ -5167,6 +5227,13 @@ components:
           type: string
           maxLength: 40
           description: Version of the UniPod general rules the user accepted.
+    RefreshTokenRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+          maxLength: 256
     ForgotPasswordRequest:
       type: object
       required: [email]

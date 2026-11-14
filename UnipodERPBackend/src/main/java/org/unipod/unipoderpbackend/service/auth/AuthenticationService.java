@@ -178,7 +178,7 @@ public class AuthenticationService {
      * single use: a successful change clears it.
      */
     @Transactional
-    public void setPassword(SetPasswordRequest request) {
+    public UUID setPassword(SetPasswordRequest request) {
         String tokenHash = hashToken(request.token().trim());
         Instant now = clock.instant();
         ApiUser user = users.findByPasswordSetupTokenHash(tokenHash)
@@ -199,6 +199,7 @@ public class AuthenticationService {
         if (updated != 1) {
             throw invalidSetupToken();
         }
+        return user.getId();
     }
 
     @Transactional
@@ -226,7 +227,7 @@ public class AuthenticationService {
     }
 
     @Transactional
-    public void changePassword(String email, ChangePasswordRequest request) {
+    public UUID changePassword(String email, ChangePasswordRequest request) {
         ApiUser user = users.findByEmailIgnoreCase(normalizeEmail(email))
                 .filter(ApiUser::isEnabled)
                 .orElseThrow(() -> new ResponseStatusException(
@@ -244,6 +245,7 @@ public class AuthenticationService {
         }
         user.changePassword(passwordEncoder.encode(request.newPassword()), clock.instant());
         users.save(user);
+        return user.getId();
     }
 
     private static ResponseStatusException invalidSetupToken() {
@@ -270,13 +272,13 @@ public class AuthenticationService {
         return password.toString();
     }
 
-    private static String passwordSetupToken() {
+    static String passwordSetupToken() {
         byte[] bytes = new byte[PASSWORD_SETUP_TOKEN_BYTES];
         RANDOM.nextBytes(bytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
-    private static String hashToken(String token) {
+    static String hashToken(String token) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             return HexFormat.of().formatHex(digest.digest(token.getBytes(StandardCharsets.UTF_8)));
