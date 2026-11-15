@@ -147,6 +147,14 @@ public class RefinementRequest {
         this.respondedAt = respondedAt;
     }
 
+    public void respond(Instant respondedAt) {
+        if (this.status != RefinementStatus.OPEN) {
+            throw new IllegalStateException("Only an open refinement request can be answered.");
+        }
+        this.status = RefinementStatus.RESPONDED;
+        this.respondedAt = respondedAt;
+    }
+
     public Instant getCreatedAt() {
         return createdAt;
     }

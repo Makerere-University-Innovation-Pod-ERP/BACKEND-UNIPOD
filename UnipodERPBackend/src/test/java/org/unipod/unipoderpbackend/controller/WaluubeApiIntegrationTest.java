@@ -689,7 +689,7 @@ class WaluubeApiIntegrationTest {
         mockMvc.perform(get("/cases/{id}", id).with(user(submitter).roles("SUBMITTER")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.currentStage").value("SUBMITTED"))
-                .andExpect(jsonPath("$.stepper.length()").value(9))
+                .andExpect(jsonPath("$.stepper.length()").value(10))
                 .andExpect(jsonPath("$.outcome.status").value("NOT_STARTED"))
                 .andExpect(jsonPath("$.openRequests[0].label").value("Supervisor contact"))
                 .andExpect(jsonPath("$.openRequests[0].dueAt").isNotEmpty())
@@ -806,6 +806,116 @@ class WaluubeApiIntegrationTest {
                                 """))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.detail").value("One or more request values are invalid."));
+    }
+
+    @Test
+    void improvementWorkflowCreatesRequestsAcceptsDocumentsAndResubmits() throws Exception {
+        String receptionistName = "improvement-intake-" + UUID.randomUUID();
+        String submitter = "improvement-" + UUID.randomUUID() + "@example.test";
+        var receptionist = user(receptionistName).roles("RECEPTIONIST");
+        String created = mockMvc.perform(post("/submissions")
+                        .with(receptionist)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "category": "general",
+                                  "title": "Improvement flow test",
+                                  "purpose": "Exercise revision submission",
+                                  "problemAddressed": "An improved version must be coordinator-reviewed",
+                                  "submitterId": "%s",
+                                  "submitterEmail": "%s",
+                                  "acceptedRulesVersion": "2026-01"
+                                }
+                                """.formatted(submitter, submitter)))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        Matcher idMatcher = Pattern.compile("\"id\":\"([^\"]+)\"").matcher(created);
+        assertTrue(idMatcher.find(), "Create response should include the submission id.");
+        String id = idMatcher.group(1);
+
+        mockMvc.perform(post("/submissions/{id}/register", id).with(receptionist))
+                .andExpect(status().isOk());
+        completeReceptionChecklist(id, receptionist);
+        var forwardSector = sectors.create(new SectorRequest(
+                "Improvement flow sector " + UUID.randomUUID(),
+                "improvement-flow@example.invalid",
+                true
+        ));
+        String forwarded = mockMvc.perform(post("/submissions/{id}/forward", id)
+                        .with(receptionist)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sectorId\":\"" + forwardSector.id() + "\",\"note\":\"Ready for review\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stage").value("FORWARDED"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        Matcher versionMatcher = Pattern.compile("\"version\":(\\d+)").matcher(forwarded);
+        assertTrue(versionMatcher.find(), "Forward response should include the current version.");
+        long version = Long.parseLong(versionMatcher.group(1));
+
+        mockMvc.perform(post("/cases/{id}/refinement-requests", id)
+                        .with(user("fact-finding-officer").roles("FACT_FINDING_OFFICER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "guidanceNote": "Please include the latest field measurements.",
+                                  "dueDate": "%s",
+                                  "requestedChanges": ["Add measurement dates"],
+                                  "version": %d
+                                }
+                                """.formatted(
+                                LocalDate.now(ZoneId.of("Africa/Kampala")).plusDays(7),
+                                version
+                        )))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.cycle").value(1))
+                .andExpect(jsonPath("$.status").value("OPEN"))
+                .andExpect(jsonPath("$.requestedChanges[0]").value("Add measurement dates"));
+
+        mockMvc.perform(post("/submissions/{id}/documents", id)
+                        .with(user(submitter).roles("SUBMITTER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "Improved project brief",
+                                  "documentType": "PROJECT_BRIEF",
+                                  "status": "SUBMITTED",
+                                  "fileReference": "improved-project-brief"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        String improved = mockMvc.perform(post("/cases/{id}/improved-version", id)
+                        .with(user(submitter).roles("SUBMITTER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"note\":\"Added the latest field measurements.\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.stage").value("RESUBMITTED"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        Matcher improvedVersionMatcher = Pattern.compile("\"version\":(\\d+)").matcher(improved);
+        assertTrue(improvedVersionMatcher.find(), "Improved-version response should include its version.");
+        long improvedVersion = Long.parseLong(improvedVersionMatcher.group(1));
+
+        mockMvc.perform(get("/cases/{id}", id)
+                        .with(user("coordinator").roles("INNOVATION_COORDINATOR")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentStage").value("RESUBMITTED"))
+                .andExpect(jsonPath("$.submission.stage").value("RESUBMITTED"));
+
+        mockMvc.perform(post("/cases/{id}/transitions", id)
+                        .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"to_stage":"IN_REVIEW","note":"Version accepted","version":%d}
+                                """.formatted(improvedVersion)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentStage").value("IN_REVIEW"))
+                .andExpect(jsonPath("$.submission.stage").value("IN_REVIEW"));
     }
 
     @Test

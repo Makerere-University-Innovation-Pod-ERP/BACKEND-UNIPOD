@@ -725,13 +725,14 @@ paths:
       tags: [Submissions]
       operationId: replyToInformationRequest
       x-required-roles: [SUBMITTER]
-      summary: Reply to an information request
+      summary: Reply to an information request or submit an improved version
       description: |
-        Available to the owning submitter while the brief is `SUBMITTED` or
-        `AWAITING_INFORMATION`. Every field is optional so the submitter can send
-        only the missing detail. Open information requests are resolved
-        automatically; the brief returns to `SUBMITTED` and a
-        `submission.reply_received` notification is published.
+        Available to the owning submitter while the brief is `SUBMITTED`,
+        `AWAITING_INFORMATION`, or `IMPROVEMENT_REQUESTED`. Every brief field is
+        optional. An improvement reply must include `note` describing what changed;
+        it records a revision, responds to the open refinement request, and moves
+        the brief to `RESUBMITTED`. Information replies return the brief to
+        `SUBMITTED` and notify reception.
       security:
         - bearerAuth: []
       parameters:
@@ -1318,11 +1319,16 @@ paths:
         Administrator and Innovation Coordinator may perform any valid canonical
         transition. A Fact-Finding Officer may move an `IN_FACT_FINDING` or
         `FORWARDED` case only to `READY_FOR_REVIEW` or `IMPROVEMENT_REQUESTED`.
-        Moving to `READY_FOR_REVIEW` or `IN_REVIEW` from fact-finding requires a
-        completed fact-finding check (FR-008), and `IMPROVEMENT_REQUESTED`
-        requires a non-blank note. The current version is required to reject stale
-        writes; a stale write returns 409. A transition the actor's role cannot
-        perform returns 403.
+        A coordinator may accept a `RESUBMITTED` version by moving it to
+        `IN_REVIEW` without repeating fact-finding, or request further
+        improvements. Moving to `READY_FOR_REVIEW` or `IN_REVIEW` from
+        `IN_FACT_FINDING` or `FORWARDED` requires a completed fact-finding check
+        (FR-008). Moving to
+        `IMPROVEMENT_REQUESTED` requires a guidance note, due date, and at least
+        one requested change; this creates the refinement request in the same
+        transaction. The current version is required to reject stale writes; a
+        stale write returns 409. A transition the actor's role cannot perform
+        returns 403.
       parameters:
         - $ref: '#/components/parameters/SubmissionId'
       requestBody:
@@ -1346,6 +1352,81 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /cases/{id}/refinement-requests:
+    post:
+      tags: [Case Files]
+      operationId: askForCaseRefinement
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, FACT_FINDING_OFFICER]
+      summary: Create a refinement request for a case
+      description: |
+        Creates an open, numbered refinement request with its due date and
+        requested changes. If the case is not already `IMPROVEMENT_REQUESTED`,
+        the actor must be allowed to transition it there. Include the current case
+        version to reject stale writes.
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefinementRequestAskRequest'
+      responses:
+        '201':
+          description: Created refinement request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefinementRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /cases/{id}/improved-version:
+    post:
+      tags: [Case Files]
+      operationId: submitImprovedCaseVersion
+      x-required-roles: [SUBMITTER]
+      summary: Submit an improved version of a case
+      description: |
+        Available to the owning submitter while the case has an open refinement
+        request. The `note` field is required and records what changed. The
+        response marks the request as answered, records a case revision, and
+        moves the stored stage to `RESUBMITTED`; a coordinator must accept it
+        before reviewers can act.
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImprovedVersionRequest'
+      responses:
+        '201':
+          description: Improved version accepted for coordinator review
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /cases/{id}/outcome:
     put:
       tags: [Case Files]
@@ -1356,7 +1437,10 @@ paths:
         Only Administrator and Innovation Coordinator may save outcomes. The
         decision must be Confirmed as project, Needs more improvement, or Closed
         with a reason, and a non-blank note is required. Confirming a project
-        requires a destination department. Save is rejected with 409 until the
+        requires a destination department. A `Needs more improvement` decision
+        also requires a due date and at least one requested change; the
+        corresponding refinement request is created atomically with the outcome.
+        Save is rejected with 409 until the
         configured reviewer quorum is available and met, and once a decision has
         been saved the outcome is locked against further changes.
       parameters:
@@ -1955,7 +2039,8 @@ paths:
         Records document metadata only. `fileReference` is optional and, when present, must be an
         opaque `[A-Za-z0-9_-]` identifier such as the value returned by the upload endpoint; URLs,
         filesystem paths, and raw file bytes are rejected. Submitters may only set status
-        `SUBMITTED` and only for their own drafts.
+        `SUBMITTED` and may attach documents to their own drafts, submitted cases, cases awaiting
+        information, or cases with an open improvement request.
       parameters:
         - $ref: '#/components/parameters/SubmissionId'
       requestBody:
@@ -1998,7 +2083,7 @@ paths:
         `application/octet-stream`); anything else returns `400`. Each upload receives
         the next per-type `version` and resolves a matching open document request.
         `documentType` defaults to `OTHER` when omitted. Submitters may upload only while their
-        brief is `DRAFT`, `SUBMITTED`, or `AWAITING_INFORMATION`.
+        brief is `DRAFT`, `SUBMITTED`, `AWAITING_INFORMATION`, or `IMPROVEMENT_REQUESTED`.
       parameters:
         - $ref: '#/components/parameters/SubmissionId'
       requestBody:
@@ -4831,9 +4916,10 @@ components:
       type: string
       description: |
         Canonical case-file stage. The case-file stepper groups
-        `AWAITING_INFORMATION` under `SUBMITTED`, `RESUBMITTED` under `IN_REVIEW`,
-        `AWAITING_PAYMENT` under `CONFIRMED_AS_PROJECT`, and `CLOSED` under
-        `COMPLETED`; `DRAFT` has no stepper step.
+        `AWAITING_INFORMATION` under `SUBMITTED`, `AWAITING_PAYMENT` under
+        `CONFIRMED_AS_PROJECT`, and `CLOSED` under `COMPLETED`; `RESUBMITTED` is
+        exposed as its own stored stage while awaiting coordinator acceptance;
+        `DRAFT` has no stepper step.
       enum: [DRAFT, SUBMITTED, AWAITING_INFORMATION, FORWARDED, IN_FACT_FINDING, READY_FOR_REVIEW, IN_REVIEW, IMPROVEMENT_REQUESTED, RESUBMITTED, CONFIRMED_AS_PROJECT, AWAITING_PAYMENT, IN_PROGRESS, COMPLETED, CLOSED]
     OutcomeStatus:
       type: string
@@ -4877,7 +4963,7 @@ components:
     ReplySubmissionRequest:
       type: object
       additionalProperties: false
-      description: Partial brief supplied by the submitter in response to an information request.
+      description: Partial brief supplied by the submitter in response to an information or improvement request.
       properties:
         title:
           type: [string, 'null']
@@ -4919,6 +5005,17 @@ components:
         note:
           type: [string, 'null']
           maxLength: 2000
+          description: For an improved version, describe what changed; optional for information replies.
+    ImprovedVersionRequest:
+      allOf:
+        - $ref: '#/components/schemas/ReplySubmissionRequest'
+        - type: object
+          required: [note]
+          properties:
+            note:
+              type: string
+              minLength: 1
+              maxLength: 2000
     ConfirmProjectRequest:
       type: object
       additionalProperties: false
@@ -5534,6 +5631,18 @@ components:
         note:
           type: [string, 'null']
           maxLength: 2000
+        dueDate:
+          type: [string, 'null']
+          format: date
+          description: Required when transitioning to IMPROVEMENT_REQUESTED.
+        requestedChanges:
+          type: [array, 'null']
+          maxItems: 50
+          description: Required when transitioning to IMPROVEMENT_REQUESTED.
+          items:
+            type: string
+            minLength: 1
+            maxLength: 500
         version:
           type: integer
           format: int64
@@ -5558,10 +5667,82 @@ components:
         destinationDepartmentId:
           type: [string, 'null']
           format: uuid
+        dueDate:
+          type: [string, 'null']
+          format: date
+          description: Required for the Needs more improvement decision.
+        requestedChanges:
+          type: [array, 'null']
+          maxItems: 50
+          description: Required for the Needs more improvement decision.
+          items:
+            type: string
+            minLength: 1
+            maxLength: 500
         version:
           type: integer
           format: int64
           minimum: 0
+    RefinementRequestAskRequest:
+      type: object
+      additionalProperties: false
+      required: [guidanceNote, dueDate, requestedChanges, version]
+      properties:
+        guidanceNote:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        dueDate:
+          type: string
+          format: date
+        requestedChanges:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            type: string
+            minLength: 1
+            maxLength: 500
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+    RefinementRequest:
+      type: object
+      required: [id, briefId, cycle, source, guidanceNote, dueDate, status, requestedBy, requestedAt, respondedAt, requestedChanges]
+      properties:
+        id:
+          type: integer
+          format: int64
+        briefId:
+          type: string
+          format: uuid
+        cycle:
+          type: integer
+          minimum: 1
+        source:
+          type: string
+          enum: [FACT_FINDING, COORDINATOR]
+        guidanceNote:
+          type: string
+        dueDate:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [OPEN, RESPONDED]
+        requestedBy:
+          type: string
+        requestedAt:
+          type: string
+          format: date-time
+        respondedAt:
+          type: [string, 'null']
+          format: date-time
+        requestedChanges:
+          type: array
+          items:
+            type: string
     DocumentStatusUpdateRequest:
       type: object
       additionalProperties: false

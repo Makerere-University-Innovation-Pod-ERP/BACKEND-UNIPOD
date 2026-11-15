@@ -51,6 +51,7 @@ import org.unipod.unipoderpbackend.model.submission.Submission;
 import org.unipod.unipoderpbackend.model.submission.SubmissionCategory;
 import org.unipod.unipoderpbackend.model.submission.SubmissionDocument;
 import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
+import org.unipod.unipoderpbackend.model.improvement.RefinementRequest;
 import org.unipod.unipoderpbackend.repository.dashboard.PipelineMetricsRepository;
 import org.unipod.unipoderpbackend.repository.submission.CaseStageHistoryRepository;
 import org.unipod.unipoderpbackend.repository.submission.MissingItemRepository;
@@ -78,6 +79,7 @@ public class SubmissionService {
     private final PipelineMetricsRepository metrics;
     private final SectorService sectorsCatalog;
     private final ReceptionChecklistService receptionChecklists;
+    private final RefinementRequestService refinementRequests;
     private final AuditTrail auditTrail;
     private final String receptionEmail;
     private final Clock clock;
@@ -94,6 +96,7 @@ public class SubmissionService {
             PipelineMetricsRepository metrics,
             SectorService sectorsCatalog,
             ReceptionChecklistService receptionChecklists,
+            RefinementRequestService refinementRequests,
             AuditTrail auditTrail,
             @Value("${notifications.reception.email:}")
             String receptionEmail,
@@ -109,6 +112,7 @@ public class SubmissionService {
         this.metrics = metrics;
         this.sectorsCatalog = sectorsCatalog;
         this.receptionChecklists = receptionChecklists;
+        this.refinementRequests = refinementRequests;
         this.auditTrail = auditTrail;
         this.receptionEmail = receptionEmail;
         this.clock = clock;
@@ -290,17 +294,40 @@ public class SubmissionService {
         return SubmissionResponse.from(submission);
     }
 
-    /**
-     * Records the submitter's answer to an information request and returns the
-     * brief to the intake queue as a new brief version.
-     */
+    /** Records a submitter's information reply or improved brief version. */
     @Transactional
     public SubmissionResponse reply(UUID id, ReplySubmissionRequest request, String actor) {
+        return reply(id, request, actor, false);
+    }
+
+    @Transactional
+    public SubmissionResponse submitImprovedVersion(UUID id, ReplySubmissionRequest request, String actor) {
+        return reply(id, request, actor, true);
+    }
+
+    private SubmissionResponse reply(
+            UUID id,
+            ReplySubmissionRequest request,
+            String actor,
+            boolean improvedVersionOnly
+    ) {
         Submission submission = submissions.findByIdForUpdate(id)
                 .orElseThrow(() -> new SubmissionNotFoundException(id));
         requireSubmitterReplyOwnership(submission, actor);
+        if (improvedVersionOnly && submission.getStage() != SubmissionStage.IMPROVEMENT_REQUESTED) {
+            throw new SubmissionConflictException("Only a brief awaiting improvement can receive an improved version.");
+        }
         requireSubmitterRecommendationStatus(request.recommendationLetterStatus());
         Instant now = clock.instant();
+        SubmissionStage previousStage = submission.getStage();
+        boolean improvementReply = previousStage == SubmissionStage.IMPROVEMENT_REQUESTED;
+        RefinementRequest openRefinement = previousStage == SubmissionStage.IMPROVEMENT_REQUESTED
+                ? refinementRequests.openRequest(submission.getId())
+                : null;
+        String note = clean(request.note());
+        if (openRefinement != null && note == null) {
+            throw new InvalidSubmissionException("Describe what changed in the improved version.");
+        }
         submission.applyReplyDetails(
                 clean(request.title()),
                 clean(request.purpose()),
@@ -316,10 +343,12 @@ public class SubmissionService {
                 request.preferredAt(),
                 now
         );
-        SubmissionStage previousStage = submission.getStage();
         submission.reply(now);
         SubmissionStage resultingStage = submission.getStage();
-        String note = clean(request.note()) == null ? "Submitter replied with the requested information." : clean(request.note());
+        note = note == null ? "Submitter replied with the requested information." : note;
+        if (openRefinement != null) {
+            refinementRequests.recordResponse(submission, openRefinement, actor, note, now);
+        }
         stageHistory.save(new CaseStageHistory(
                 UUID.randomUUID(),
                 submission.getId(),
@@ -329,24 +358,32 @@ public class SubmissionService {
                 note,
                 now
         ));
-        resolveOpenInformationItems(submission.getId(), actor, now);
+        if (!improvementReply) {
+            resolveOpenInformationItems(submission.getId(), actor, now);
+        }
         notifySubmitter(
                 submission,
-                "submission.reply_received",
-                "Reply received for submission " + submission.getCode(),
-                "Your reply has been received and the brief is back with reception.",
+                improvementReply ? "submission.improved_version_received" : "submission.reply_received",
+                (improvementReply ? "Improved version received for submission " : "Reply received for submission ")
+                        + submission.getCode(),
+                improvementReply
+                        ? "Your improved version has been received and is awaiting coordinator review."
+                        : "Your reply has been received and the brief is back with reception.",
                 actor,
                 now
         );
-        notifyReception(
-                submission,
-                "submission.reply_received",
-                "Reply received for " + submission.getCode(),
-                "The submitter replied with the requested information; the brief is back in the reception queue.",
-                actor,
-                now
-        );
-        auditTrail.record(actor, "submission.replied", submission.getId(),
+        if (!improvementReply) {
+            notifyReception(
+                    submission,
+                    "submission.reply_received",
+                    "Reply received for " + submission.getCode(),
+                    "The submitter replied with the requested information; the brief is back in the reception queue.",
+                    actor,
+                    now
+            );
+        }
+        auditTrail.record(actor, improvementReply ? "submission.improved_version_submitted" : "submission.replied",
+                submission.getId(),
                 AuditTrail.details("stage", previousStage.name()),
                 AuditTrail.details(
                         "stage", resultingStage.name(),
@@ -1164,9 +1201,10 @@ public class SubmissionService {
         }
         if (submission.getStage() != SubmissionStage.DRAFT
                 && submission.getStage() != SubmissionStage.SUBMITTED
-                && submission.getStage() != SubmissionStage.AWAITING_INFORMATION) {
+                && submission.getStage() != SubmissionStage.AWAITING_INFORMATION
+                && submission.getStage() != SubmissionStage.IMPROVEMENT_REQUESTED) {
             throw new AccessDeniedException(
-                    "Submitters may only attach documents before the submission is forwarded."
+                    "Submitters may attach documents before forwarding or while an improvement request is open."
             );
         }
     }

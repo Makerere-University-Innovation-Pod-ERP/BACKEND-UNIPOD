@@ -2,6 +2,7 @@ package org.unipod.unipoderpbackend.controller.submission;
 
 import jakarta.validation.Valid;
 import java.util.UUID;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -11,6 +12,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.unipod.unipoderpbackend.dto.submission.CaseFileAggregateResponse;
 import org.unipod.unipoderpbackend.dto.submission.CaseFileAggregateResponse.Capabilities;
@@ -18,7 +20,12 @@ import org.unipod.unipoderpbackend.dto.submission.CaseFileAggregateResponse.Tran
 import org.unipod.unipoderpbackend.dto.submission.CaseTransitionRequest;
 import org.unipod.unipoderpbackend.dto.submission.DocumentStatusUpdateRequest;
 import org.unipod.unipoderpbackend.dto.submission.OutcomeUpdateRequest;
+import org.unipod.unipoderpbackend.dto.submission.RefinementRequestAskRequest;
+import org.unipod.unipoderpbackend.dto.submission.RefinementRequestResponse;
+import org.unipod.unipoderpbackend.dto.submission.ReplySubmissionRequest;
+import org.unipod.unipoderpbackend.dto.submission.SubmissionResponse;
 import org.unipod.unipoderpbackend.service.submission.CaseFileService;
+import org.unipod.unipoderpbackend.service.submission.SubmissionService;
 
 @RestController
 @RequestMapping("/cases/{id}")
@@ -30,9 +37,11 @@ public class CaseFileController {
             "hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'FACT_FINDING_OFFICER')";
 
     private final CaseFileService cases;
+    private final SubmissionService submissions;
 
-    public CaseFileController(CaseFileService cases) {
+    public CaseFileController(CaseFileService cases, SubmissionService submissions) {
         this.cases = cases;
+        this.submissions = submissions;
     }
 
     @GetMapping
@@ -61,6 +70,28 @@ public class CaseFileController {
             Authentication authentication
     ) {
         return cases.transition(id, request, authentication);
+    }
+
+    @PostMapping("/refinement-requests")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize(CASE_WRITE_ROLES)
+    public RefinementRequestResponse askRefinement(
+            @PathVariable UUID id,
+            @Valid @RequestBody RefinementRequestAskRequest request,
+            Authentication authentication
+    ) {
+        return cases.askRefinement(id, request, authentication);
+    }
+
+    @PostMapping("/improved-version")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasRole('SUBMITTER')")
+    public SubmissionResponse submitImprovedVersion(
+            @PathVariable UUID id,
+            @Valid @RequestBody ReplySubmissionRequest request,
+            Authentication authentication
+    ) {
+        return submissions.submitImprovedVersion(id, request, authentication.getName());
     }
 
     @PutMapping("/outcome")
