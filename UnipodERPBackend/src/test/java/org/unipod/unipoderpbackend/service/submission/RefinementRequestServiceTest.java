@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -48,11 +49,16 @@ class RefinementRequestServiceTest {
             ReflectionTestUtils.setField(request, "id", 23L);
             return request;
         });
+        List<RefinementRequestedChange> savedChanges = new ArrayList<>();
+        when(changes.saveAll(any())).thenAnswer(invocation -> {
+            Iterable<RefinementRequestedChange> requestedChanges = invocation.getArgument(0);
+            requestedChanges.forEach(savedChanges::add);
+            return savedChanges;
+        });
         when(changes.findByRequestIdOrderByPositionAsc(23L)).thenReturn(List.of(
                 new RefinementRequestedChange(23L, 1, "Add measurement dates"),
                 new RefinementRequestedChange(23L, 2, "Attach the latest survey")
         ));
-
         var result = service.ask(
                 submission,
                 RefinementSource.COORDINATOR,
@@ -67,6 +73,15 @@ class RefinementRequestServiceTest {
         assertEquals(23L, result.id());
         assertEquals(List.of("Add measurement dates", "Attach the latest survey"), result.requestedChanges());
         verify(changes).saveAll(any());
+        assertEquals(2, savedChanges.size());
+        RefinementRequestedChange first = savedChanges.get(0);
+        RefinementRequestedChange second = savedChanges.get(1);
+        assertEquals(23L, first.getRequestId());
+        assertEquals(1, first.getPosition());
+        assertEquals("Add measurement dates", first.getText());
+        assertEquals(23L, second.getRequestId());
+        assertEquals(2, second.getPosition());
+        assertEquals("Attach the latest survey", second.getText());
     }
 
     @Test
@@ -105,7 +120,15 @@ class RefinementRequestServiceTest {
         assertEquals(RefinementStatus.RESPONDED, request.getStatus());
         assertEquals(NOW.plusSeconds(5), request.getRespondedAt());
         verify(requests).save(request);
-        verify(revisions).save(any(CaseRevision.class));
+        var revisionCaptor = org.mockito.ArgumentCaptor.forClass(CaseRevision.class);
+        verify(revisions).save(revisionCaptor.capture());
+        CaseRevision revision = revisionCaptor.getValue();
+        assertEquals(CASE_ID, revision.getBriefId());
+        assertEquals(2, revision.getVersionNumber());
+        assertEquals(9L, revision.getRequestId());
+        assertEquals("Added measurement results", revision.getWhatChanged());
+        assertEquals("submitter", revision.getSubmittedBy());
+        assertEquals(NOW.plusSeconds(5), revision.getSubmittedAt());
     }
 
     private static Submission submission() {

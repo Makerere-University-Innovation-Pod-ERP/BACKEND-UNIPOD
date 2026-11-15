@@ -322,7 +322,7 @@ public class SubmissionService {
         SubmissionStage previousStage = submission.getStage();
         boolean improvementReply = previousStage == SubmissionStage.IMPROVEMENT_REQUESTED;
         RefinementRequest openRefinement = previousStage == SubmissionStage.IMPROVEMENT_REQUESTED
-                ? refinementRequests.openRequest(submission.getId())
+                ? refinementRequests.findOpenRequest(submission.getId()).orElse(null)
                 : null;
         String note = clean(request.note());
         if (openRefinement != null && note == null) {

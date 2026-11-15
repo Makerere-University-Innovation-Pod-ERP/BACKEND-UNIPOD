@@ -329,10 +329,11 @@ class CaseFileServiceTest {
     }
 
     @Test
-    void coordinatorCanAcceptResubmittedCaseWithoutRepeatingFactFinding() {
+    void coordinatorCanAcceptResubmittedCaseAfterCompletedFactFinding() {
         Authentication coordinator = authentication("coordinator", "ROLE_INNOVATION_COORDINATOR");
         ReflectionTestUtils.setField(submission, "stage", SubmissionStage.RESUBMITTED);
         when(submissions.findByIdForUpdate(CASE_ID)).thenReturn(Optional.of(submission));
+        when(factFindingGuard.isComplete(CASE_ID)).thenReturn(true);
 
         var result = service.transition(
                 CASE_ID,
@@ -341,7 +342,43 @@ class CaseFileServiceTest {
         );
 
         assertEquals(SubmissionStage.IN_REVIEW, result.submission().stage());
-        verify(factFindingGuard, org.mockito.Mockito.never()).isComplete(CASE_ID);
+        verify(factFindingGuard).isComplete(CASE_ID);
+    }
+
+    @Test
+    void coordinatorCannotAcceptResubmittedCaseWithoutCompletedFactFinding() {
+        Authentication coordinator = authentication("coordinator", "ROLE_INNOVATION_COORDINATOR");
+        ReflectionTestUtils.setField(submission, "stage", SubmissionStage.RESUBMITTED);
+        when(submissions.findByIdForUpdate(CASE_ID)).thenReturn(Optional.of(submission));
+        when(factFindingGuard.isComplete(CASE_ID)).thenReturn(false);
+
+        assertThrows(SubmissionConflictException.class, () -> service.transition(
+                CASE_ID,
+                new CaseTransitionRequest(CaseStage.IN_REVIEW, "Version accepted", null, null, 4L),
+                coordinator
+        ));
+
+        assertEquals(SubmissionStage.RESUBMITTED, submission.getStage());
+        verify(submissions, org.mockito.Mockito.never()).flush();
+    }
+
+    @Test
+    void coordinatorCannotManuallyMarkImprovementRequestedCaseAsResubmitted() {
+        Authentication coordinator = authentication("coordinator", "ROLE_INNOVATION_COORDINATOR");
+        ReflectionTestUtils.setField(submission, "stage", SubmissionStage.IMPROVEMENT_REQUESTED);
+        when(submissions.findByIdForUpdate(CASE_ID)).thenReturn(Optional.of(submission));
+
+        assertThrows(SubmissionConflictException.class, () -> service.transition(
+                CASE_ID,
+                new CaseTransitionRequest(CaseStage.RESUBMITTED, null, null, null, 4L),
+                coordinator
+        ));
+
+        assertEquals(SubmissionStage.IMPROVEMENT_REQUESTED, submission.getStage());
+        verify(refinementRequests, org.mockito.Mockito.never()).ask(
+                any(), any(), any(), any(), any(), any(), any()
+        );
+        verify(submissions, org.mockito.Mockito.never()).flush();
     }
 
     @Test

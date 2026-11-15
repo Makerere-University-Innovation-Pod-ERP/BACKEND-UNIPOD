@@ -179,10 +179,11 @@ class UploadedDocumentServiceTest {
         ReflectionTestUtils.setField(submission, "stage", SubmissionStage.IMPROVEMENT_REQUESTED);
         when(submissions.findByIdForUpdate(id)).thenReturn(Optional.of(submission));
         when(storage.upload(any())).thenReturn("improved-version-object");
+        when(documents.maxVersion(id, DocumentType.PROJECT_BRIEF)).thenReturn(3L);
         when(documents.saveAndFlush(any(SubmissionDocument.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        service.upload(
+        var result = service.upload(
                 id,
                 "Updated project brief",
                 DocumentType.PROJECT_BRIEF,
@@ -193,9 +194,14 @@ class UploadedDocumentServiceTest {
         );
 
         verify(storage).upload(any());
-        verify(documents).saveAndFlush(argThat(document ->
-                "Updated project brief".equals(document.getName())
-                        && document.getStatus() == DocumentStatus.SUBMITTED));
+        var documentCaptor = org.mockito.ArgumentCaptor.forClass(SubmissionDocument.class);
+        verify(documents).saveAndFlush(documentCaptor.capture());
+        SubmissionDocument saved = documentCaptor.getValue();
+        assertEquals("Updated project brief", saved.getName());
+        assertEquals(DocumentStatus.SUBMITTED, saved.getStatus());
+        assertEquals(DocumentType.PROJECT_BRIEF, saved.getDocumentType());
+        assertEquals(4, saved.getVersion());
+        assertEquals(4, result.version());
     }
 
     @org.junit.jupiter.params.ParameterizedTest

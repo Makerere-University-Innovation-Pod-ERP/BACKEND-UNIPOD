@@ -154,6 +154,9 @@ public class CaseFileService {
                     "Project confirmation is recorded through the outcome, not a lifecycle transition."
             );
         }
+        if (request.toStage() == CaseStage.RESUBMITTED) {
+            throw new SubmissionConflictException("Only a submitter reply can move a case to resubmitted.");
+        }
         List<CaseStage> allowed = allowedTransitionsFor(submission.getStage(), authentication);
         if (!allowed.contains(request.toStage())) {
             if (isOperator(authentication)) {
@@ -170,7 +173,8 @@ public class CaseFileService {
         if ((nextStage == SubmissionStage.READY_FOR_REVIEW
                 || nextStage == SubmissionStage.IN_REVIEW)
                 && (previousStage == SubmissionStage.IN_FACT_FINDING
-                        || previousStage == SubmissionStage.FORWARDED)
+                        || previousStage == SubmissionStage.FORWARDED
+                        || previousStage == SubmissionStage.RESUBMITTED)
                 && !factFindingGuard.isComplete(id)) {
             throw new SubmissionConflictException(FACT_FINDING_REQUIRED);
         }
@@ -351,14 +355,7 @@ public class CaseFileService {
                     now
             );
         } else if (decision == OutcomeDecision.NEEDS_MORE_IMPROVEMENT) {
-            notifySubmitter(
-                    submission,
-                    "submission.refinement_requested",
-                    "More detail needed for submission " + submission.getCode(),
-                    "Your brief needs more improvement: " + note,
-                    actor,
-                    now
-            );
+            notifyRefinementRequested(submission, note, actor, now);
         } else {
             notifySubmitter(
                     submission,
@@ -552,7 +549,7 @@ public class CaseFileService {
                     CaseStage.AWAITING_PAYMENT,
                     CaseStage.CLOSED
             );
-            case IMPROVEMENT_REQUESTED -> List.of(CaseStage.RESUBMITTED);
+            case IMPROVEMENT_REQUESTED -> List.of();
             case RESUBMITTED -> List.of(CaseStage.IN_REVIEW, CaseStage.IMPROVEMENT_REQUESTED);
             case CONFIRMED_AS_PROJECT -> List.of(CaseStage.AWAITING_PAYMENT, CaseStage.IN_PROGRESS);
             case AWAITING_PAYMENT -> List.of(CaseStage.IN_PROGRESS, CaseStage.CLOSED);

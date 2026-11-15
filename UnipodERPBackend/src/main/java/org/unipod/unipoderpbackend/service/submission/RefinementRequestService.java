@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -90,10 +91,15 @@ public class RefinementRequestService {
 
     @Transactional(readOnly = true)
     public RefinementRequest openRequest(UUID briefId) {
-        return requests.findTopByBriefIdAndStatusOrderByCycleDesc(briefId, RefinementStatus.OPEN)
+        return findOpenRequest(briefId)
                 .orElseThrow(() -> new SubmissionConflictException(
                         "No open refinement request exists for this case."
                 ));
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<RefinementRequest> findOpenRequest(UUID briefId) {
+        return requests.findTopByBriefIdAndStatusOrderByCycleDesc(briefId, RefinementStatus.OPEN);
     }
 
     @Transactional

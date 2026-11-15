@@ -68,7 +68,7 @@ class SubmissionServiceReplyTest {
         Submission submission = submission(SubmissionStage.IMPROVEMENT_REQUESTED);
         RefinementRequest request = mock(RefinementRequest.class);
         when(submissions.findByIdForUpdate(CASE_ID)).thenReturn(Optional.of(submission));
-        when(refinements.openRequest(CASE_ID)).thenReturn(request);
+        when(refinements.findOpenRequest(CASE_ID)).thenReturn(Optional.of(request));
 
         var result = service.reply(CASE_ID, reply("Added recent field data"), "owner");
 
@@ -97,6 +97,18 @@ class SubmissionServiceReplyTest {
                 eq("owner"),
                 eq(NOW)
         );
+    }
+
+    @Test
+    void legacyImprovementRequestWithoutRefinementRowCanStillBeAnswered() {
+        Submission submission = submission(SubmissionStage.IMPROVEMENT_REQUESTED);
+        when(submissions.findByIdForUpdate(CASE_ID)).thenReturn(Optional.of(submission));
+        when(refinements.findOpenRequest(CASE_ID)).thenReturn(Optional.empty());
+
+        var result = service.reply(CASE_ID, reply("Added recent field data"), "owner");
+
+        assertEquals(SubmissionStage.RESUBMITTED, result.stage());
+        verify(refinements, never()).recordResponse(any(), any(), anyString(), anyString(), any());
     }
 
     @Test
@@ -148,6 +160,12 @@ class SubmissionServiceReplyTest {
 
         assertEquals(1, result.version());
         assertEquals(DocumentStatus.SUBMITTED, result.status());
+        var savedDocument = org.mockito.ArgumentCaptor.forClass(
+                org.unipod.unipoderpbackend.model.submission.SubmissionDocument.class
+        );
+        verify(documents).save(savedDocument.capture());
+        assertEquals(DocumentType.PROJECT_BRIEF, savedDocument.getValue().getDocumentType());
+        assertEquals(1, savedDocument.getValue().getVersion());
         verify(documents).flush();
     }
 
