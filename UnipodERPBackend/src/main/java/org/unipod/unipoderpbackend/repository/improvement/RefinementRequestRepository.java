@@ -10,6 +10,11 @@ import org.unipod.unipoderpbackend.model.improvement.RefinementStatus;
 public interface RefinementRequestRepository extends JpaRepository<RefinementRequest, Long> {
     Optional<RefinementRequest> findTopByBriefIdOrderByCycleDesc(UUID briefId);
 
+    Optional<RefinementRequest> findTopByBriefIdAndStatusOrderByCycleDesc(
+            UUID briefId,
+            RefinementStatus status
+    );
+
     List<RefinementRequest> findByBriefIdOrderByCycleAsc(UUID briefId);
 
     boolean existsByBriefIdAndStatus(UUID briefId, RefinementStatus status);

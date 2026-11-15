@@ -607,7 +607,8 @@ public class Submission {
         boolean validTransition = switch (stage) {
             case SUBMITTED -> nextStage == SubmissionStage.FORWARDED;
             case FORWARDED -> nextStage == SubmissionStage.IN_FACT_FINDING
-                    || nextStage == SubmissionStage.READY_FOR_REVIEW;
+                    || nextStage == SubmissionStage.READY_FOR_REVIEW
+                    || nextStage == SubmissionStage.IMPROVEMENT_REQUESTED;
             case IN_FACT_FINDING -> nextStage == SubmissionStage.READY_FOR_REVIEW
                     || nextStage == SubmissionStage.IN_REVIEW
                     || nextStage == SubmissionStage.IMPROVEMENT_REQUESTED;
@@ -619,7 +620,8 @@ public class Submission {
                     || nextStage == SubmissionStage.AWAITING_PAYMENT
                     || nextStage == SubmissionStage.CLOSED;
             case IMPROVEMENT_REQUESTED -> nextStage == SubmissionStage.RESUBMITTED;
-            case RESUBMITTED -> nextStage == SubmissionStage.IN_REVIEW;
+            case RESUBMITTED -> nextStage == SubmissionStage.IN_REVIEW
+                    || nextStage == SubmissionStage.IMPROVEMENT_REQUESTED;
             case CONFIRMED_AS_PROJECT -> nextStage == SubmissionStage.AWAITING_PAYMENT
                     || nextStage == SubmissionStage.IN_PROGRESS;
             case AWAITING_PAYMENT -> nextStage == SubmissionStage.IN_PROGRESS;

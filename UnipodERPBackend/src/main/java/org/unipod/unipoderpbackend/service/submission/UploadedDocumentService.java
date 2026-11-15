@@ -209,9 +209,10 @@ public class UploadedDocumentService {
         if (submitter
                 && stage != SubmissionStage.DRAFT
                 && stage != SubmissionStage.SUBMITTED
-                && stage != SubmissionStage.AWAITING_INFORMATION) {
+                && stage != SubmissionStage.AWAITING_INFORMATION
+                && stage != SubmissionStage.IMPROVEMENT_REQUESTED) {
             throw new org.springframework.security.access.AccessDeniedException(
-                    "Submitters may only attach documents before the submission is forwarded."
+                    "Submitters may attach documents before forwarding or while an improvement request is open."
             );
         }
     }

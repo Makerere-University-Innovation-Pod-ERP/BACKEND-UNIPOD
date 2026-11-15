@@ -39,6 +39,7 @@ public class OutboxNotificationDispatcher {
                     'submission.reminder_sent',
                     'submission.submitted',
                     'submission.reply_received',
+                    'submission.improved_version_received',
                     'submission.forwarded_copy',
                     'submission.confirmed_as_project',
                     'submission.refinement_requested',
@@ -256,6 +257,7 @@ public class OutboxNotificationDispatcher {
         return switch (eventType) {
             case "submission.submitted",
                     "submission.reply_received",
+                    "submission.improved_version_received",
                     "submission.forwarded_copy",
                     "submission.confirmed_as_project",
                     "submission.refinement_requested",

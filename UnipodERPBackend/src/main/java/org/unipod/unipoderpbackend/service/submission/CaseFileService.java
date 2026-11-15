@@ -26,6 +26,8 @@ import org.unipod.unipoderpbackend.dto.submission.CaseStageHistoryResponse;
 import org.unipod.unipoderpbackend.dto.submission.DocumentStatusUpdateRequest;
 import org.unipod.unipoderpbackend.dto.submission.MissingItemResponse;
 import org.unipod.unipoderpbackend.dto.submission.OutcomeUpdateRequest;
+import org.unipod.unipoderpbackend.dto.submission.RefinementRequestAskRequest;
+import org.unipod.unipoderpbackend.dto.submission.RefinementRequestResponse;
 import org.unipod.unipoderpbackend.dto.submission.SubmissionResponse;
 import org.unipod.unipoderpbackend.dto.submission.CaseTransitionRequest;
 import org.unipod.unipoderpbackend.dto.submission.DocumentResponse;
@@ -34,6 +36,7 @@ import org.unipod.unipoderpbackend.exception.submission.SubmissionConflictExcept
 import org.unipod.unipoderpbackend.exception.submission.SubmissionNotFoundException;
 import org.unipod.unipoderpbackend.exception.storage.StorageObjectNotFoundException;
 import org.unipod.unipoderpbackend.model.sector.Sector;
+import org.unipod.unipoderpbackend.model.improvement.RefinementSource;
 import org.unipod.unipoderpbackend.model.submission.CaseStage;
 import org.unipod.unipoderpbackend.model.submission.CaseStageHistory;
 import org.unipod.unipoderpbackend.model.submission.MissingItemStatus;
@@ -62,6 +65,7 @@ public class CaseFileService {
             CaseStage.READY_FOR_REVIEW,
             CaseStage.IN_REVIEW,
             CaseStage.IMPROVEMENT_REQUESTED,
+            CaseStage.RESUBMITTED,
             CaseStage.CONFIRMED_AS_PROJECT,
             CaseStage.IN_PROGRESS,
             CaseStage.COMPLETED
@@ -91,6 +95,7 @@ public class CaseFileService {
     private final SectorService sectorsCatalog;
     private final CaseCodeGenerator caseCodeGenerator;
     private final AuditTrail auditTrail;
+    private final RefinementRequestService refinementRequests;
     private final Clock clock;
 
     public CaseFileService(
@@ -104,6 +109,7 @@ public class CaseFileService {
             SectorService sectorsCatalog,
             CaseCodeGenerator caseCodeGenerator,
             AuditTrail auditTrail,
+            RefinementRequestService refinementRequests,
             Clock clock
     ) {
         this.submissions = submissions;
@@ -116,6 +122,7 @@ public class CaseFileService {
         this.sectorsCatalog = sectorsCatalog;
         this.caseCodeGenerator = caseCodeGenerator;
         this.auditTrail = auditTrail;
+        this.refinementRequests = refinementRequests;
         this.clock = clock;
     }
 
@@ -147,6 +154,9 @@ public class CaseFileService {
                     "Project confirmation is recorded through the outcome, not a lifecycle transition."
             );
         }
+        if (request.toStage() == CaseStage.RESUBMITTED) {
+            throw new SubmissionConflictException("Only a submitter reply can move a case to resubmitted.");
+        }
         List<CaseStage> allowed = allowedTransitionsFor(submission.getStage(), authentication);
         if (!allowed.contains(request.toStage())) {
             if (isOperator(authentication)) {
@@ -154,8 +164,8 @@ public class CaseFileService {
             }
             throw new AccessDeniedException(WRITE_REQUIRED);
         }
-        if (request.toStage() == CaseStage.IMPROVEMENT_REQUESTED && clean(request.note()) == null) {
-            throw new InvalidSubmissionException(REFINEMENT_NOTE_REQUIRED);
+        if (request.toStage() == CaseStage.IMPROVEMENT_REQUESTED) {
+            requireRefinementDetails(request.note(), request.dueDate(), request.requestedChanges());
         }
         Instant now = clock.instant();
         SubmissionStage previousStage = submission.getStage();
@@ -169,6 +179,18 @@ public class CaseFileService {
             throw new SubmissionConflictException(FACT_FINDING_REQUIRED);
         }
         submission.transitionTo(nextStage, now);
+        if (nextStage == SubmissionStage.IMPROVEMENT_REQUESTED) {
+            refinementRequests.ask(
+                    submission,
+                    refinementSource(authentication),
+                    request.note(),
+                    request.dueDate(),
+                    request.requestedChanges(),
+                    authentication.getName(),
+                    now
+            );
+            notifyRefinementRequested(submission, request.note(), authentication.getName(), now);
+        }
         history.save(new CaseStageHistory(
                 UUID.randomUUID(),
                 id,
@@ -183,6 +205,55 @@ public class CaseFileService {
                 AuditTrail.details("stage", nextStage.name(), "note", clean(request.note())));
         submissions.flush();
         return aggregate(submission, authentication);
+    }
+
+    @Transactional
+    public RefinementRequestResponse askRefinement(
+            UUID id,
+            RefinementRequestAskRequest request,
+            Authentication authentication
+    ) {
+        if (!isOperator(authentication) && !isFactFindingOfficer(authentication)) {
+            throw new AccessDeniedException(WRITE_REQUIRED);
+        }
+        Submission submission = mutableCase(id, request.version());
+        SubmissionStage previousStage = submission.getStage();
+        Instant now = clock.instant();
+        String actor = authentication.getName();
+        String guidanceNote = clean(request.guidanceNote());
+        submission.touch(now);
+        if (previousStage != SubmissionStage.IMPROVEMENT_REQUESTED) {
+            if (!allowedTransitionsFor(previousStage, authentication).contains(CaseStage.IMPROVEMENT_REQUESTED)) {
+                throw new SubmissionConflictException("The case cannot request improvements from its current stage.");
+            }
+            submission.transitionTo(SubmissionStage.IMPROVEMENT_REQUESTED, now);
+            history.save(new CaseStageHistory(
+                    UUID.randomUUID(),
+                    id,
+                    previousStage,
+                    SubmissionStage.IMPROVEMENT_REQUESTED,
+                    actor,
+                    guidanceNote,
+                    now
+            ));
+        }
+        RefinementRequestResponse response = refinementRequests.ask(
+                submission,
+                refinementSource(authentication),
+                guidanceNote,
+                request.dueDate(),
+                request.requestedChanges(),
+                actor,
+                now
+        );
+        notifyRefinementRequested(submission, guidanceNote, actor, now);
+        auditTrail.record(actor, "submission.refinement_requested", id, null, AuditTrail.details(
+                "cycle", response.cycle(),
+                "dueDate", response.dueDate(),
+                "requestedChangeCount", response.requestedChanges().size()
+        ));
+        submissions.flush();
+        return response;
     }
 
     @Transactional
@@ -201,6 +272,9 @@ public class CaseFileService {
         CaseFileEnrichmentProvider.ReviewPanel reviewPanel = enrichment.reviewPanel(id);
         if (!reviewPanel.quorumAvailable() || !reviewPanel.quorumMet()) {
             throw new SubmissionConflictException(QUORUM_REQUIRED);
+        }
+        if (decision == OutcomeDecision.NEEDS_MORE_IMPROVEMENT) {
+            requireRefinementDetails(note, request.dueDate(), request.requestedChanges());
         }
         Instant now = clock.instant();
         String actor = authentication.getName();
@@ -232,6 +306,15 @@ public class CaseFileService {
             }
             case NEEDS_MORE_IMPROVEMENT -> {
                 submission.requestOutcomeImprovement(decision.label(), note, actor, now);
+                refinementRequests.ask(
+                        submission,
+                        RefinementSource.COORDINATOR,
+                        note,
+                        request.dueDate(),
+                        request.requestedChanges(),
+                        actor,
+                        now
+                );
                 resultingStage = submission.getStage();
             }
             case CLOSED_WITH_REASON -> {
@@ -272,14 +355,7 @@ public class CaseFileService {
                     now
             );
         } else if (decision == OutcomeDecision.NEEDS_MORE_IMPROVEMENT) {
-            notifySubmitter(
-                    submission,
-                    "submission.refinement_requested",
-                    "More detail needed for submission " + submission.getCode(),
-                    "Your brief needs more improvement: " + note,
-                    actor,
-                    now
-            );
+            notifyRefinementRequested(submission, note, actor, now);
         } else {
             notifySubmitter(
                     submission,
@@ -445,7 +521,8 @@ public class CaseFileService {
             case FORWARDED -> CaseStage.FORWARDED;
             case IN_FACT_FINDING -> CaseStage.IN_FACT_FINDING;
             case READY_FOR_REVIEW -> CaseStage.READY_FOR_REVIEW;
-            case IN_REVIEW, RESUBMITTED -> CaseStage.IN_REVIEW;
+            case IN_REVIEW -> CaseStage.IN_REVIEW;
+            case RESUBMITTED -> CaseStage.RESUBMITTED;
             case IMPROVEMENT_REQUESTED -> CaseStage.IMPROVEMENT_REQUESTED;
             case CONFIRMED_AS_PROJECT, AWAITING_PAYMENT -> CaseStage.CONFIRMED_AS_PROJECT;
             case IN_PROGRESS -> CaseStage.IN_PROGRESS;
@@ -472,8 +549,8 @@ public class CaseFileService {
                     CaseStage.AWAITING_PAYMENT,
                     CaseStage.CLOSED
             );
-            case IMPROVEMENT_REQUESTED -> List.of(CaseStage.RESUBMITTED);
-            case RESUBMITTED -> List.of(CaseStage.IN_REVIEW);
+            case IMPROVEMENT_REQUESTED -> List.of();
+            case RESUBMITTED -> List.of(CaseStage.IN_REVIEW, CaseStage.IMPROVEMENT_REQUESTED);
             case CONFIRMED_AS_PROJECT -> List.of(CaseStage.AWAITING_PAYMENT, CaseStage.IN_PROGRESS);
             case AWAITING_PAYMENT -> List.of(CaseStage.IN_PROGRESS, CaseStage.CLOSED);
             case IN_PROGRESS -> List.of(CaseStage.COMPLETED, CaseStage.CLOSED);
@@ -559,6 +636,42 @@ public class CaseFileService {
                 actor,
                 occurredAt
         );
+    }
+
+    private void notifyRefinementRequested(
+            Submission submission,
+            String guidanceNote,
+            String actor,
+            Instant occurredAt
+    ) {
+        notifySubmitter(
+                submission,
+                "submission.refinement_requested",
+                "More detail needed for submission " + submission.getCode(),
+                "Your brief needs more improvement: " + guidanceNote,
+                actor,
+                occurredAt
+        );
+    }
+
+    private static void requireRefinementDetails(
+            String guidanceNote,
+            LocalDate dueDate,
+            List<String> requestedChanges
+    ) {
+        if (clean(guidanceNote) == null) {
+            throw new InvalidSubmissionException(REFINEMENT_NOTE_REQUIRED);
+        }
+        if (dueDate == null) {
+            throw new InvalidSubmissionException("A due date is required when requesting more improvements.");
+        }
+        if (requestedChanges == null || requestedChanges.isEmpty()) {
+            throw new InvalidSubmissionException("At least one requested change is required.");
+        }
+    }
+
+    private static RefinementSource refinementSource(Authentication authentication) {
+        return isFactFindingOfficer(authentication) ? RefinementSource.FACT_FINDING : RefinementSource.COORDINATOR;
     }
 
     private static int caseYear(Instant now) {
