@@ -70,12 +70,13 @@ class ImprovementSchemaMigrationTest {
                 "pk_refinement_requests",
                 "pk_refinement_requested_changes",
                 "pk_case_revisions",
+                "uq_refinement_requests_id_brief",
                 "uq_refinement_requests_brief_cycle",
                 "uq_refinement_requested_changes_request_position",
                 "uq_case_revisions_brief_version",
                 "uq_case_revisions_request",
                 "fk_refinement_requested_changes_request",
-                "fk_case_revisions_request",
+                "fk_case_revisions_request_brief",
                 "ck_refinement_requests_cycle",
                 "ck_refinement_requests_source",
                 "ck_refinement_requests_status",
@@ -97,6 +98,8 @@ class ImprovementSchemaMigrationTest {
     void uniqueConstraintsCoverTheAgreedColumns() {
         assertEquals(List.of("brief_id", "cycle"),
                 constraintColumns("refinement_requests", "uq_refinement_requests_brief_cycle", "UNIQUE"));
+        assertEquals(List.of("id", "brief_id"),
+                constraintColumns("refinement_requests", "uq_refinement_requests_id_brief", "UNIQUE"));
         assertEquals(List.of("request_id", "position"), constraintColumns(
                 "refinement_requested_changes", "uq_refinement_requested_changes_request_position", "UNIQUE"));
         assertEquals(List.of("brief_id", "version_number"),
@@ -142,7 +145,7 @@ class ImprovementSchemaMigrationTest {
                 ORDER BY con.conname
                 """);
         assertEquals(List.of(
-                Map.of("name", "fk_case_revisions_request",
+                Map.of("name", "fk_case_revisions_request_brief",
                         "source_table", "case_revisions", "target_table", "refinement_requests"),
                 Map.of("name", "fk_refinement_requested_changes_request",
                         "source_table", "refinement_requested_changes", "target_table", "refinement_requests")

@@ -1,6 +1,7 @@
 package org.unipod.unipoderpbackend.repository.operations;
 
 import jakarta.persistence.LockModeType;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -19,6 +20,8 @@ public interface MediaRequestRepository extends JpaRepository<MediaRequest, UUID
     List<MediaRequest> findAllByOrderByUpdatedAtDesc();
     List<MediaRequest> findAllByStatusOrderByUpdatedAtDesc(String status);
     List<MediaRequest> findAllByBriefIdOrderByUpdatedAtDesc(UUID briefId);
+    List<MediaRequest> findAllByBriefIdAndStatusOrderByUpdatedAtDesc(UUID briefId, String status);
+    boolean existsByBriefIdAndIdNotAndStatusNotIn(UUID briefId, UUID id, Collection<String> statuses);
     List<MediaRequest> findAllBySubmitterIdOrderByUpdatedAtDesc(String submitterId);
     List<MediaRequest> findAllBySubmitterIdAndStatusOrderByUpdatedAtDesc(String submitterId, String status);
     List<MediaRequest> findAllBySubmitterIdAndBriefIdOrderByUpdatedAtDesc(String submitterId, UUID briefId);

@@ -48,9 +48,9 @@ public class MediaRequestController {
     }
 
     @PostMapping("/{id}/complete")
-    @PreAuthorize("hasAnyRole('ADMINISTRATOR','INNOVATION_COORDINATOR','DEPARTMENT_COORDINATOR','SECTOR_OFFICER')")
+    @PreAuthorize("hasAnyRole('ADMINISTRATOR','INNOVATION_COORDINATOR')")
     public Map<String, Object> complete(@PathVariable UUID id, Authentication auth) {
-        return media.complete(id, auth.getName());
+        return media.complete(id, auth);
     }
 
     private static boolean isMediaStaff(Authentication authentication) {

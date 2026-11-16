@@ -7,6 +7,7 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import org.unipod.unipoderpbackend.model.operations.DepartmentCode;
+import org.unipod.unipoderpbackend.validation.HttpsUrl;
 
 public record CreateServiceCatalogueItemRequest(
         @NotNull DepartmentCode department,
@@ -15,7 +16,7 @@ public record CreateServiceCatalogueItemRequest(
         @NotNull @PositiveOrZero Long price,
         @Pattern(regexp = "(?i)^[A-Z]{3}$") String currency,
         @Size(max = 120) String turnaroundEstimate,
-        @Size(max = 500) String whatsappGroupUrl,
+        @HttpsUrl @Size(max = 500) String whatsappGroupUrl,
         boolean requiresBrief,
         Boolean active,
         @Min(0) Integer sortOrder

@@ -146,6 +146,8 @@ tags:
       bookings; staff approve, reject, reschedule, check in and check out. Booking times are
       ISO-8601 instants. Overlapping active bookings for the same facility return `409`, as does a
       booking at a facility in `MAINTENANCE`.
+  - name: Service Catalogue
+    description: Public service catalogue and administrator/coordinator-managed catalogue items.
 x-cors:
   allowedOrigins:
     - http://localhost:5173
@@ -4788,6 +4790,46 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /services/catalogue:
+    get:
+      tags: [Service Catalogue]
+      operationId: getServiceCatalogue
+      x-required-roles: []
+      summary: List active service catalogue items by department
+      security: []
+      responses:
+        '200':
+          description: Active catalogue items grouped by department
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceCatalogue'
+    post:
+      tags: [Service Catalogue]
+      operationId: createServiceCatalogueItem
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR]
+      summary: Create a service catalogue item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateServiceCatalogueItemRequest'
+      responses:
+        '201':
+          description: Catalogue item created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceCatalogueItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /facilities:
     get:
       tags: [Facilities]
@@ -7002,6 +7044,78 @@ components:
           format: int64
         totalPages:
           type: integer
+    ServiceCatalogue:
+      type: object
+      additionalProperties:
+        type: array
+        items:
+          $ref: '#/components/schemas/ServiceCatalogueItem'
+    ServiceCatalogueItem:
+      type: object
+      required: [id, department, name, description, price, currency, turnaroundEstimate, whatsappGroupUrl, requiresBrief, active, sortOrder]
+      properties:
+        id:
+          type: string
+          format: uuid
+        department:
+          type: string
+          enum: [MULTIMEDIA, TEXTILE, CNC, TELECOMS]
+        name:
+          type: string
+        description:
+          type: [string, 'null']
+        price:
+          type: integer
+          format: int64
+        currency:
+          type: [string, 'null']
+        turnaroundEstimate:
+          type: [string, 'null']
+        whatsappGroupUrl:
+          type: [string, 'null']
+          format: uri
+        requiresBrief:
+          type: boolean
+        active:
+          type: boolean
+        sortOrder:
+          type: integer
+    CreateServiceCatalogueItemRequest:
+      type: object
+      required: [department, name, price]
+      properties:
+        department:
+          type: string
+          enum: [MULTIMEDIA, TEXTILE, CNC, TELECOMS]
+        name:
+          type: string
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 2000
+        price:
+          type: integer
+          format: int64
+          minimum: 0
+        currency:
+          type: string
+          pattern: '(?i)^[A-Z]{3}$'
+        turnaroundEstimate:
+          type: string
+          maxLength: 120
+        whatsappGroupUrl:
+          type: string
+          maxLength: 500
+          description: Optional HTTPS URL for the service WhatsApp group.
+        requiresBrief:
+          type: boolean
+        active:
+          type: boolean
+          default: true
+        sortOrder:
+          type: integer
+          minimum: 0
+          default: 0
     Notification:
       type: object
       required: [id, type, title, createdAt, read]
@@ -7011,7 +7125,7 @@ components:
           format: uuid
         type:
           type: string
-          enum: [BRIEF_SUBMITTED, DOCUMENT_REQUESTED, BRIEF_FORWARDED, REVIEWER_ASSIGNED, REVIEW_SUBMITTED, IMPROVEMENT_REQUESTED, NEW_VERSION_RECEIVED, PROJECT_CONFIRMED, PAYMENT_PROOF_UPLOADED, PAYMENT_CONFIRMED, PAYMENT_REJECTED, BOOKING_APPROVED, BOOKING_REJECTED, BOOKING_RESCHEDULED, EQUIPMENT_APPROVAL_REQUESTED, FAULT_REPORTED, LOW_STOCK, AGREEMENT_EXPIRING]
+          enum: [BRIEF_SUBMITTED, DOCUMENT_REQUESTED, BRIEF_FORWARDED, REVIEWER_ASSIGNED, REVIEW_SUBMITTED, IMPROVEMENT_REQUESTED, NEW_VERSION_RECEIVED, PROJECT_CONFIRMED, PAYMENT_PROOF_UPLOADED, PAYMENT_CONFIRMED, PAYMENT_REJECTED, BOOKING_APPROVED, BOOKING_REJECTED, BOOKING_RESCHEDULED, EQUIPMENT_APPROVAL_REQUESTED, FAULT_REPORTED, LOW_STOCK, AGREEMENT_EXPIRING, MEDIA_DELIVERED]
         title:
           type: string
         body:

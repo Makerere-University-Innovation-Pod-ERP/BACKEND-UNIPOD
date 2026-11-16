@@ -88,7 +88,7 @@ public class BookingService {
         String requestedType = request.requestType() == null || request.requestType().isBlank()
                 ? "FACILITY" : request.requestType().trim().toUpperCase(Locale.ROOT);
         if (!Set.of("FACILITY", "EQUIPMENT", "ALLOCATION").contains(requestedType)) {
-            throw new InvalidBookingException("requestType must be FACILITY or EQUIPMENT.");
+            throw new InvalidBookingException("requestType must be FACILITY, EQUIPMENT or ALLOCATION.");
         }
         boolean equipment = Boolean.TRUE.equals(request.isEquipmentRequest())
                 || "EQUIPMENT".equals(requestedType) || "ALLOCATION".equals(requestedType);

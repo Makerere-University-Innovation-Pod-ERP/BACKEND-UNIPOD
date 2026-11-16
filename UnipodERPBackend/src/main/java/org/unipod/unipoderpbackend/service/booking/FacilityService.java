@@ -105,6 +105,9 @@ public class FacilityService {
         Facility facility = facilities.findByIdForUpdate(id)
                 .orElseThrow(() -> new FacilityNotFoundException(id));
         boolean previous = facility.isSafetyPassRequired();
+        if (previous == required) {
+            return FacilityResponse.from(facility);
+        }
         facility.updateSafetyPassRequirement(required, clock.instant());
         facilities.saveAndFlush(facility);
         auditTrail.record(actor, "facility.safety_pass_requirement_changed", "facility", id,

@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -28,8 +29,9 @@ public class ServiceCatalogueController {
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAnyRole('ADMINISTRATOR','INNOVATION_COORDINATOR')")
     public ServiceCatalogueItemResponse create(
-            @Valid @RequestBody CreateServiceCatalogueItemRequest request) {
-        return catalogue.create(request);
+            @Valid @RequestBody CreateServiceCatalogueItemRequest request,
+            Authentication auth) {
+        return catalogue.create(request, auth.getName());
     }
 }
 

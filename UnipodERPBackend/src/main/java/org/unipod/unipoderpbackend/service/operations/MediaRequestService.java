@@ -1,16 +1,17 @@
 package org.unipod.unipoderpbackend.service.operations;
 
-import tools.jackson.core.JacksonException;
-import tools.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.*;
+import java.util.regex.Pattern;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.unipod.unipoderpbackend.dto.operations.MediaDeliverRequest;
 import org.unipod.unipoderpbackend.dto.operations.MediaRequestCreateRequest;
+import org.unipod.unipoderpbackend.dto.submission.CaseTransitionRequest;
 import org.unipod.unipoderpbackend.exception.operations.OperationsNotFoundException;
 import org.unipod.unipoderpbackend.exception.operations.InvalidOperationsRequestException;
 import org.unipod.unipoderpbackend.exception.operations.OperationsConflictException;
@@ -19,26 +20,34 @@ import org.unipod.unipoderpbackend.repository.operations.DepartmentOrderReposito
 import org.unipod.unipoderpbackend.model.notification.NotificationEvent;
 import org.unipod.unipoderpbackend.model.notification.NotificationType;
 import org.unipod.unipoderpbackend.model.operations.MediaRequest;
+import org.unipod.unipoderpbackend.model.submission.CaseStage;
+import org.unipod.unipoderpbackend.model.submission.Submission;
 import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
 import org.unipod.unipoderpbackend.repository.operations.MediaRequestRepository;
 import org.unipod.unipoderpbackend.repository.submission.SubmissionRepository;
 import org.unipod.unipoderpbackend.service.audit.AuditTrail;
 import org.unipod.unipoderpbackend.service.notification.NotificationService;
+import org.unipod.unipoderpbackend.service.submission.CaseFileService;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 @Service
 public class MediaRequestService {
     private static final ZoneId KAMPALA = ZoneId.of("Africa/Kampala");
+    private static final Pattern EMAIL_IDENTITY = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
     private final MediaRequestRepository mediaRequests;
     private final SubmissionRepository submissions;
+    private final CaseFileService caseFiles;
     private final DepartmentOrderRepository orders;
     private final NotificationService notifications;
     private final AuditTrail auditTrail;
     private final ObjectMapper mapper;
     private final Clock clock;
     public MediaRequestService(MediaRequestRepository mediaRequests, SubmissionRepository submissions,
-                               DepartmentOrderRepository orders,
+                               CaseFileService caseFiles, DepartmentOrderRepository orders,
                                NotificationService notifications, AuditTrail auditTrail, ObjectMapper mapper, Clock clock) {
-        this.mediaRequests = mediaRequests; this.submissions = submissions; this.orders = orders; this.notifications = notifications;
+        this.mediaRequests = mediaRequests; this.submissions = submissions; this.caseFiles = caseFiles;
+        this.orders = orders; this.notifications = notifications;
         this.auditTrail = auditTrail; this.mapper = mapper; this.clock = clock;
     }
 
@@ -47,12 +56,14 @@ public class MediaRequestService {
         if (request.briefId() == null && request.departmentOrderId() == null) {
             throw new InvalidOperationsRequestException("A briefId or departmentOrderId is required.");
         }
+        String ownerIdentity = null;
         if (request.briefId() != null) {
             var submission = submissions.findById(request.briefId())
                     .orElseThrow(() -> new OperationsNotFoundException("Submission not found."));
             if (!sameIdentity(submission.getSubmitterId(), request.submitterId())) {
                 throw new InvalidOperationsRequestException("submitterId must match the brief owner.");
             }
+            ownerIdentity = submission.getSubmitterId();
         }
         if (request.departmentOrderId() != null) {
             DepartmentOrder order = orders.findById(request.departmentOrderId())
@@ -60,13 +71,16 @@ public class MediaRequestService {
             if (!sameIdentity(order.getCustomerId(), request.submitterId())) {
                 throw new InvalidOperationsRequestException("submitterId must match the department order customer.");
             }
+            if (ownerIdentity == null) {
+                ownerIdentity = order.getCustomerId();
+            }
         }
         Instant now = clock.instant();
         int year = LocalDate.ofInstant(now, KAMPALA).getYear();
         long seq = mediaRequests.nextCodeSeq();
         String code = "MRQ-" + year + "-" + String.format("%06d", seq);
         MediaRequest mr = new MediaRequest(UUID.randomUUID(), code, request.briefId(), request.departmentOrderId(),
-                request.submitterId().trim(), request.title().trim(), now);
+                normalizeIdentity(ownerIdentity), request.title().trim(), now);
         mediaRequests.saveAndFlush(mr);
         auditTrail.record(actor, "media_request.created", "media_request", mr.getId(), null,
                 AuditTrail.details("code", code, "status", mr.getStatus()));
@@ -76,20 +90,26 @@ public class MediaRequestService {
     @Transactional(readOnly = true)
     public List<Map<String, Object>> list(String status, UUID briefId, String submitterId, boolean staff) {
         List<MediaRequest> items;
-        String normalizedStatus = status == null || status.isBlank() ? null : status.trim().toUpperCase();
+        String normalizedStatus = status == null || status.isBlank()
+                ? null
+                : status.trim().toUpperCase(Locale.ROOT);
+        String normalizedSubmitterId = normalizeIdentity(submitterId);
         if (staff) {
-            if (briefId != null) items = mediaRequests.findAllByBriefIdOrderByUpdatedAtDesc(briefId);
+            if (briefId != null && normalizedStatus != null) {
+                items = mediaRequests.findAllByBriefIdAndStatusOrderByUpdatedAtDesc(briefId, normalizedStatus);
+            } else if (briefId != null) items = mediaRequests.findAllByBriefIdOrderByUpdatedAtDesc(briefId);
             else if (normalizedStatus != null) items = mediaRequests.findAllByStatusOrderByUpdatedAtDesc(normalizedStatus);
             else items = mediaRequests.findAllByOrderByUpdatedAtDesc();
         } else if (briefId != null && normalizedStatus != null) {
             items = mediaRequests.findAllBySubmitterIdAndBriefIdAndStatusOrderByUpdatedAtDesc(
-                    submitterId, briefId, normalizedStatus);
+                    normalizedSubmitterId, briefId, normalizedStatus);
         } else if (briefId != null) {
-            items = mediaRequests.findAllBySubmitterIdAndBriefIdOrderByUpdatedAtDesc(submitterId, briefId);
+            items = mediaRequests.findAllBySubmitterIdAndBriefIdOrderByUpdatedAtDesc(normalizedSubmitterId, briefId);
         } else if (normalizedStatus != null) {
-            items = mediaRequests.findAllBySubmitterIdAndStatusOrderByUpdatedAtDesc(submitterId, normalizedStatus);
+            items = mediaRequests.findAllBySubmitterIdAndStatusOrderByUpdatedAtDesc(
+                    normalizedSubmitterId, normalizedStatus);
         } else {
-            items = mediaRequests.findAllBySubmitterIdOrderByUpdatedAtDesc(submitterId);
+            items = mediaRequests.findAllBySubmitterIdOrderByUpdatedAtDesc(normalizedSubmitterId);
         }
         return items.stream().map(this::toResponse).toList();
     }
@@ -142,22 +162,31 @@ public class MediaRequestService {
     }
 
     @Transactional
-    public Map<String, Object> complete(UUID id, String actor) {
+    public Map<String, Object> complete(UUID id, Authentication authentication) {
         MediaRequest mr = mediaRequests.findByIdForUpdate(id)
                 .orElseThrow(() -> new OperationsNotFoundException("Media request not found."));
         Instant now = clock.instant();
+        Submission submission = null;
         if (mr.getBriefId() != null) {
-            var submission = submissions.findByIdForUpdate(mr.getBriefId())
+            submission = submissions.findByIdForUpdate(mr.getBriefId())
                     .orElseThrow(() -> new OperationsNotFoundException("Submission not found."));
             if (submission.getStage() != SubmissionStage.IN_PROGRESS) {
                 throw new OperationsConflictException("INVALID_SUBMISSION_TRANSITION",
                         "The linked submission must be in progress before media delivery can complete it.");
             }
-            submission.advanceTo(SubmissionStage.COMPLETED, now);
-            submissions.save(submission);
         }
         mr.complete(now);
         mediaRequests.saveAndFlush(mr);
+        if (submission != null
+                && !mediaRequests.existsByBriefIdAndIdNotAndStatusNotIn(
+                        submission.getId(), mr.getId(), List.of("COMPLETED", "CANCELLED"))) {
+            caseFiles.transition(
+                    submission.getId(),
+                    new CaseTransitionRequest(CaseStage.COMPLETED, null, null, null, submission.getVersion()),
+                    authentication
+            );
+        }
+        String actor = authentication.getName();
         auditTrail.record(actor, "media_request.completed", "media_request", mr.getId(),
                 AuditTrail.details("status", "DELIVERED"),
                 AuditTrail.details("status", mr.getStatus()));
@@ -188,7 +217,7 @@ public class MediaRequestService {
     }
 
     private void notifySubmitter(String submitterId, MediaRequest mr, String note) {
-        if (submitterId == null || !submitterId.contains("@")) return;
+        if (submitterId == null || !EMAIL_IDENTITY.matcher(submitterId).matches()) return;
         notifications.publish(new NotificationEvent(NotificationType.MEDIA_DELIVERED,
                 Set.of(submitterId), "Media delivery: " + mr.getCode(),
                 note == null || note.isBlank() ? "Your media request has been delivered." : note,
@@ -196,6 +225,10 @@ public class MediaRequestService {
     }
 
     private static boolean sameIdentity(String first, String second) {
-        return first != null && second != null && first.trim().equalsIgnoreCase(second.trim());
+        return first != null && second != null && normalizeIdentity(first).equals(normalizeIdentity(second));
+    }
+
+    private static String normalizeIdentity(String identity) {
+        return identity == null ? null : identity.trim().toLowerCase(Locale.ROOT);
     }
 }
