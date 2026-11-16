@@ -53,9 +53,20 @@ public interface TrainingParticipantRepository extends JpaRepository<TrainingPar
 
     @Query("""
             select p from TrainingParticipant p
-            where p.sessionId = :sessionId and p.id in :ids
+            where p.sessionId = :sessionId
+              and p.id in :ids
+              and p.status <> org.unipod.unipoderpbackend.model.training.RegistrationStatus.CANCELLED
             """)
     List<TrainingParticipant> findAllBySessionIdAndIdIn(@Param("sessionId") UUID sessionId, @Param("ids") Collection<UUID> ids);
+
+    @Query("""
+            select p from TrainingParticipant p
+            where p.sessionId = :sessionId
+              and p.userId in :userIds
+              and p.status <> org.unipod.unipoderpbackend.model.training.RegistrationStatus.CANCELLED
+            """)
+    List<TrainingParticipant> findAllBySessionIdAndUserIdIn(
+            @Param("sessionId") UUID sessionId, @Param("userIds") Collection<String> userIds);
 
     @Query("""
             select count(distinct p.sessionId)

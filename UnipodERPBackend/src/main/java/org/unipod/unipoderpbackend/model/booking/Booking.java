@@ -92,15 +92,8 @@ public class Booking {
     @Column(name = "condition_returned", length = 32)
     private String conditionReturned;
 
-    @Column(name = "return_notes", length = 1000)
+    @Column(name = "return_notes", length = 2000)
     private String returnNotes;
-
-    @Column(name = "delivered_at")
-    private Instant deliveredAt;
-
-    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
-    @Column(name = "delivery_payload", columnDefinition = "jsonb")
-    private String deliveryPayload;
 
     protected Booking() {
     }
@@ -193,8 +186,8 @@ public class Booking {
     }
 
     public void markReturned(Instant returnedAt, String conditionReturned, String notes, Instant now) {
-        if (status != BookingStatus.OUT && status != BookingStatus.APPROVED && status != BookingStatus.CHECKED_IN) {
-            throw new BookingConflictException("Only an active or out allocation can be returned.");
+        if (!equipmentRequest || status != BookingStatus.OUT) {
+            throw new BookingConflictException("Only an out allocation can be returned.");
         }
         this.status = BookingStatus.RETURNED;
         this.returnedAt = returnedAt == null ? now : returnedAt;
@@ -226,16 +219,11 @@ public class Booking {
 
     public void cancel(Instant now) {
         if (status == BookingStatus.COMPLETED || status == BookingStatus.CANCELLED
-                || status == BookingStatus.RETURNED || status == BookingStatus.REJECTED) {
+                || status == BookingStatus.RETURNED || status == BookingStatus.REJECTED
+                || status == BookingStatus.OUT) {
             throw new BookingConflictException("The booking cannot be cancelled in its current state.");
         }
         this.status = BookingStatus.CANCELLED;
-        this.updatedAt = now;
-    }
-
-    public void markDelivered(String payload, Instant now) {
-        this.deliveryPayload = payload;
-        this.deliveredAt = now;
         this.updatedAt = now;
     }
 
@@ -315,6 +303,4 @@ public class Booking {
     public String getConditionOut() { return conditionOut; }
     public String getConditionReturned() { return conditionReturned; }
     public String getReturnNotes() { return returnNotes; }
-    public Instant getDeliveredAt() { return deliveredAt; }
-    public String getDeliveryPayload() { return deliveryPayload; }
 }

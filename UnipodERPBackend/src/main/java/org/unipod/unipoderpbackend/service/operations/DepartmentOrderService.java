@@ -9,6 +9,8 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.*;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.unipod.unipoderpbackend.dto.finance.CreateInvoiceRequest;
@@ -52,6 +54,9 @@ public class DepartmentOrderService {
     @Transactional
     public Map<String, Object> create(String dept, DepartmentOrderRequest request, String actor) {
         DepartmentCode department = DepartmentCode.fromPath(dept);
+        if (request.specs() == null || request.specs().isNull()) {
+            throw new InvalidOperationsRequestException("specs is required and cannot be null.");
+        }
         Instant now = clock.instant();
         int year = LocalDate.ofInstant(now, KAMPALA).getYear();
         long seq = orders.nextCodeSeq();
@@ -71,17 +76,21 @@ public class DepartmentOrderService {
     }
 
     @Transactional(readOnly = true)
-    public Map<String, Object> listKanban(String dept) {
+    public Map<String, Object> listKanban(String dept, Pageable pageable) {
         DepartmentCode department = DepartmentCode.fromPath(dept);
-        List<DepartmentOrder> list = orders.findAllByDepartmentOrderByUpdatedAtDescCreatedAtDesc(department);
+        Page<DepartmentOrder> page = orders.findAllByDepartmentOrderByUpdatedAtDescCreatedAtDesc(department, pageable);
         Map<String, List<Map<String, Object>>> columns = new LinkedHashMap<>();
         for (String s : stagesFor(department)) columns.put(s, new ArrayList<>());
-        for (DepartmentOrder o : list) {
+        for (DepartmentOrder o : page.getContent()) {
             columns.computeIfAbsent(o.getStage(), k -> new ArrayList<>()).add(toResponse(o));
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("department", department.name());
         out.put("columns", columns);
+        out.put("page", page.getNumber());
+        out.put("size", page.getSize());
+        out.put("totalElements", page.getTotalElements());
+        out.put("totalPages", page.getTotalPages());
         return out;
     }
 
@@ -90,6 +99,9 @@ public class DepartmentOrderService {
         DepartmentCode department = DepartmentCode.fromPath(dept);
         DepartmentOrder order = orders.findByIdAndDepartmentForUpdate(id, department)
                 .orElseThrow(() -> new OperationsNotFoundException("Order not found."));
+        if (request.quote() == null || request.quote().isNull()) {
+            throw new InvalidOperationsRequestException("quote is required and cannot be null.");
+        }
         JsonNode q = request.quote();
         long amount = q.path("amount").asLong(0);
         if (amount <= 0) throw new InvalidOperationsRequestException("quote.amount must be > 0.");
@@ -101,8 +113,9 @@ public class DepartmentOrderService {
         var invResp = invoices.create(invReq, actor);
         Instant now = clock.instant();
         order.applyQuote(writeJson(q), actor, invResp.id(), invResp.status().name(), now);
-        order = appendHistory(order, order.getStage(), actor, "Quote submitted, payment gate locked", now,
+        String hist = appendHistoryJson(order.getStageHistory(), order.getStage(), actor, "Quote submitted, payment gate locked", now,
                 Map.of("invoiceId", invResp.id().toString()));
+        order.moveStage(order.getStage(), hist, now);
         orders.saveAndFlush(order);
         auditTrail.record(actor, "order.quoted", "department_order", order.getId(), null,
                 AuditTrail.details("invoiceId", invResp.id().toString(), "amount", amount));
@@ -115,13 +128,16 @@ public class DepartmentOrderService {
         DepartmentOrder order = orders.findByIdAndDepartmentForUpdate(id, department)
                 .orElseThrow(() -> new OperationsNotFoundException("Order not found."));
         String target = normalizeStage(request.stage());
+        String previous = order.getStage();
         Instant now = clock.instant();
         syncInvoiceStatus(order, now);
-        if (requiresPaid(order.getInvoiceId()) && isScheduledOrBeyond(target) && !isPaid(order.getInvoiceStatus())) {
+        validateStage(department, previous, target, order);
+        if (isScheduledOrBeyond(target)
+                && (order.getInvoiceId() == null || !isPaid(order.getInvoiceStatus()))) {
             throw new OperationsConflictException("PAYMENT_REQUIRED", "Payment is required before moving to " + target + ".");
         }
-        order = appendHistory(order, target, actor, clean(request.notes()), now, null);
-        order.moveStage(target, order.getStageHistory(), now);
+        String history = appendHistoryJson(order.getStageHistory(), target, actor, clean(request.notes()), now, null);
+        order.moveStage(target, history, now);
         if (isCompletionStage(target)) {
             String materialsJson = request.materials_used() == null ? null : writeJson(request.materials_used());
             order.setCompletion(materialsJson, clean(request.machine_time_used()),
@@ -134,8 +150,24 @@ public class DepartmentOrderService {
         }
         orders.saveAndFlush(order);
         auditTrail.record(actor, "order.stage_changed", "department_order", order.getId(),
-                AuditTrail.details("previous", order.getStage()), AuditTrail.details("stage", target));
+                AuditTrail.details("previous", previous), AuditTrail.details("stage", target));
         return toResponse(order);
+    }
+
+    private void validateStage(DepartmentCode department, String previous, String target, DepartmentOrder order) {
+        List<String> allowed = stagesFor(department);
+        if (!allowed.contains(target)) {
+            throw new InvalidOperationsRequestException("Invalid stage '" + target + "' for department " + department.name() + ".");
+        }
+        if (Objects.equals(previous, target)) return;
+        int prevIdx = allowed.indexOf(previous == null ? "NEW" : previous);
+        int tgtIdx = allowed.indexOf(target);
+        if (prevIdx >= 0 && tgtIdx >= 0 && tgtIdx < prevIdx && !isCompletionStage(target)) {
+            throw new OperationsConflictException("INVALID_STAGE_TRANSITION", "Cannot move order backwards from " + previous + " to " + target + ".");
+        }
+        if ("SCHEDULED".equals(target) && order.getQuote() == null) {
+            throw new InvalidOperationsRequestException("A quote must be submitted before scheduling.");
+        }
     }
 
     private void syncInvoiceStatus(DepartmentOrder order, Instant now) {
@@ -181,12 +213,10 @@ public class DepartmentOrderService {
                 "Auto-deducted for order " + order.getCode(), actor, now));
     }
 
-    private DepartmentOrder appendHistory(DepartmentOrder order, String stage, String actor, String notes, Instant now, Map<String,String> extra) {
-        ArrayNode arr = parseHistory(order.getStageHistory());
+    private String appendHistoryJson(String existing, String stage, String actor, String notes, Instant now, Map<String,String> extra) {
+        ArrayNode arr = parseHistory(existing);
         arr.add(historyEntry(stage, actor, notes, now, extra));
-        String json = writeJson(arr);
-        order.moveStage(order.getStage() == null ? stage : order.getStage(), json, now);
-        return order;
+        return writeJson(arr);
     }
 
     private ArrayNode parseHistory(String json) {
@@ -207,7 +237,6 @@ public class DepartmentOrderService {
         return n;
     }
 
-    private boolean requiresPaid(UUID invoiceId) { return invoiceId != null; }
     private boolean isPaid(String status) { return "PAID".equals(status) || "RECEIPTED".equals(status); }
     private boolean isScheduledOrBeyond(String stage) {
         return Set.of("SCHEDULED","PRINTING","FINISHING","IN_PRODUCTION","READY","DONE","COLLECTED","DELIVERED","COMPLETED","CUTTING","SEWING","QC","IN_PROGRESS").contains(stage);
@@ -238,6 +267,7 @@ public class DepartmentOrderService {
         m.put("quote", readJson(o.getQuote())); m.put("quoteSubmittedAt", o.getQuoteSubmittedAt());
         m.put("quotedBy", o.getQuotedBy()); m.put("invoiceId", o.getInvoiceId());
         m.put("invoiceStatus", o.getInvoiceStatus()); m.put("materialsUsed", readJson(o.getMaterialsUsed()));
+        m.put("paymentConfirmedAt", o.getPaymentConfirmedAt());
         m.put("machineTimeUsed", o.getMachineTimeUsed()); m.put("qualityChecklist", readJson(o.getQualityChecklist()));
         m.put("collectionSignature", o.getCollectionSignature()); m.put("stageHistory", readJson(o.getStageHistory()));
         m.put("createdBy", o.getCreatedBy()); m.put("createdAt", o.getCreatedAt()); m.put("updatedAt", o.getUpdatedAt());

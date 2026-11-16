@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.unipod.unipoderpbackend.exception.submission.InvalidSubmissionException;
 import org.unipod.unipoderpbackend.exception.submission.SubmissionConflictException;
 import org.unipod.unipoderpbackend.model.improvement.CaseRevision;
 import org.unipod.unipoderpbackend.model.improvement.RefinementRequest;
@@ -26,7 +27,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class RefinementRequestServiceTest {
@@ -101,6 +104,40 @@ class RefinementRequestServiceTest {
     }
 
     @Test
+    void askRejectsInvalidGuidanceWithoutSaving() {
+        Submission submission = submission();
+
+        assertThrows(InvalidSubmissionException.class, () -> service.ask(
+                submission,
+                RefinementSource.COORDINATOR,
+                "   ",
+                LocalDate.of(2026, 11, 15),
+                List.of("Add detail"),
+                "coordinator",
+                NOW
+        ));
+
+        verifyNoInteractions(requests, changes, revisions);
+    }
+
+    @Test
+    void askRejectsPastDueDateWithoutSaving() {
+        Submission submission = submission();
+
+        assertThrows(InvalidSubmissionException.class, () -> service.ask(
+                submission,
+                RefinementSource.COORDINATOR,
+                "Please add detail",
+                LocalDate.of(2026, 11, 7),
+                List.of("Add detail"),
+                "coordinator",
+                NOW
+        ));
+
+        verifyNoInteractions(requests, changes, revisions);
+    }
+
+    @Test
     void responseClosesRequestAndRecordsTheImprovedVersion() {
         Submission submission = submission();
         ReflectionTestUtils.setField(submission, "briefVersion", 2);
@@ -129,6 +166,50 @@ class RefinementRequestServiceTest {
         assertEquals("Added measurement results", revision.getWhatChanged());
         assertEquals("submitter", revision.getSubmittedBy());
         assertEquals(NOW.plusSeconds(5), revision.getSubmittedAt());
+    }
+
+    @Test
+    void responseRejectsRequestFromAnotherCaseWithoutSaving() {
+        Submission submission = submission();
+        RefinementRequest request = new RefinementRequest(
+                UUID.randomUUID(),
+                1,
+                RefinementSource.COORDINATOR,
+                "Add detail",
+                LocalDate.of(2026, 11, 15),
+                "coordinator",
+                NOW
+        );
+        ReflectionTestUtils.setField(request, "id", 9L);
+
+        assertThrows(SubmissionConflictException.class, () -> service.recordResponse(
+                submission, request, "submitter", "Added measurement results", NOW.plusSeconds(5)
+        ));
+
+        verify(requests, never()).save(any(RefinementRequest.class));
+        verify(revisions, never()).save(any(CaseRevision.class));
+    }
+
+    @Test
+    void responseRejectsBlankSummaryWithoutSaving() {
+        Submission submission = submission();
+        RefinementRequest request = new RefinementRequest(
+                CASE_ID,
+                1,
+                RefinementSource.COORDINATOR,
+                "Add detail",
+                LocalDate.of(2026, 11, 15),
+                "coordinator",
+                NOW
+        );
+        ReflectionTestUtils.setField(request, "id", 9L);
+
+        assertThrows(InvalidSubmissionException.class, () -> service.recordResponse(
+                submission, request, "submitter", "  ", NOW.plusSeconds(5)
+        ));
+
+        verify(requests, never()).save(any(RefinementRequest.class));
+        verify(revisions, never()).save(any(CaseRevision.class));
     }
 
     private static Submission submission() {

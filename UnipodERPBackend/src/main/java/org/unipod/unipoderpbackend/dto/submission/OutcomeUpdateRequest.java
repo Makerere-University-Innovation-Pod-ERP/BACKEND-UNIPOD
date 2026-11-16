@@ -13,7 +13,7 @@ public record OutcomeUpdateRequest(
         @NotBlank @Size(max = 5000) String note,
         UUID destinationDepartmentId,
         LocalDate dueDate,
-        @Size(max = 50) List<@Size(max = 500) String> requestedChanges,
+        @Size(max = 50) List<@NotBlank @Size(max = 500) String> requestedChanges,
         @NotNull @PositiveOrZero Long version
 ) {
 }

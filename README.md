@@ -159,6 +159,7 @@ Drafts are private to their owner and do not appear in the queue. The list is or
 | GET    | `/api/facilities`                    | Lists facilities.                                       |
 | POST   | `/api/facilities`                    | Creates a facility.                                     |
 | PATCH  | `/api/facilities/{id}/status`        | Changes a facility's status.                            |
+| PATCH  | `/api/facilities/{id}/safety-pass`   | Configures whether bookings require a safety pass.     |
 | GET    | `/api/me/bookings`                   | Lists the signed-in submitter's bookings.               |
 | POST   | `/api/me/bookings`                   | Requests a facility booking.                            |
 | POST   | `/api/me/bookings/{id}/cancel`       | Cancels an owned booking.                               |
@@ -398,7 +399,8 @@ PowerPoint, RTF, ZIP, plain text, CSV, JPEG, PNG, GIF, WebP, or TIFF images,
 and the design formats DXF, DWG, STL, and SVG. When a browser reports
 `application/octet-stream`, an allowed file extension is accepted. Anything
 else returns `400`. Submitters may upload only while their brief is
-`DRAFT`, `SUBMITTED`, or `AWAITING_INFORMATION`. Download with
+`DRAFT`, `SUBMITTED`, `AWAITING_INFORMATION`, or `IMPROVEMENT_REQUESTED`.
+Download with
 `GET /api/submissions/{id}/documents/{documentId}/file`; responses use the
 sanitized original filename when available, are forced to
 attachment/octet-stream, and include `nosniff`.
@@ -575,7 +577,10 @@ cancel a pending or approved booking with
 `POST /api/me/bookings/{id}/cancel`. Staff approve, reject, reschedule, check in
 and check out bookings through `/api/bookings`. Facilities are listed with
 `GET /api/facilities` and managed with `POST /api/facilities` and
-`PATCH /api/facilities/{id}/status`. Overlapping active bookings return `409`,
+`PATCH /api/facilities/{id}/status` and
+`PATCH /api/facilities/{id}/safety-pass`. Set `requiresSafetyPass` on facility
+creation or use the safety-pass endpoint; CNC departments default to requiring
+the CNC pass. Overlapping active bookings return `409`,
 as does a booking at a facility in `MAINTENANCE`; the requested attendee count
 must not exceed the facility capacity.
 

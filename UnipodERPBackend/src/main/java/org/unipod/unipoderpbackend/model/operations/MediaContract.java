@@ -51,12 +51,38 @@ public class MediaContract {
                          long agreedPrice, String currency, String milestonePaymentDates, UUID signedContractDocId,
                          String assignedStaff, String createdBy, Instant now) {
         this.id = id; this.code = code; this.client = client; this.eventName = eventName; this.eventDate = eventDate;
-        this.venue = venue; this.agreedPrice = agreedPrice; this.currency = currency == null ? "UGX" : currency;
+        this.venue = venue; this.agreedPrice = agreedPrice;
+        this.currency = currency == null || currency.isBlank() ? "UGX" : currency.strip().toUpperCase(java.util.Locale.ROOT);
         this.milestonePaymentDates = milestonePaymentDates == null ? "[]" : milestonePaymentDates;
         this.signedContractDocId = signedContractDocId; this.assignedStaff = assignedStaff == null ? "[]" : assignedStaff;
         this.createdBy = createdBy; this.createdAt = now; this.updatedAt = now;
     }
     public void setInvoiceIds(String invoiceIds, Instant now) { this.invoiceIds = invoiceIds == null ? "[]" : invoiceIds; this.updatedAt = now; }
+    public void transitionTo(MediaContractStatus target, UUID signedContractDocId, Instant now) {
+        boolean valid = switch (status) {
+            case "DRAFT" -> target == MediaContractStatus.SIGNED || target == MediaContractStatus.CANCELLED;
+            case "SIGNED" -> target == MediaContractStatus.IN_PROGRESS || target == MediaContractStatus.CANCELLED;
+            case "IN_PROGRESS" -> target == MediaContractStatus.COMPLETED || target == MediaContractStatus.CANCELLED;
+            default -> false;
+        };
+        if (!valid) {
+            throw new org.unipod.unipoderpbackend.exception.operations.OperationsConflictException(
+                    "INVALID_CONTRACT_TRANSITION", "The media contract cannot move from " + status + " to " + target + ".");
+        }
+        if (target == MediaContractStatus.SIGNED) {
+            UUID documentId = signedContractDocId == null ? this.signedContractDocId : signedContractDocId;
+            if (documentId == null) {
+                throw new org.unipod.unipoderpbackend.exception.operations.InvalidOperationsRequestException(
+                        "A signed contract document is required to mark the contract as signed.");
+            }
+            this.signedContractDocId = documentId;
+        } else if (signedContractDocId != null) {
+            throw new org.unipod.unipoderpbackend.exception.operations.InvalidOperationsRequestException(
+                    "A signed contract document can only be supplied when signing the contract.");
+        }
+        this.status = target.name();
+        this.updatedAt = now;
+    }
     public UUID getId() { return id; }
     public String getCode() { return code; }
     public String getClient() { return client; }

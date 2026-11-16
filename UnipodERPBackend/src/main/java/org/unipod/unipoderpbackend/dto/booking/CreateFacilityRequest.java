@@ -11,6 +11,16 @@ public record CreateFacilityRequest(
         @Size(max = 160) String location,
         @Positive int capacity,
         @NotNull FacilityStatus status,
-        @Size(max = 100) String department
+        @Size(max = 100) String department,
+        Boolean requiresSafetyPass
 ) {
+    public CreateFacilityRequest(
+            String name,
+            String location,
+            int capacity,
+            FacilityStatus status,
+            String department
+    ) {
+        this(name, location, capacity, status, department, null);
+    }
 }

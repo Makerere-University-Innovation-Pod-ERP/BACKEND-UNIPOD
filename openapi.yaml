@@ -4871,6 +4871,42 @@ paths:
           $ref: '#/components/responses/NotFound'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /facilities/{id}/safety-pass:
+    patch:
+      tags: [Facilities]
+      operationId: updateFacilitySafetyPassRequirement
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, DEPARTMENT_COORDINATOR, SECTOR_OFFICER]
+      summary: Configure the facility safety-pass requirement
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateFacilitySafetyPassRequest'
+      responses:
+        '200':
+          description: The updated facility
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Facility'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /me/bookings:
     get:
       tags: [Facilities]
@@ -8213,7 +8249,7 @@ components:
       enum: [PENDING, APPROVED, REJECTED, CHECKED_IN, COMPLETED, CANCELLED]
     Facility:
       type: object
-      required: [id, name, capacity, status, createdAt, updatedAt]
+      required: [id, name, capacity, status, requiresSafetyPass, createdAt, updatedAt]
       properties:
         id:
           type: string
@@ -8228,6 +8264,8 @@ components:
           $ref: '#/components/schemas/FacilityStatus'
         department:
           type: [string, 'null']
+        requiresSafetyPass:
+          type: boolean
         createdAt:
           type: string
           format: date-time
@@ -8252,12 +8290,21 @@ components:
         department:
           type: string
           maxLength: 100
+        requiresSafetyPass:
+          type: boolean
+          description: Defaults to true for CNC departments and false otherwise.
     UpdateFacilityStatusRequest:
       type: object
       required: [status]
       properties:
         status:
           $ref: '#/components/schemas/FacilityStatus'
+    UpdateFacilitySafetyPassRequest:
+      type: object
+      required: [requiresSafetyPass]
+      properties:
+        requiresSafetyPass:
+          type: boolean
     Booking:
       type: object
       required: [id, reference, facilityId, facilityName, requesterId, purpose, startsAt, endsAt, attendees, status, createdAt, updatedAt]

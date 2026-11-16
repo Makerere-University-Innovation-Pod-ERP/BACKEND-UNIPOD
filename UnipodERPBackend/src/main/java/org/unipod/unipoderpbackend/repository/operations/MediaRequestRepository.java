@@ -19,4 +19,9 @@ public interface MediaRequestRepository extends JpaRepository<MediaRequest, UUID
     List<MediaRequest> findAllByOrderByUpdatedAtDesc();
     List<MediaRequest> findAllByStatusOrderByUpdatedAtDesc(String status);
     List<MediaRequest> findAllByBriefIdOrderByUpdatedAtDesc(UUID briefId);
+    List<MediaRequest> findAllBySubmitterIdOrderByUpdatedAtDesc(String submitterId);
+    List<MediaRequest> findAllBySubmitterIdAndStatusOrderByUpdatedAtDesc(String submitterId, String status);
+    List<MediaRequest> findAllBySubmitterIdAndBriefIdOrderByUpdatedAtDesc(String submitterId, UUID briefId);
+    List<MediaRequest> findAllBySubmitterIdAndBriefIdAndStatusOrderByUpdatedAtDesc(
+            String submitterId, UUID briefId, String status);
 }

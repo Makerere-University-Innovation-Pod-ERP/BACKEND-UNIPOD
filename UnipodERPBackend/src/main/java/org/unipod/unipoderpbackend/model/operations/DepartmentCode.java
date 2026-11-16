@@ -1,5 +1,8 @@
 package org.unipod.unipoderpbackend.model.operations;
 
+import java.util.Locale;
+import org.unipod.unipoderpbackend.exception.operations.InvalidOperationsRequestException;
+
 public enum DepartmentCode {
     MULTIMEDIA,
     TEXTILE,
@@ -8,13 +11,13 @@ public enum DepartmentCode {
 
     public static DepartmentCode fromPath(String raw) {
         if (raw == null) throw new IllegalArgumentException("Department is required");
-        String n = raw.trim().toUpperCase().replace('-', '_').replace(' ', '_');
+        String n = raw.trim().toUpperCase(Locale.ROOT).replace('-', '_').replace(' ', '_');
         return switch (n) {
             case "MULTIMEDIA", "MEDIA" -> MULTIMEDIA;
             case "TEXTILE", "TEXTILES" -> TEXTILE;
             case "CNC" -> CNC;
             case "TELECOMS", "TELECOM", "TELECOM_LAB" -> TELECOMS;
-            default -> DepartmentCode.valueOf(n);
+            default -> throw new InvalidOperationsRequestException("Unknown department: " + raw.trim());
         };
     }
 }

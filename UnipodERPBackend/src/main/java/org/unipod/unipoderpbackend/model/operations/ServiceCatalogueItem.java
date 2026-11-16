@@ -2,6 +2,7 @@ package org.unipod.unipoderpbackend.model.operations;
 
 import jakarta.persistence.*;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.UUID;
 
 @Entity
@@ -42,8 +43,10 @@ public class ServiceCatalogueItem {
                                 int sortOrder, Instant now) {
         this.id = id; this.department = department; this.name = name;
         this.description = description == null ? "" : description;
-        this.price = Math.max(0, price);
-        this.currency = currency == null || currency.isBlank() ? "UGX" : currency;
+        if (price < 0) throw new IllegalArgumentException("Service price cannot be negative.");
+        this.price = price;
+        this.currency = currency == null || currency.isBlank()
+                ? "UGX" : currency.strip().toUpperCase(Locale.ROOT);
         this.turnaroundEstimate = turnaroundEstimate;
         this.whatsappGroupUrl = whatsappGroupUrl;
         this.requiresBrief = requiresBrief; this.active = active; this.sortOrder = sortOrder;

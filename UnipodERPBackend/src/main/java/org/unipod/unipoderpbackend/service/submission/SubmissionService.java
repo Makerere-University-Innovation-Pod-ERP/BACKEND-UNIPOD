@@ -1149,6 +1149,10 @@ public class SubmissionService {
     }
 
     private static boolean submitterCanAct(SubmissionStage stage) {
+        return canSubmitterUploadDocuments(stage);
+    }
+
+    static boolean canSubmitterUploadDocuments(SubmissionStage stage) {
         return stage == SubmissionStage.DRAFT
                 || stage == SubmissionStage.SUBMITTED
                 || stage == SubmissionStage.AWAITING_INFORMATION
@@ -1573,10 +1577,7 @@ public class SubmissionService {
         if (!submission.getSubmitterId().equals(actor)) {
             throw new AccessDeniedException("Submitters may only attach documents to their own submissions.");
         }
-        if (submission.getStage() != SubmissionStage.DRAFT
-                && submission.getStage() != SubmissionStage.SUBMITTED
-                && submission.getStage() != SubmissionStage.AWAITING_INFORMATION
-                && submission.getStage() != SubmissionStage.IMPROVEMENT_REQUESTED) {
+        if (!canSubmitterUploadDocuments(submission.getStage())) {
             throw new AccessDeniedException(
                     "Submitters may attach documents only while the brief can still change, before forwarding or while an improvement request is open."
             );

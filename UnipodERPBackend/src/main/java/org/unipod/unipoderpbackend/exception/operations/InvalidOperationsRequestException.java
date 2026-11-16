@@ -6,6 +6,10 @@ public class InvalidOperationsRequestException extends RuntimeException {
         super(message);
         this.code = code;
     }
+    public InvalidOperationsRequestException(String code, String message, Throwable cause) {
+        super(message, cause);
+        this.code = code;
+    }
     public InvalidOperationsRequestException(String message) { this("OPERATIONS_INVALID", message); }
     public String getCode() { return code; }
 }

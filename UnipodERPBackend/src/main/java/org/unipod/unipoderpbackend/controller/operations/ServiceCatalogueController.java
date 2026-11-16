@@ -1,7 +1,14 @@
 package org.unipod.unipoderpbackend.controller.operations;
 
+import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.unipod.unipoderpbackend.dto.operations.CreateServiceCatalogueItemRequest;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -16,5 +23,13 @@ public class ServiceCatalogueController {
 
     @GetMapping("/catalogue")
     public Map<String, List<ServiceCatalogueItemResponse>> catalogue() { return catalogue.catalogue(); }
+
+    @PostMapping("/catalogue")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasAnyRole('ADMINISTRATOR','INNOVATION_COORDINATOR')")
+    public ServiceCatalogueItemResponse create(
+            @Valid @RequestBody CreateServiceCatalogueItemRequest request) {
+        return catalogue.create(request);
+    }
 }
 

@@ -224,11 +224,7 @@ public class UploadedDocumentService {
         if (stage == SubmissionStage.COMPLETED || stage == SubmissionStage.CLOSED) {
             throw new SubmissionConflictException("The submission cannot be changed in its current state.");
         }
-        if (submitter
-                && stage != SubmissionStage.DRAFT
-                && stage != SubmissionStage.SUBMITTED
-                && stage != SubmissionStage.AWAITING_INFORMATION
-                && stage != SubmissionStage.IMPROVEMENT_REQUESTED) {
+        if (submitter && !SubmissionService.canSubmitterUploadDocuments(stage)) {
             throw new org.springframework.security.access.AccessDeniedException(
                     "Submitters may attach documents only while the brief can still change, before forwarding or while an improvement request is open."
             );

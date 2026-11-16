@@ -2,6 +2,7 @@ package org.unipod.unipoderpbackend.service.training;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -117,7 +118,16 @@ public class TrainingParticipantService {
         }
         Instant now = clock.instant();
         Set<UUID> requested = userIds == null ? Set.of() : new HashSet<>(userIds);
-        List<TrainingParticipant> inSession = participants.findActiveBySessionId(sessionId);
+        if (requested.isEmpty()) {
+            return new BulkAttendancePassResponse(sessionId, 0, 0);
+        }
+        Map<UUID, TrainingParticipant> selected = new LinkedHashMap<>();
+        participants.findAllBySessionIdAndIdIn(sessionId, requested)
+                .forEach(participant -> selected.put(participant.getId(), participant));
+        participants.findAllBySessionIdAndUserIdIn(
+                        sessionId, requested.stream().map(UUID::toString).toList())
+                .forEach(participant -> selected.put(participant.getId(), participant));
+        List<TrainingParticipant> inSession = new ArrayList<>(selected.values());
         int passedCount = 0;
         int unlocked = 0;
         for (TrainingParticipant p : inSession) {
@@ -146,6 +156,8 @@ public class TrainingParticipantService {
             userId = participant.getContactEmail();
         }
         if (userId == null || userId.isBlank()) return false;
+        userId = userId.trim();
+        if (userId.contains("@")) userId = userId.toLowerCase(Locale.ROOT);
         if (eligibilities.existsByUserIdAndDepartmentIgnoreCase(userId, "CNC")) return false;
         eligibilities.save(new MachineBookingEligibility(UUID.randomUUID(), userId, "CNC", session.getId(), now, grantedBy));
         return true;

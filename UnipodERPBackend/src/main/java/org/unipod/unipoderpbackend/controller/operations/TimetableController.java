@@ -20,6 +20,9 @@ public class TimetableController {
     public TimetableController(TimetableService timetable) { this.timetable = timetable; }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('ADMINISTRATOR','INNOVATION_COORDINATOR','DEPARTMENT_COORDINATOR',"
+            + "'RECEPTIONIST','FACT_FINDING_OFFICER','REVIEWER','SECTOR_OFFICER',"
+            + "'FINANCE_OFFICER','SUBMITTER','OBSERVER')")
     public List<TimetableBlockResponse> list(
             @RequestParam(required = false) UUID facility_id,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,

@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
+import org.unipod.unipoderpbackend.exception.operations.OperationsConflictException;
 
 @Entity
 @Table(name = "media_requests")
@@ -43,7 +44,14 @@ public class MediaRequest {
         this.deliveryPayload = payload; this.deliveredAt = now; this.deliveredBy = actor;
         this.status = "DELIVERED"; this.updatedAt = now;
     }
-    public void complete(Instant now) { this.status = "COMPLETED"; this.updatedAt = now; }
+    public void complete(Instant now) {
+        if (!"DELIVERED".equals(status)) {
+            throw new OperationsConflictException("INVALID_MEDIA_REQUEST_TRANSITION",
+                    "Only a delivered media request can be completed.");
+        }
+        this.status = "COMPLETED";
+        this.updatedAt = now;
+    }
     public UUID getId() { return id; }
     public String getCode() { return code; }
     public UUID getBriefId() { return briefId; }

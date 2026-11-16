@@ -124,7 +124,7 @@ public class TrainingController {
     @PreAuthorize(MANAGE_ROLES)
     public BulkAttendancePassResponse bulkPass(
             @PathVariable UUID id, @Valid @RequestBody BulkAttendancePassRequest request, Authentication authentication) {
-        return participants.bulkPass(id, request.user_ids(), currentActor.from(authentication));
+        return participants.bulkPass(id, request.userIds(), currentActor.from(authentication));
     }
 
     @PostMapping("/mentorship")

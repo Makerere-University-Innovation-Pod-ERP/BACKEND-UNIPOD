@@ -6,6 +6,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -84,8 +85,14 @@ public class BookingService {
         Instant now = clock.instant();
         int year = LocalDate.ofInstant(now, KAMPALA).getYear();
         long sequence = bookings.nextReferenceNumber();
-        String reqType = request.requestType() == null || request.requestType().isBlank() ? "FACILITY" : request.requestType().trim().toUpperCase();
-        boolean equipment = Boolean.TRUE.equals(request.isEquipmentRequest()) || "EQUIPMENT".equals(reqType) || "ALLOCATION".equals(reqType);
+        String requestedType = request.requestType() == null || request.requestType().isBlank()
+                ? "FACILITY" : request.requestType().trim().toUpperCase(Locale.ROOT);
+        if (!Set.of("FACILITY", "EQUIPMENT", "ALLOCATION").contains(requestedType)) {
+            throw new InvalidBookingException("requestType must be FACILITY or EQUIPMENT.");
+        }
+        boolean equipment = Boolean.TRUE.equals(request.isEquipmentRequest())
+                || "EQUIPMENT".equals(requestedType) || "ALLOCATION".equals(requestedType);
+        String reqType = equipment ? "EQUIPMENT" : "FACILITY";
         Booking booking = new Booking(
                 UUID.randomUUID(),
                 "BKG-%d-%06d".formatted(year, sequence),
@@ -116,13 +123,13 @@ public class BookingService {
     @Transactional(readOnly = true)
     public Page<BookingResponse> forRequester(String requesterId, Pageable pageable) {
         return bookings.findAllByRequesterIdOrderByStartsAtDescIdDesc(requesterId, pageable)
-                .map(BookingResponse::from);
+                .map(BookingResponse::forSubmitter);
     }
 
     @Transactional(readOnly = true)
     public BookingResponse forRequester(UUID id, String requesterId) {
         return bookings.findByIdAndRequesterId(id, requesterId)
-                .map(BookingResponse::from)
+                .map(BookingResponse::forSubmitter)
                 .orElseThrow(() -> new BookingNotFoundException(id));
     }
 
@@ -211,7 +218,13 @@ public class BookingService {
         if (!Set.of("WORKING","BEING_REPAIRED","DAMAGED","FAULTY","OK").contains(normalized)) {
             throw new InvalidBookingException("condition_returned must be WORKING or BEING_REPAIRED/DAMAGED.");
         }
-        String stored = (normalized.equals("WORKING") || normalized.equals("OK")) ? "WORKING" : "BEING_REPAIRED";
+        String stored = switch (normalized) {
+            case "WORKING", "OK" -> "WORKING";
+            case "DAMAGED" -> "DAMAGED";
+            case "BEING_REPAIRED", "FAULTY" -> "BEING_REPAIRED";
+            default -> throw new InvalidBookingException(
+                    "condition_returned must be WORKING, BEING_REPAIRED, or DAMAGED.");
+        };
         booking.markReturned(returnedAt, stored, notes, clock.instant());
         bookings.saveAndFlush(booking);
         auditTrail.record(actor, "booking.returned", "booking", id, null,
@@ -276,7 +289,7 @@ public class BookingService {
         auditTrail.record(requesterId, "booking.cancelled", "booking", id,
                 AuditTrail.details("status", previousStatus.name()),
                 AuditTrail.details("status", BookingStatus.CANCELLED.name()));
-        return BookingResponse.from(booking);
+        return BookingResponse.forSubmitter(booking);
     }
 
     private Booking lockBooking(UUID id) {
@@ -306,14 +319,11 @@ public class BookingService {
     }
 
     private void requireMachineEligibilityIfNeeded(Facility facility, String requesterId) {
-        if (facility == null || requesterId == null || eligibilities == null) return;
-        String dept = facility.getDepartment();
-        String name = facility.getName() == null ? "" : facility.getName().toLowerCase();
-        boolean cncLike = "CNC".equalsIgnoreCase(dept) || name.contains("cnc") || name.contains("machine") || name.contains("laser") || name.contains("router");
-        if (!cncLike) return;
-        String key = dept == null || dept.isBlank() ? "CNC" : dept.trim().toUpperCase();
-        boolean ok = eligibilities.existsByUserIdAndDepartmentIgnoreCase(requesterId, key)
-                || eligibilities.existsByUserIdAndDepartmentIgnoreCase(requesterId, "CNC");
+        if (facility == null || requesterId == null || eligibilities == null
+                || !facility.isSafetyPassRequired()) {
+            return;
+        }
+        boolean ok = eligibilities.existsByUserIdAndDepartmentIgnoreCase(requesterId, "CNC");
         if (!ok) {
             throw new BookingConflictException("Safety training pass (CN5) required before booking this machine.");
         }

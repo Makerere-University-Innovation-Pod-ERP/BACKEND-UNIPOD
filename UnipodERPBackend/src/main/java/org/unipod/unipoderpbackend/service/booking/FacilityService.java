@@ -44,13 +44,18 @@ public class FacilityService {
             throw new BookingConflictException("A facility with this name already exists.");
         }
         Instant now = clock.instant();
+        String department = clean(request.department());
+        boolean requiresSafetyPass = request.requiresSafetyPass() != null
+                ? request.requiresSafetyPass()
+                : "CNC".equalsIgnoreCase(department);
         Facility facility = new Facility(
                 UUID.randomUUID(),
                 name,
                 clean(request.location()),
                 request.capacity(),
                 request.status(),
-                clean(request.department()),
+                department,
+                requiresSafetyPass,
                 actor,
                 now
         );
@@ -92,6 +97,19 @@ public class FacilityService {
         auditTrail.record(actor, "facility.status_changed", "facility", id,
                 AuditTrail.details("status", previous.name()),
                 AuditTrail.details("status", status.name()));
+        return FacilityResponse.from(facility);
+    }
+
+    @Transactional
+    public FacilityResponse updateSafetyPassRequirement(UUID id, boolean required, String actor) {
+        Facility facility = facilities.findByIdForUpdate(id)
+                .orElseThrow(() -> new FacilityNotFoundException(id));
+        boolean previous = facility.isSafetyPassRequired();
+        facility.updateSafetyPassRequirement(required, clock.instant());
+        facilities.saveAndFlush(facility);
+        auditTrail.record(actor, "facility.safety_pass_requirement_changed", "facility", id,
+                AuditTrail.details("requiresSafetyPass", previous),
+                AuditTrail.details("requiresSafetyPass", required));
         return FacilityResponse.from(facility);
     }
 

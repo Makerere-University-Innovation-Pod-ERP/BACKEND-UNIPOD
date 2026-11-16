@@ -202,6 +202,7 @@ public class CaseFileService {
         if (request.toStage() == CaseStage.IMPROVEMENT_REQUESTED) {
             requireRefinementDetails(request.note(), request.dueDate(), request.requestedChanges());
         }
+        String note = clean(request.note());
         Instant now = clock.instant();
         SubmissionStage previousStage = submission.getStage();
         SubmissionStage nextStage = SubmissionStage.valueOf(request.toStage().name());
@@ -218,13 +219,13 @@ public class CaseFileService {
             refinementRequests.ask(
                     submission,
                     refinementSource(authentication),
-                    request.note(),
+                    note,
                     request.dueDate(),
                     request.requestedChanges(),
                     authentication.getName(),
                     now
             );
-            notifyRefinementRequested(submission, request.note(), authentication.getName(), now);
+            notifyRefinementRequested(submission, note, authentication.getName(), now);
         }
         history.save(new CaseStageHistory(
                 UUID.randomUUID(),
@@ -232,12 +233,12 @@ public class CaseFileService {
                 previousStage,
                 nextStage,
                 authentication.getName(),
-                clean(request.note()),
+                note,
                 now
         ));
         auditTrail.record(authentication.getName(), "submission.transitioned", id,
                 AuditTrail.details("stage", previousStage.name()),
-                AuditTrail.details("stage", nextStage.name(), "note", clean(request.note())));
+                AuditTrail.details("stage", nextStage.name(), "note", note));
         submissions.flush();
         return aggregate(submission, authentication);
     }

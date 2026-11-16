@@ -1,6 +1,12 @@
 ﻿-- Fidel operations modules: allocations/equipment flow, media delivery, catalogue,
 -- unified department orders, media contracts, and timetable blocks.
 
+ALTER TABLE facilities
+    ADD COLUMN IF NOT EXISTS requires_safety_pass BOOLEAN NOT NULL DEFAULT FALSE;
+UPDATE facilities
+    SET requires_safety_pass = TRUE
+    WHERE UPPER(department) = 'CNC';
+
 ALTER TABLE bookings
     ADD COLUMN IF NOT EXISTS request_type VARCHAR(20) NOT NULL DEFAULT 'FACILITY',
     ADD COLUMN IF NOT EXISTS is_equipment_request BOOLEAN NOT NULL DEFAULT FALSE,
@@ -12,9 +18,7 @@ ALTER TABLE bookings
     ADD COLUMN IF NOT EXISTS returned_at TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS condition_out VARCHAR(32),
     ADD COLUMN IF NOT EXISTS condition_returned VARCHAR(32),
-    ADD COLUMN IF NOT EXISTS return_notes VARCHAR(2000),
-    ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ,
-    ADD COLUMN IF NOT EXISTS delivery_payload JSONB;
+    ADD COLUMN IF NOT EXISTS return_notes VARCHAR(2000);
 
 ALTER TABLE bookings DROP CONSTRAINT IF EXISTS ck_bookings_status;
 ALTER TABLE bookings
@@ -24,6 +28,10 @@ ALTER TABLE bookings
 ALTER TABLE bookings DROP CONSTRAINT IF EXISTS ck_bookings_request_type;
 ALTER TABLE bookings
     ADD CONSTRAINT ck_bookings_request_type CHECK (request_type IN ('FACILITY', 'EQUIPMENT'));
+ALTER TABLE bookings DROP CONSTRAINT IF EXISTS ck_bookings_equipment_request_matches_type;
+ALTER TABLE bookings
+    ADD CONSTRAINT ck_bookings_equipment_request_matches_type
+        CHECK ((request_type = 'EQUIPMENT') = is_equipment_request);
 ALTER TABLE bookings DROP CONSTRAINT IF EXISTS ck_bookings_condition_out;
 ALTER TABLE bookings
     ADD CONSTRAINT ck_bookings_condition_out CHECK (
@@ -87,6 +95,8 @@ CREATE TABLE IF NOT EXISTS department_orders (
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
     version BIGINT NOT NULL DEFAULT 0,
+    CONSTRAINT fk_department_orders_invoice
+        FOREIGN KEY (invoice_id) REFERENCES invoices (id),
     CONSTRAINT pk_department_orders PRIMARY KEY (id),
     CONSTRAINT uq_department_orders_code UNIQUE (code),
     CONSTRAINT ck_department_orders_department CHECK (department IN ('MULTIMEDIA','TEXTILE','CNC','TELECOMS')),
@@ -117,6 +127,8 @@ CREATE TABLE IF NOT EXISTS media_contracts (
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
     version BIGINT NOT NULL DEFAULT 0,
+    CONSTRAINT fk_media_contracts_signed_document
+        FOREIGN KEY (signed_contract_doc_id) REFERENCES documents (id),
     CONSTRAINT pk_media_contracts PRIMARY KEY (id),
     CONSTRAINT uq_media_contracts_code UNIQUE (code),
     CONSTRAINT ck_media_contracts_agreed_price CHECK (agreed_price >= 0),
@@ -180,6 +192,11 @@ CREATE TABLE IF NOT EXISTS media_requests (
     CONSTRAINT ck_media_requests_status CHECK (status IN ('REQUESTED','SCHEDULED','IN_PRODUCTION','DELIVERED','COMPLETED','CANCELLED'))
 );
 CREATE SEQUENCE IF NOT EXISTS media_request_code_seq START WITH 1 INCREMENT BY 1;
+CREATE INDEX IF NOT EXISTS ix_media_requests_brief_updated
+    ON media_requests (brief_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS ix_media_requests_status_updated
+    ON media_requests (status, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS stock_items (
     id UUID NOT NULL,
     sku VARCHAR(64) NOT NULL,
@@ -187,6 +204,7 @@ CREATE TABLE IF NOT EXISTS stock_items (
     department VARCHAR(32),
     quantity_on_hand INTEGER NOT NULL DEFAULT 0,
     updated_at TIMESTAMPTZ NOT NULL,
+    version BIGINT NOT NULL DEFAULT 0,
     CONSTRAINT pk_stock_items PRIMARY KEY (id),
     CONSTRAINT uq_stock_items_sku UNIQUE (sku),
     CONSTRAINT ck_stock_items_qty CHECK (quantity_on_hand >= 0)

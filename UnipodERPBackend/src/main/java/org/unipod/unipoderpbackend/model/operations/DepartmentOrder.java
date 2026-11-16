@@ -90,7 +90,11 @@ public class DepartmentOrder {
         this.qualityChecklist = qualityChecklist; this.collectionSignature = signature; this.updatedAt = now;
     }
     public void confirmPayment(String invoiceStatus, Instant now) {
-        this.invoiceStatus = invoiceStatus; this.paymentConfirmedAt = now; this.updatedAt = now;
+        this.invoiceStatus = invoiceStatus;
+        if ("PAID".equals(invoiceStatus) || "RECEIPTED".equals(invoiceStatus)) {
+            if (paymentConfirmedAt == null) paymentConfirmedAt = now;
+        }
+        this.updatedAt = now;
     }
 
     public UUID getId() { return id; }
@@ -108,6 +112,7 @@ public class DepartmentOrder {
     public String getQuotedBy() { return quotedBy; }
     public UUID getInvoiceId() { return invoiceId; }
     public String getInvoiceStatus() { return invoiceStatus; }
+    public Instant getPaymentConfirmedAt() { return paymentConfirmedAt; }
     public String getMaterialsUsed() { return materialsUsed; }
     public String getMachineTimeUsed() { return machineTimeUsed; }
     public String getQualityChecklist() { return qualityChecklist; }
