@@ -49,7 +49,7 @@ public class MediaContractService {
                 request.signed_contract_doc_id(), staff, actor, now);
         contracts.saveAndFlush(c);
         if (Boolean.TRUE.equals(request.generate_invoices())) {
-            generateMilestoneInvoices(c, actor);
+            generateMilestoneInvoices(c, request, actor);
             contracts.saveAndFlush(c);
         }
         auditTrail.record(actor, "media_contract.created", "media_contract", c.getId(), null,
@@ -57,7 +57,9 @@ public class MediaContractService {
         return toResponse(c);
     }
 
-    private void generateMilestoneInvoices(MediaContract c, String actor) {
+    private void generateMilestoneInvoices(MediaContract c, MediaContractRequest request, String actor) {
+        String customerEmail = clean(request.client());
+        String customerName = clean(request.client());
         try {
             JsonNode node = mapper.readTree(c.getMilestonePaymentDates());
             List<UUID> ids = new ArrayList<>();
@@ -68,18 +70,20 @@ public class MediaContractService {
                     idx++;
                     String label = m.isObject() && m.hasNonNull("label") ? m.get("label").asText() : ("Milestone " + idx);
                     long amount = m.isObject() && m.has("amount") ? m.get("amount").asLong(share) : share;
-                    var inv = invoices.create(new CreateInvoiceRequest(actor, c.getClient(), "MULTIMEDIA",
+                    String email = (m.isObject() && m.hasNonNull("customerEmail")) ? m.get("customerEmail").asText(customerEmail) : customerEmail;
+                    String name = (m.isObject() && m.hasNonNull("customerName")) ? m.get("customerName").asText(customerName) : customerName;
+                    var inv = invoices.create(new CreateInvoiceRequest(email, name, "MULTIMEDIA",
                             "Media contract " + c.getCode() + " - " + label, amount, InvoiceSourceType.JOB, c.getId().toString()), actor);
                     ids.add(inv.id());
                 }
             } else {
-                var inv = invoices.create(new CreateInvoiceRequest(actor, c.getClient(), "MULTIMEDIA",
-                        "Media contract " + c.getCode(), c.getAgreedPrice(), InvoiceSourceType.JOB, c.getId().toString()), actor);
+                var inv = invoices.create(new CreateInvoiceRequest(customerEmail, customerName, "MULTIMEDIA",
+                        "Media contract " + c.getCode() + " - " + c.getEventName(), c.getAgreedPrice(), InvoiceSourceType.JOB, c.getId().toString()), actor);
                 ids.add(inv.id());
             }
             c.setInvoiceIds(writeJson(ids), clock.instant());
         } catch (Exception e) {
-            // leave without invoices if malformed; can be retried later by extension
+            throw new InvalidOperationsRequestException("Could not generate milestone invoices: " + e.getMessage());
         }
     }
 
@@ -98,4 +102,3 @@ public class MediaContractService {
     private Object readJson(String s) { if (s==null||s.isBlank()) return List.of(); try { return mapper.readTree(s); } catch (Exception e) { return s; } }
     private static String clean(String v){ if(v==null) return null; String t=v.trim(); return t.isEmpty()?null:t; }
 }
-

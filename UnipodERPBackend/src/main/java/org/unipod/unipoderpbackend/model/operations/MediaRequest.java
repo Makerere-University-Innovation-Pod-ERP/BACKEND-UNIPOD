@@ -53,5 +53,8 @@ public class MediaRequest {
     public String getStatus() { return status; }
     public String getDeliveryPayload() { return deliveryPayload; }
     public Instant getDeliveredAt() { return deliveredAt; }
+    public String getDeliveredBy() { return deliveredBy; }
+    public Instant getCreatedAt() { return createdAt; }
+    public Instant getUpdatedAt() { return updatedAt; }
 }
 

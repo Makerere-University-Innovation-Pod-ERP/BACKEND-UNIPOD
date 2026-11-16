@@ -29,6 +29,7 @@ import org.unipod.unipoderpbackend.repository.booking.FacilityRepository;
 import org.unipod.unipoderpbackend.service.audit.AuditTrail;
 import org.unipod.unipoderpbackend.service.notification.NotificationService;
 import org.unipod.unipoderpbackend.repository.operations.TimetableBlockRepository;
+import org.unipod.unipoderpbackend.repository.operations.MachineBookingEligibilityRepository;
 
 @Service
 public class BookingService {
@@ -45,6 +46,7 @@ public class BookingService {
     private final NotificationService notifications;
     private final AuditTrail auditTrail;
     private final TimetableBlockRepository timetable;
+    private final MachineBookingEligibilityRepository eligibilities;
     private final Clock clock;
 
     public BookingService(
@@ -53,6 +55,7 @@ public class BookingService {
             NotificationService notifications,
             AuditTrail auditTrail,
             TimetableBlockRepository timetable,
+            MachineBookingEligibilityRepository eligibilities,
             Clock clock
     ) {
         this.bookings = bookings;
@@ -60,6 +63,7 @@ public class BookingService {
         this.notifications = notifications;
         this.auditTrail = auditTrail;
         this.timetable = timetable;
+        this.eligibilities = eligibilities;
         this.clock = clock;
     }
 
@@ -74,6 +78,7 @@ public class BookingService {
         if (request.attendees() > facility.getCapacity()) {
             throw new InvalidBookingException("The group size exceeds the facility capacity.");
         }
+        requireMachineEligibilityIfNeeded(facility, actor);
         requireNoConflict(facility.getId(), request.startsAt(), request.endsAt(), null);
         requireNoTimetableClash(facility.getId(), request.startsAt(), request.endsAt());
         Instant now = clock.instant();
@@ -164,6 +169,7 @@ public class BookingService {
         String d = decision == null ? "" : decision.trim().toUpperCase();
         if ("APPROVED".equals(d)) {
             requireNotMaintenance(facility);
+            requireMachineEligibilityIfNeeded(facility, booking.getRequesterId());
             requireNoConflict(facility.getId(), booking.getStartsAt(), booking.getEndsAt(), booking.getId());
             requireNoTimetableClash(facility.getId(), booking.getStartsAt(), booking.getEndsAt());
             if (booking.isEquipmentRequest() || "EQUIPMENT".equalsIgnoreCase(booking.getRequestType()) || "ALLOCATION".equalsIgnoreCase(booking.getRequestType())) {
@@ -219,6 +225,7 @@ public class BookingService {
         Booking booking = lockBooking(id);
         Facility facility = lockFacility(booking);
         requireNotMaintenance(facility);
+        requireMachineEligibilityIfNeeded(facility, booking.getRequesterId());
         requireNoConflict(facility.getId(), startsAt, endsAt, booking.getId());
         requireNoTimetableClash(facility.getId(), startsAt, endsAt);
         Instant previousStart = booking.getStartsAt();
@@ -295,6 +302,20 @@ public class BookingService {
         if (facilityId == null || timetable == null) return;
         if (!timetable.findOverlapping(facilityId, startsAt, endsAt).isEmpty()) {
             throw new BookingConflictException("The selected time clashes with a scheduled timetable block.");
+        }
+    }
+
+    private void requireMachineEligibilityIfNeeded(Facility facility, String requesterId) {
+        if (facility == null || requesterId == null || eligibilities == null) return;
+        String dept = facility.getDepartment();
+        String name = facility.getName() == null ? "" : facility.getName().toLowerCase();
+        boolean cncLike = "CNC".equalsIgnoreCase(dept) || name.contains("cnc") || name.contains("machine") || name.contains("laser") || name.contains("router");
+        if (!cncLike) return;
+        String key = dept == null || dept.isBlank() ? "CNC" : dept.trim().toUpperCase();
+        boolean ok = eligibilities.existsByUserIdAndDepartmentIgnoreCase(requesterId, key)
+                || eligibilities.existsByUserIdAndDepartmentIgnoreCase(requesterId, "CNC");
+        if (!ok) {
+            throw new BookingConflictException("Safety training pass (CN5) required before booking this machine.");
         }
     }
 
