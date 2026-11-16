@@ -32,8 +32,10 @@ info:
        account with `POST /auth/signup`, which also returns a token.
     2. Send the returned `accessToken` on every protected request as
        `Authorization: Bearer <accessToken>`.
-    3. Tokens are short-lived (default 15 minutes, exposed as `expiresAt`). There is no refresh
-       endpoint; log in again before expiry.
+    3. Access tokens are short-lived (default 15 minutes, exposed as `expiresAt`). Login and
+       sign-up also return a `refreshToken` (default 14 days). Before the access token expires,
+       call `POST /auth/refresh` to get a new pair; each refresh token works once. Call
+       `POST /auth/logout` to end the session.
 
     Students, members of the public and organisations sign up with `POST /auth/signup`.
     Staff accounts are created by an Administrator with `POST /admin/users`.
@@ -264,6 +266,58 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '409':
           $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /auth/refresh:
+    post:
+      tags: [Authentication]
+      operationId: refreshSession
+      x-required-roles: []
+      summary: Swap a refresh token for a new access token and refresh token
+      description: |
+        Public endpoint. Each refresh token works once; the response carries a new one.
+        Presenting a refresh token that was already used ends every session of that
+        account, because it means the token was copied. Expired, unknown or revoked
+        tokens and deactivated accounts get 401.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '200':
+          description: New tokens
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /auth/logout:
+    post:
+      tags: [Authentication]
+      operationId: logout
+      x-required-roles: []
+      summary: End the session that owns this refresh token
+      description: Public endpoint; always 204, even for an unknown token. Changing or resetting the password ends every session.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '204':
+          description: Session ended
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /auth/forgot-password:
@@ -504,6 +558,126 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/Conflict'
+  /submissions/drafts:
+    post:
+      tags: [Submissions]
+      operationId: createSubmissionDraft
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, SUBMITTER]
+      summary: Save a new brief as a draft
+      description: |
+        Creates a partially completed brief. A draft has no tracking reference,
+        is visible only to its submitter and intake staff, and is not placed in
+        the reception queue or announced to reception. `category` is required
+        to start a draft; every other field may be completed later through
+        `PATCH /submissions/drafts/{id}` and the brief is finalised with
+        `POST /submissions/{id}/submit`, which allocates the tracking reference.
+        A submitter's identity is taken from the authenticated principal.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DraftSubmissionRequest'
+      responses:
+        '201':
+          description: Draft created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /submissions/drafts/{id}:
+    patch:
+      tags: [Submissions]
+      operationId: patchSubmissionDraft
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, SUBMITTER]
+      summary: Autosave a draft
+      description: |
+        Partial update used by the draft editor's autosave. Only the supplied
+        fields change; omitted fields are left untouched. Returns 409 once the
+        brief has left the `DRAFT` stage, so a stale editor cannot overwrite a
+        submitted brief.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DraftSubmissionRequest'
+      responses:
+        '200':
+          description: Draft updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /submissions/walk-in:
+    post:
+      tags: [Submissions]
+      operationId: createWalkInSubmission
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
+      summary: Capture a walk-in brief for a submitter at reception
+      description: |
+        Receptionist-assisted intake. The submitter is matched by email first,
+        then by phone. When neither resolves to an account a minimal account of
+        the supplied `account_kind` (default `PUBLIC`) is created and the
+        temporary password or set-password link is returned once. `registered_by`
+        is the receptionist and `submitter_id` is the walk-in account. Unlike a
+        draft, the brief is submitted immediately and appears in the reception
+        queue. The request returns 400 when no account exists and no email is
+        supplied, when the email and phone belong to different accounts, when
+        more than one account shares the phone number, when the rules version is
+        missing, or when the account-kind details needed for the profile are
+        missing.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WalkInSubmissionRequest'
+      responses:
+        '201':
+          description: Submitted walk-in brief and its account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalkInSubmissionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /submissions/search:
     get:
       tags: [Submissions]
@@ -557,6 +731,703 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /me:
+    get:
+      tags: [Authentication]
+      operationId: getMe
+      x-required-roles: []
+      summary: The signed-in user, role, home screen, departments, profile and capabilities
+      description: |
+        Call after login to decide which home screen to open (`MY_SUBMISSIONS` for
+        submitters, `STAFF_HOME` for staff) and which actions to show. `capabilities`
+        lists each action the role may take with its scope (OWN, ASSIGNED, DEPARTMENT
+        or ALL). `profile` is null for staff accounts created by an administrator.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /users:
+    get:
+      tags: [Users]
+      operationId: listUsers
+      x-required-roles: [ADMINISTRATOR]
+      summary: List and search accounts [AD1]
+      description: Administrator only (USER_MANAGE); other roles get 403 with code ROLE_NOT_PERMITTED. Staff accounts are created with `POST /admin/users`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: role
+          in: query
+          schema:
+            $ref: '#/components/schemas/ApiUserRole'
+        - name: active
+          in: query
+          schema:
+            type: boolean
+        - name: q
+          in: query
+          description: Part of the email address.
+          schema:
+            type: string
+            maxLength: 254
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of accounts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSummaryPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /users/{id}:
+    get:
+      tags: [Users]
+      operationId: getUser
+      x-required-roles: [ADMINISTRATOR]
+      summary: One account
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Users]
+      operationId: updateUser
+      x-required-roles: [ADMINISTRATOR]
+      summary: Change an account's role or departments [AD1]
+      description: |
+        Send only what changes. `departmentIds` replaces the user's department list
+        (send `[]` to remove all). You cannot change your own role, and the last
+        active administrator cannot be demoted (409). Every change is audited.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: The updated account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSummary'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /users/{id}/deactivate:
+    post:
+      tags: [Users]
+      operationId: deactivateUser
+      x-required-roles: [ADMINISTRATOR]
+      summary: Deactivate an account [AD1]
+      description: The account can no longer sign in. Idempotent. You cannot deactivate yourself or the last active administrator (409). Tokens already issued expire on their own (at most one hour).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /users/{id}/reactivate:
+    post:
+      tags: [Users]
+      operationId: reactivateUser
+      x-required-roles: [ADMINISTRATOR]
+      summary: Reactivate an account [AD1]
+      description: Idempotent.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /roles:
+    get:
+      tags: [Users]
+      operationId: listRoles
+      x-required-roles: []
+      summary: Role list [AD1]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Every role; `staff` is false only for SUBMITTER
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Role'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /departments:
+    get:
+      tags: [Users]
+      operationId: listDepartments
+      x-required-roles: []
+      summary: Active departments
+      description: Departments are the same records as sectors (`/sectors`).
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Active departments by name
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SectorFilterOption'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Users]
+      operationId: createDepartment
+      x-required-roles: [ADMINISTRATOR]
+      summary: Create a department
+      description: Same body and rules as `POST /sectors`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SectorRequest'
+      responses:
+        '201':
+          description: Department created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSector'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /price-list-items:
+    get:
+      tags: [Finance]
+      operationId: listPriceListItems
+      x-required-roles: []
+      summary: Price list [FN1]
+      description: |
+        Finance officers and administrators see every item. Department coordinators also see
+        PROPOSED items of their own departments. Everyone else sees ACTIVE items only.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: departmentId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/PriceItemStatus'
+      responses:
+        '200':
+          description: Price list items by service name
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PriceListItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Finance]
+      operationId: createPriceListItem
+      x-required-roles: [FINANCE_OFFICER, ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Add a price [FN1]
+      description: |
+        A finance officer or administrator creates an ACTIVE price. A department coordinator
+        may only propose (status PROPOSED) for a department they belong to; finance
+        approves it with PUT. Prices are whole UGX. `effectiveFrom` defaults to today.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PriceListItemRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceListItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /price-list-items/{id}/invoice:
+    post:
+      tags: [Finance]
+      operationId: invoiceFromPriceListItem
+      x-required-roles: [FINANCE_OFFICER, ADMINISTRATOR]
+      summary: Bill a customer from a price [FN1, FN2]
+      description: |
+        Creates an invoice in the finance module from an ACTIVE price: amount = price x
+        quantity, department = the price's department, description = service, quantity and
+        unit. The invoice then follows the normal proof, check and receipt steps.
+        409 if the price is not active.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvoiceFromPriceRequest'
+      responses:
+        '201':
+          description: Invoice created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /price-list-items/{id}:
+    put:
+      tags: [Finance]
+      operationId: updatePriceListItem
+      x-required-roles: [FINANCE_OFFICER, ADMINISTRATOR]
+      summary: Change, approve or retire a price [FN1]
+      description: |
+        Send only the fields that change. Set `status` to ACTIVE to approve a proposal
+        or RETIRED to withdraw a price. Changes never alter invoices already issued,
+        and every change is audited with the old and new values.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PriceListItemUpdateRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceListItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /reports/submissions-by-stage:
+    get:
+      tags: [Reports]
+      operationId: reportSubmissionsByStage
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, OBSERVER]
+      summary: Briefs by status [M3]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StageCountsReport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /reports/student-vs-public:
+    get:
+      tags: [Reports]
+      operationId: reportStudentVsPublic
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, OBSERVER]
+      summary: Student projects against public ideas [M3]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentVsPublicReport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /reports/completion-rate:
+    get:
+      tags: [Reports]
+      operationId: reportCompletionRate
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, OBSERVER]
+      summary: Share of submitted briefs completed or closed [M3]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompletionRateReport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /reports/income-trend:
+    get:
+      tags: [Reports]
+      operationId: reportIncomeTrend
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, OBSERVER]
+      summary: Confirmed payments per week, empty weeks as zero [M3]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: weeks
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 52
+            default: 12
+      responses:
+        '200':
+          description: Report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IncomeTrendReport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /reports/department-workload:
+    get:
+      tags: [Reports]
+      operationId: reportDepartmentWorkload
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, OBSERVER]
+      summary: Open cases and open invoices per department [M3]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DepartmentWorkloadReport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /exports:
+    post:
+      tags: [Reports]
+      operationId: createExport
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, OBSERVER]
+      summary: Export a report as CSV or PDF [M3]
+      description: Builds the file now and keeps it for download with `GET /exports/{id}`. Cells that start with = + - @ are prefixed with ' so spreadsheets do not run them as formulas.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExportRequest'
+      responses:
+        '201':
+          description: Export ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Export'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /exports/{id}:
+    get:
+      tags: [Reports]
+      operationId: downloadExport
+      x-required-roles: []
+      summary: Download an export
+      description: Only the person who requested it, or an administrator. Others get 404.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The exported file
+          content:
+            text/csv:
+              schema:
+                type: string
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /invoices/{id}/pdf:
+    get:
+      tags: [Finance]
+      operationId: downloadInvoicePdf
+      x-required-roles: [ADMINISTRATOR, FINANCE_OFFICER]
+      summary: Invoice as PDF, with how to pay
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /invoices/{id}/receipt/pdf:
+    get:
+      tags: [Finance]
+      operationId: downloadReceiptPdf
+      x-required-roles: [ADMINISTRATOR, FINANCE_OFFICER]
+      summary: Receipt as PDF (404 until the receipt is issued)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /me/invoices/{id}/pdf:
+    get:
+      tags: [Finance]
+      operationId: downloadMyInvoicePdf
+      x-required-roles: [SUBMITTER]
+      summary: My invoice as PDF, with how to pay
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /me/invoices/{id}/receipt/pdf:
+    get:
+      tags: [Finance]
+      operationId: downloadMyReceiptPdf
+      x-required-roles: [SUBMITTER]
+      summary: My receipt as PDF (404 until the receipt is issued)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /me/submissions:
     get:
       tags: [Submissions]
@@ -566,8 +1437,11 @@ paths:
       description: |
         Returns only submissions whose `submitter_id` is the signed-in
         principal; staff-only fields are omitted. Each row includes
-        `pendingAction`, `waitingForYou`, and `waitingSince` so the home screen
-        can highlight work waiting for the submitter. Use `tab` to split the
+        `pendingAction`, `pendingActionHref`, `waitingForYou`, and
+        `waitingSince` so the home screen can highlight work waiting for the
+        submitter. `pendingActionHref` is an API path to follow for the details
+        behind the action (for example `/cases/{id}/my-improvement`); it is null
+        when no extra document is needed. Use `tab` to split the
         Briefs and Service requests tabs; Invoices and payments and Bookings are
         separate modules advertised by `GET /me/capabilities`.
       security:
@@ -585,7 +1459,7 @@ paths:
             endpoint.
           schema:
             type: string
-            enum: [BRIEFS, SERVICE_REQUESTS]
+            enum: [ALL, BRIEFS, SERVICE_REQUESTS, DRAFTS, ACTION_REQUIRED]
       responses:
         '200':
           description: Submitter-owned submissions
@@ -645,6 +1519,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SubmitterCapabilities'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /me/submissions-summary:
+    get:
+      tags: [Submissions]
+      operationId: getSubmitterSubmissionsSummary
+      x-required-roles: [SUBMITTER]
+      summary: Tab counts and waiting-for-you banners for the submitter home
+      description: |
+        Counts for the submitter's tabs (All, Briefs, Service requests, Drafts,
+        Action required) and the banners for work that needs the submitter:
+        open missing-information requests, improvement requests, unpaid
+        invoices, upcoming facility bookings and upcoming training sessions.
+        Only banners with a non-zero count are returned.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Submitter summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionsSummary'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -728,11 +1627,14 @@ paths:
       summary: Reply to an information request or submit an improved version
       description: |
         Available to the owning submitter while the brief is `SUBMITTED`,
-        `AWAITING_INFORMATION`, or `IMPROVEMENT_REQUESTED`. Every brief field is
-        optional. An improvement reply must include `note` describing what changed;
-        it records a revision, responds to the open refinement request, and moves
-        the brief to `RESUBMITTED`. Information replies return the brief to
-        `SUBMITTED` and notify reception.
+        `AWAITING_INFORMATION`, or `IMPROVEMENT_REQUESTED`. Every field is
+        optional so the submitter can send only the missing detail. An
+        improvement reply must include `note` describing what changed; it records
+        a revision, responds to the open refinement request, and moves the brief
+        to `RESUBMITTED`. Information replies resolve open information requests
+        automatically, return the brief to `SUBMITTED`, and notify reception.
+        A `submission.reply_received` notification is also published for an
+        improvement reply, confirming that the improved version was received.
       security:
         - bearerAuth: []
       parameters:
@@ -954,6 +1856,221 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+  /submissions/{id}/reception-check:
+    put:
+      tags: [Submissions]
+      operationId: updateReceptionCheckLines
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
+      summary: Save the four named reception verification lines
+      description: |
+        Frontend-shaped alternative to `PUT /submissions/{id}/reception-checklist`.
+        Each line (`details_complete`, `documents_complete`, `files_readable`,
+        `correct_type`) is `{checked, note}`; at least one line must be supplied.
+        Forwarding remains locked until every line is checked. Changing the
+        checklist after the brief was forwarded returns 409.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReceptionCheckLinesRequest'
+      responses:
+        '200':
+          description: Updated reception checklist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceptionCheckResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /submissions/{id}/request-info:
+    post:
+      tags: [Submissions]
+      operationId: requestSubmissionInfo
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER]
+      summary: Request missing items with a due date and message
+      description: |
+        Frontend-shaped alternative to `POST /submissions/{id}/request-information`.
+        `missing_items` is a list of labels; each becomes an open missing item.
+        The optional `reason`, `due_date` and `message` are copied onto every
+        item. The brief moves from `SUBMITTED` to `AWAITING_INFORMATION`, the
+        change is audited, and the submitter is notified. An empty request
+        returns 400.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestInfoAliasRequest'
+      responses:
+        '200':
+          description: Brief awaiting the requested information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /submissions/{id}/remind:
+    post:
+      tags: [Submissions]
+      operationId: remindSubmissionSubmitter
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER]
+      summary: Remind the submitter about open missing information
+      description: |
+        Sends one reminder for the open missing-information request through the
+        email outbox and the in-app notification bell, and stamps
+        `lastRemindedAt` on each open item. The optional `note` is included in
+        the reminder. Returns 409 when there is no open request.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendReminderRequest'
+      responses:
+        '200':
+          description: Open missing items after the reminder
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissingItemsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /submissions/{id}/respond-info:
+    post:
+      tags: [Submissions]
+      operationId: respondToSubmissionInfoRequest
+      x-required-roles: [SUBMITTER]
+      summary: Upload the missing files and answer an information request
+      description: |
+        The owning submitter uploads one or more `files` (or a single `file`)
+        together with an optional reply `note`. Each uploaded file must name the
+        open requested item it answers through `documentItemIds`; a document
+        item supplies the file's document type, an information item defaults it
+        to `OTHER`, and the named item is the only item the file resolves. The
+        brief returns from `AWAITING_INFORMATION` to `SUBMITTED` and reception
+        is notified. Sent as `multipart/form-data`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                note:
+                  type: string
+                  maxLength: 2000
+                documentItemIds:
+                  type: array
+                  description: >-
+                    One open requested item id per uploaded file, in the same
+                    order as `files`/`file`. Required when a file is uploaded.
+                  items:
+                    type: string
+                    format: uuid
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Brief returned to the reception queue
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /submissions/{id}/confirmation:
+    get:
+      tags: [Submissions]
+      operationId: getSubmissionConfirmation
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, SUBMITTER, REVIEWER, SECTOR_OFFICER]
+      summary: Read the tracking reference and department invite link
+      description: |
+        What the submitter sees after submitting: the `tracking_reference`,
+        `submitted_at`, the destination department and that department's
+        WhatsApp group invite link. The link is null when the department has no
+        configured group. A draft brief is not routed, so it never receives the
+        department link through this fallback.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      responses:
+        '200':
+          description: Submission confirmation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionConfirmation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /submissions/{id}/missing-items:
     get:
       tags: [Submissions]
@@ -1317,18 +2434,18 @@ paths:
       summary: Move a case to its next allowed stage
       description: |
         Administrator and Innovation Coordinator may perform any valid canonical
-        transition. A Fact-Finding Officer may move an `IN_FACT_FINDING` or
-        `FORWARDED` case only to `READY_FOR_REVIEW` or `IMPROVEMENT_REQUESTED`.
+        transition. A Fact-Finding Officer may start fact-finding
+        (`IN_FACT_FINDING`) from a `FORWARDED` case, then move an
+        `IN_FACT_FINDING` case only to `READY_FOR_REVIEW` or
+        `IMPROVEMENT_REQUESTED`. Moving to `READY_FOR_REVIEW` or `IN_REVIEW`
+        from fact-finding requires a completed fact-finding check (FR-008).
         A coordinator may accept a `RESUBMITTED` version by moving it to
         `IN_REVIEW` without repeating fact-finding, or request further
-        improvements. Moving to `READY_FOR_REVIEW` or `IN_REVIEW` from
-        `IN_FACT_FINDING` or `FORWARDED` requires a completed fact-finding check
-        (FR-008). Moving to
-        `IMPROVEMENT_REQUESTED` requires a guidance note, due date, and at least
-        one requested change; this creates the refinement request in the same
-        transaction. The current version is required to reject stale writes; a
-        stale write returns 409. A transition the actor's role cannot perform
-        returns 403.
+        improvements directly. Moving to `IMPROVEMENT_REQUESTED` requires a
+        guidance note, due date, and at least one requested change; this creates
+        the refinement request in the same transaction. The current version is
+        required to reject stale writes; a stale write returns 409. A transition
+        the actor's role cannot perform returns 403.
       parameters:
         - $ref: '#/components/parameters/SubmissionId'
       requestBody:
@@ -2083,7 +3200,8 @@ paths:
         `application/octet-stream`); anything else returns `400`. Each upload receives
         the next per-type `version` and resolves a matching open document request.
         `documentType` defaults to `OTHER` when omitted. Submitters may upload only while their
-        brief is `DRAFT`, `SUBMITTED`, `AWAITING_INFORMATION`, or `IMPROVEMENT_REQUESTED`.
+        brief is `DRAFT`, `SUBMITTED`, `AWAITING_INFORMATION`, or
+        `IMPROVEMENT_REQUESTED`, so an improved version can carry its files.
       parameters:
         - $ref: '#/components/parameters/SubmissionId'
       requestBody:
@@ -2205,7 +3323,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Sector'
+                $ref: '#/components/schemas/AdminSector'
         '400':
           $ref: '#/components/responses/BadRequest'
         '422':
@@ -2231,7 +3349,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Sector'
+                  $ref: '#/components/schemas/AdminSector'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2282,7 +3400,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Sector'
+                $ref: '#/components/schemas/AdminSector'
         '400':
           $ref: '#/components/responses/BadRequest'
         '422':
@@ -2399,6 +3517,33 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReceptionQueue'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /queues/reception/missing-docs:
+    get:
+      tags: [Reception]
+      operationId: getReceptionMissingDocsQueue
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER]
+      summary: Get briefs waiting on submitters for missing documents
+      description: |
+        Lists `AWAITING_INFORMATION` briefs with their open missing items. Each
+        row carries the earliest due date, the most recent reminder time and an
+        `overdue` flag; `overdueCount` covers the whole queue, not just this
+        page.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Missing-documents queue page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissingDocsQueue'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -4408,9 +5553,361 @@ components:
           description: |
             True when the account was created through assisted submission and
             still uses its one-time temporary password.
+        refreshToken:
+          type: string
+          description: Single-use token for `POST /auth/refresh` and `POST /auth/logout`. Store it securely.
+        refreshExpiresAt:
+          type: string
+          format: date-time
     AccountKind:
       type: string
       enum: [STUDENT, PUBLIC, ORGANISATION]
+    Me:
+      type: object
+      required: [id, email, role, mustChangePassword, homeScreen, departmentIds, capabilities]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        role:
+          $ref: '#/components/schemas/ApiUserRole'
+        mustChangePassword:
+          type: boolean
+        homeScreen:
+          type: string
+          enum: [MY_SUBMISSIONS, STAFF_HOME]
+        departmentIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        profile:
+          oneOf:
+            - $ref: '#/components/schemas/UserProfile'
+            - type: 'null'
+        capabilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/Capability'
+    UserProfile:
+      type: object
+      required: [accountKind, fullName, phone, rulesVersion]
+      properties:
+        accountKind:
+          $ref: '#/components/schemas/AccountKind'
+        fullName:
+          type: string
+        displayFirstName:
+          type: [string, 'null']
+        phone:
+          type: string
+        studentNumber:
+          type: [string, 'null']
+        course:
+          type: [string, 'null']
+        universityEmail:
+          type: [string, 'null']
+        organisationName:
+          type: [string, 'null']
+        contactPerson:
+          type: [string, 'null']
+        mouReference:
+          type: [string, 'null']
+        rulesVersion:
+          type: string
+    Capability:
+      type: object
+      required: [action, scope]
+      properties:
+        action:
+          type: string
+          enum: [CASE_VIEW, CASE_EDIT, CASE_FORWARD, CASE_ASSIGN_REVIEWER, CASE_REVIEW, CASE_DECIDE, AUDIT_VIEW, USER_MANAGE, PRICE_LIST_MANAGE, PRICE_LIST_PROPOSE, REPORT_VIEW]
+        scope:
+          type: string
+          enum: [OWN, ASSIGNED, DEPARTMENT, ALL]
+    UserSummary:
+      type: object
+      required: [id, email, role, active, departmentIds, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        role:
+          $ref: '#/components/schemas/ApiUserRole'
+        active:
+          type: boolean
+        departmentIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        profile:
+          oneOf:
+            - $ref: '#/components/schemas/UserProfile'
+            - type: 'null'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    UserSummaryPage:
+      type: object
+      required: [items, page, size, totalElements, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserSummary'
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+    UpdateUserRequest:
+      type: object
+      properties:
+        role:
+          $ref: '#/components/schemas/ApiUserRole'
+        departmentIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+    Role:
+      type: object
+      required: [role, staff]
+      properties:
+        role:
+          $ref: '#/components/schemas/ApiUserRole'
+        staff:
+          type: boolean
+    PriceUnit:
+      type: string
+      enum: [PER_SESSION, PER_ITEM, PER_HOUR, PER_DAY]
+    PriceItemStatus:
+      type: string
+      enum: [PROPOSED, ACTIVE, RETIRED]
+    InvoiceFromPriceRequest:
+      type: object
+      required: [customerEmail, sourceType]
+      properties:
+        customerEmail:
+          type: string
+          format: email
+          maxLength: 254
+        customerName:
+          type: string
+          maxLength: 255
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 1
+        sourceType:
+          type: string
+          enum: [REQUEST, BOOKING, SESSION, JOB]
+        sourceId:
+          type: string
+          maxLength: 64
+    PriceListItemRequest:
+      type: object
+      required: [departmentId, service, unit, priceUgx]
+      properties:
+        departmentId:
+          type: string
+          format: uuid
+        service:
+          type: string
+          maxLength: 200
+        unit:
+          $ref: '#/components/schemas/PriceUnit'
+        priceUgx:
+          type: integer
+          format: int64
+          minimum: 1
+        effectiveFrom:
+          type: string
+          format: date
+    PriceListItemUpdateRequest:
+      type: object
+      properties:
+        service:
+          type: string
+          minLength: 1
+          maxLength: 200
+        unit:
+          $ref: '#/components/schemas/PriceUnit'
+        priceUgx:
+          type: integer
+          format: int64
+          minimum: 1
+        effectiveFrom:
+          type: string
+          format: date
+        status:
+          $ref: '#/components/schemas/PriceItemStatus'
+    PriceListItem:
+      type: object
+      required: [id, departmentId, service, unit, priceUgx, effectiveFrom, status, proposedBy, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        departmentId:
+          type: string
+          format: uuid
+        service:
+          type: string
+        unit:
+          $ref: '#/components/schemas/PriceUnit'
+        priceUgx:
+          type: integer
+          format: int64
+        effectiveFrom:
+          type: string
+          format: date
+        status:
+          $ref: '#/components/schemas/PriceItemStatus'
+        proposedBy:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+    StageCountsReport:
+      type: object
+      required: [total, drafts, byStage]
+      properties:
+        total:
+          description: Briefs that left draft, the same rule as the managers' Overview.
+          type: integer
+          format: int64
+        drafts:
+          type: integer
+          format: int64
+        byStage:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+    StudentVsPublicReport:
+      type: object
+      required: [student, general, serviceRequests, total]
+      description: Counts briefs that left draft.
+      properties:
+        student:
+          type: integer
+          format: int64
+        general:
+          type: integer
+          format: int64
+        serviceRequests:
+          type: integer
+          format: int64
+        total:
+          type: integer
+          format: int64
+    CompletionRateReport:
+      type: object
+      required: [submitted, completed, closed, completionRate, closedRate]
+      properties:
+        submitted:
+          type: integer
+          format: int64
+        completed:
+          type: integer
+          format: int64
+        closed:
+          description: Completed or closed.
+          type: integer
+          format: int64
+        completionRate:
+          type: number
+        closedRate:
+          type: number
+    IncomeTrendReport:
+      type: object
+      required: [weeks, totalUgx, series]
+      properties:
+        weeks:
+          type: integer
+        totalUgx:
+          type: integer
+          format: int64
+        series:
+          type: array
+          items:
+            type: object
+            required: [weekStart, incomeUgx]
+            properties:
+              weekStart:
+                type: string
+                format: date
+              incomeUgx:
+                type: integer
+                format: int64
+    DepartmentWorkloadReport:
+      type: object
+      required: [departments]
+      properties:
+        departments:
+          type: array
+          items:
+            type: object
+            required: [departmentId, departmentName, openCases, openInvoices]
+            properties:
+              departmentId:
+                type: string
+                format: uuid
+              departmentName:
+                type: string
+              openCases:
+                type: integer
+                format: int64
+              openInvoices:
+                type: integer
+                format: int64
+    ExportRequest:
+      type: object
+      required: [report, format]
+      properties:
+        report:
+          type: string
+          enum: [SUBMISSIONS_BY_STAGE, STUDENT_VS_PUBLIC, COMPLETION_RATE, INCOME_TREND, DEPARTMENT_WORKLOAD]
+        format:
+          type: string
+          enum: [CSV, PDF]
+        weeks:
+          type: integer
+          minimum: 1
+          maximum: 52
+          description: For INCOME_TREND only; default 12.
+    Export:
+      type: object
+      required: [id, report, format, fileName, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        report:
+          type: string
+        format:
+          type: string
+        fileName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
     SignupRequest:
       type: object
       required: [accountKind, fullName, phone, email, password, rulesAccepted, rulesVersion]
@@ -4466,6 +5963,13 @@ components:
           type: string
           maxLength: 40
           description: Version of the UniPod general rules the user accepted.
+    RefreshTokenRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+          maxLength: 256
     ForgotPasswordRequest:
       type: object
       required: [email]
@@ -4640,6 +6144,30 @@ components:
           minItems: 1
           items:
             $ref: '#/components/schemas/MissingItemRequest'
+    RequestInfoAliasRequest:
+      type: object
+      additionalProperties: false
+      description: |
+        Frontend-shaped request for more information. Each entry in
+        `missing_items` becomes an open missing item; `reason`, `due_date` and
+        `message` are copied onto every item.
+      properties:
+        missing_items:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            type: string
+            maxLength: 255
+        reason:
+          type: [string, 'null']
+          maxLength: 255
+        due_date:
+          type: [string, 'null']
+          format: date
+        message:
+          type: [string, 'null']
+          maxLength: 2000
     ReceptionCheckItemKey:
       type: string
       enum:
@@ -4669,6 +6197,31 @@ components:
           minItems: 1
           items:
             $ref: '#/components/schemas/ReceptionCheckItemRequest'
+    ReceptionCheckLinesRequest:
+      type: object
+      additionalProperties: false
+      description: |
+        The four named reception verification lines. Every line is optional so
+        progress can be saved, but at least one line must be supplied.
+      properties:
+        details_complete:
+          $ref: '#/components/schemas/ReceptionCheckLine'
+        documents_complete:
+          $ref: '#/components/schemas/ReceptionCheckLine'
+        files_readable:
+          $ref: '#/components/schemas/ReceptionCheckLine'
+        correct_type:
+          $ref: '#/components/schemas/ReceptionCheckLine'
+    ReceptionCheckLine:
+      type: object
+      additionalProperties: false
+      required: [checked]
+      properties:
+        checked:
+          type: boolean
+        note:
+          type: [string, 'null']
+          maxLength: 2000
     ReceptionCheckItemResponse:
       type: object
       required: [key, label, checked]
@@ -4899,6 +6452,151 @@ components:
           $ref: '#/components/schemas/Submission'
         account:
           $ref: '#/components/schemas/AssistedAccountResponse'
+    DraftSubmissionRequest:
+      type: object
+      additionalProperties: false
+      description: |
+        A partially completed brief. `category` is required when the draft is
+        created and may be omitted on later autosaves, which only send the field
+        that changed. The tracking reference is allocated on submit, not here.
+      properties:
+        category:
+          type: string
+          enum: [student, general, service_request]
+        title:
+          type: string
+          maxLength: 240
+        purpose:
+          type: string
+          maxLength: 5000
+        problemAddressed:
+          type: string
+          maxLength: 5000
+        submitterId:
+          type: [string, 'null']
+          maxLength: 255
+        studentNumber:
+          type: [string, 'null']
+          maxLength: 80
+        programme:
+          type: [string, 'null']
+          maxLength: 200
+        supervisor:
+          type: [string, 'null']
+          maxLength: 255
+        recommendationLetterStatus:
+          oneOf:
+            - $ref: '#/components/schemas/RecommendationLetterStatus'
+            - type: 'null'
+        submitterEmail:
+          type: [string, 'null']
+          format: email
+          maxLength: 254
+        submitterName:
+          type: [string, 'null']
+          maxLength: 255
+        submitterPhone:
+          type: [string, 'null']
+          maxLength: 40
+        serviceRequested:
+          type: [string, 'null']
+          maxLength: 255
+        serviceRequester:
+          oneOf:
+            - $ref: '#/components/schemas/ServiceRequester'
+            - type: 'null'
+        department:
+          type: [string, 'null']
+          maxLength: 255
+        expectedResult:
+          type: [string, 'null']
+          maxLength: 5000
+        preferredAt:
+          type: [string, 'null']
+          format: date-time
+        acceptedRulesVersion:
+          type: [string, 'null']
+          maxLength: 32
+    WalkInSubmissionRequest:
+      type: object
+      additionalProperties: false
+      required: [name, phone, category, title, purpose, problemAddressed]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        phone:
+          type: string
+          minLength: 1
+          maxLength: 20
+        email:
+          type: [string, 'null']
+          format: email
+          maxLength: 254
+          description: Used first to find or create the account; required when no account matches the phone.
+        account_kind:
+          $ref: '#/components/schemas/AccountKind'
+          description: >-
+            Defaults to `PUBLIC` for a new account. `STUDENT` requires
+            `studentNumber`, `programme` and `email`; `ORGANISATION` cannot be
+            created through walk-in intake and must sign up first.
+        category:
+          type: string
+          enum: [student, general, service_request]
+        title:
+          type: string
+          minLength: 1
+          maxLength: 240
+        purpose:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        problemAddressed:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        studentNumber:
+          type: [string, 'null']
+          maxLength: 80
+        programme:
+          type: [string, 'null']
+          maxLength: 200
+        supervisor:
+          type: [string, 'null']
+          maxLength: 255
+        recommendationLetterStatus:
+          oneOf:
+            - $ref: '#/components/schemas/RecommendationLetterStatus'
+            - type: 'null'
+        serviceRequested:
+          type: [string, 'null']
+          maxLength: 255
+        serviceRequester:
+          oneOf:
+            - $ref: '#/components/schemas/ServiceRequester'
+            - type: 'null'
+        department:
+          type: [string, 'null']
+          maxLength: 255
+        expectedResult:
+          type: [string, 'null']
+          maxLength: 5000
+        preferredAt:
+          type: [string, 'null']
+          format: date-time
+        acceptedRulesVersion:
+          type: [string, 'null']
+          maxLength: 32
+          description: Required; the version of the rules the submitter accepted at the desk.
+    WalkInSubmissionResponse:
+      type: object
+      required: [submission, account]
+      properties:
+        submission:
+          $ref: '#/components/schemas/Submission'
+        account:
+          $ref: '#/components/schemas/AssistedAccountResponse'
     RecommendationLetterStatus:
       type: string
       enum: [verified, submitted, one_file, not_required]
@@ -5114,6 +6812,14 @@ components:
           type: string
           format: email
           maxLength: 320
+        whatsappGroupUrl:
+          type: [string, 'null']
+          maxLength: 500
+          pattern: '^$|^[Hh][Tt][Tt][Pp][Ss]://[^/?#\s]+([/?#].*)?$'
+          description: >-
+            Absolute `https://` WhatsApp group invite link with a valid host,
+            shared with submitters routed to this department. Send an empty
+            string to clear it; omit it to keep the stored link.
         active:
           type: boolean
         version:
@@ -5122,20 +6828,63 @@ components:
           minimum: 0
           description: Expected sector version for updates; omit when creating a sector.
     Sector:
-      allOf:
-        - $ref: '#/components/schemas/SectorRequest'
-        - type: object
-          required: [id, version, createdAt, updatedAt]
-          properties:
-            id:
-              type: string
-              format: uuid
-            createdAt:
-              type: string
-              format: date-time
-            updatedAt:
-              type: string
-              format: date-time
+      type: object
+      additionalProperties: false
+      description: >-
+        Department directory entry shared with staff. The WhatsApp group invite
+        link is deliberately omitted; it is only shared with a submitter on the
+        confirmation screen for the department that received their brief.
+      required: [id, name, notificationEmail, active, version, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        notificationEmail:
+          type: string
+          format: email
+        active:
+          type: boolean
+        version:
+          type: integer
+          format: int64
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    AdminSector:
+      type: object
+      additionalProperties: false
+      description: >-
+        Administrator catalog entry. Unlike `Sector` it includes the stored
+        WhatsApp group invite link so the edit form can prefill it.
+      required: [id, name, notificationEmail, active, version, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        notificationEmail:
+          type: string
+          format: email
+        whatsappGroupUrl:
+          type: [string, 'null']
+          maxLength: 500
+        active:
+          type: boolean
+        version:
+          type: integer
+          format: int64
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
     SectorFilterOption:
       type: object
       additionalProperties: false
@@ -5409,6 +7158,13 @@ components:
           oneOf:
             - $ref: '#/components/schemas/SubmitterPendingAction'
             - type: 'null'
+        pendingActionHref:
+          type: [string, 'null']
+          description: |
+            Server-relative API path with the details behind the pending action,
+            appended to the API base URL. For `IMPROVEMENT_REQUESTED` this is
+            `/cases/{id}/my-improvement`, which returns the guidance, due date,
+            and requested items. Null when no extra document is needed.
         waitingForYou:
           type: [string, 'null']
           description: One-line highlight for the submitter home.
@@ -5455,6 +7211,62 @@ components:
             recentlyUpdatedCount:
               type: integer
               format: int64
+    MissingDocsQueue:
+      type: object
+      required: [items, page, size, totalElements, totalPages, overdueCount]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MissingDocsQueueItem'
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+        overdueCount:
+          type: integer
+          format: int64
+          description: Overdue briefs across the whole queue, not only this page.
+    MissingDocsQueueItem:
+      type: object
+      required: [submissionId, code, title, category, submitterEmail, overdue, missingItems]
+      properties:
+        submissionId:
+          type: string
+          format: uuid
+        code:
+          type: [string, 'null']
+        title:
+          type: string
+        category:
+          type: string
+          enum: [student, general, service_request]
+        submitterName:
+          type: [string, 'null']
+        submitterEmail:
+          type: [string, 'null']
+        submittedAt:
+          type: [string, 'null']
+          format: date-time
+        dueAt:
+          type: [string, 'null']
+          format: date-time
+          description: Earliest deadline across the open missing items.
+        lastRemindedAt:
+          type: [string, 'null']
+          format: date-time
+          description: Most recent reminder sent across the open missing items.
+        overdue:
+          type: boolean
+        missingItems:
+          type: array
+          items:
+            $ref: '#/components/schemas/MissingItemResponse'
     CaseStageHistory:
       type: object
       required: [id, toStage, changedBy, note, changedAt]
@@ -5558,7 +7370,7 @@ components:
           format: date-time
     CaseFileCapabilities:
       type: object
-      required: [nextStep, saveOutcome, updateDocumentStatus]
+      required: [nextStep, saveOutcome, updateDocumentStatus, canEditDraft, canRespondInfo, canUploadRevision, canReceptionForward, canFactFind, canAssignReviewers, canRecordDecision, canDepartmentRespond, lock_reasons]
       properties:
         nextStep:
           $ref: '#/components/schemas/Capability'
@@ -5566,6 +7378,38 @@ components:
           $ref: '#/components/schemas/Capability'
         updateDocumentStatus:
           $ref: '#/components/schemas/Capability'
+        canEditDraft:
+          type: boolean
+          description: The caller may edit the brief while it is a draft.
+        canRespondInfo:
+          type: boolean
+          description: The owning submitter may answer an open information request.
+        canUploadRevision:
+          type: boolean
+          description: The owning submitter may upload a revision after an improvement request.
+        canReceptionForward:
+          type: boolean
+          description: >-
+            Reception may forward a submitted brief to a department. False
+            until all four reception checks (details_complete,
+            documents_complete, files_readable, correct_type) are checked.
+        canFactFind:
+          type: boolean
+          description: A fact-finding officer may record fact-finding for this case.
+        canAssignReviewers:
+          type: boolean
+          description: The caller may assign reviewers while the brief is under review.
+        canRecordDecision:
+          type: boolean
+          description: The caller may record the review decision (the same gate as `saveOutcome`).
+        canDepartmentRespond:
+          type: boolean
+          description: The receiving department may respond to the forwarded case.
+        lock_reasons:
+          type: object
+          description: A reason for every capability that is false, keyed by the capability name.
+          additionalProperties:
+            type: string
     Capability:
       type: object
       required: [enabled, reason]
@@ -5951,6 +7795,66 @@ components:
         version:
           type: integer
           format: int64
+    SubmissionConfirmation:
+      type: object
+      required: [id, tracking_reference, submitted_at, destination_department_name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tracking_reference:
+          type: [string, 'null']
+          pattern: '^(BRF|STU|GEN|SRV)-[0-9]{4}-[0-9]{6,19}$'
+        submitted_at:
+          type: [string, 'null']
+          format: date-time
+        destination_department_id:
+          type: [string, 'null']
+          format: uuid
+        destination_department_name:
+          type: [string, 'null']
+        department_whatsapp_group_invite_link:
+          type: [string, 'null']
+    SubmissionsSummary:
+      type: object
+      required: [tabs, waitingForYou]
+      properties:
+        tabs:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubmissionsSummaryTab'
+        waitingForYou:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubmissionsSummaryBanner'
+    SubmissionsSummaryTab:
+      type: object
+      required: [key, label, count]
+      properties:
+        key:
+          type: string
+          enum: [ALL, BRIEFS, SERVICE_REQUESTS, DRAFTS, ACTION_REQUIRED]
+        label:
+          type: string
+        count:
+          type: integer
+          format: int64
+    SubmissionsSummaryBanner:
+      type: object
+      required: [type, title, message, count, href]
+      properties:
+        type:
+          type: string
+          enum: [MISSING_DOCUMENTS, IMPROVEMENT_REQUEST, UNPAID_INVOICE, UPCOMING_BOOKING, UPCOMING_SESSION]
+        title:
+          type: string
+        message:
+          type: string
+        count:
+          type: integer
+          format: int64
+        href:
+          type: string
     SubmitterCapabilities:
       type: object
       required: [canCreateBrief, canEditDraft, canSubmitDraft, canRespondToInformationRequest, canUploadDocuments, canUploadPaymentProof, canBook, modules, message]
@@ -5965,7 +7869,7 @@ components:
           type: boolean
         canUploadDocuments:
           type: boolean
-          description: Uploads are allowed only while the brief is DRAFT, SUBMITTED, or AWAITING_INFORMATION.
+          description: Uploads are allowed only while the brief is DRAFT, SUBMITTED, AWAITING_INFORMATION, or IMPROVEMENT_REQUESTED.
         canUploadPaymentProof:
           type: boolean
           description: True when the invoices and payments module is available.

@@ -86,4 +86,17 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
 
     @Query(value = "select nextval('booking_reference_seq')", nativeQuery = true)
     long nextReferenceNumber();
+
+    @Query("""
+            select count(booking)
+            from Booking booking
+            where booking.requesterId = :requesterId
+              and booking.startsAt >= :now
+              and booking.status in :statuses
+            """)
+    long countUpcoming(
+            @Param("requesterId") String requesterId,
+            @Param("now") Instant now,
+            @Param("statuses") Collection<BookingStatus> statuses
+    );
 }

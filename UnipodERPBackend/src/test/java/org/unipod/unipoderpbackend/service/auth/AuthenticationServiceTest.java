@@ -10,14 +10,11 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
-import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
-import org.springframework.web.context.request.RequestContextHolder;
-import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.server.ResponseStatusException;
 import org.unipod.unipoderpbackend.dto.auth.ChangePasswordRequest;
 import org.unipod.unipoderpbackend.dto.auth.CreateApiUserRequest;
@@ -173,7 +170,7 @@ class AuthenticationServiceTest {
     }
 
     @Test
-    void createAssistedSubmitterFallsBackToTheRequestOriginWhenBaseUrlIsNotConfigured() {
+    void createAssistedSubmitterUsesLocalhostWhenBaseUrlIsNotConfigured() {
         AuthenticationService withoutBaseUrl = new AuthenticationService(
                 users,
                 passwordEncoder,
@@ -181,24 +178,16 @@ class AuthenticationServiceTest {
                 clock,
                 "https://api.example.test",
                 "unipod-erp-api",
-                Duration.ofMinutes(15)
+                Duration.ofMinutes(15),
+                null,
+                "  "
         );
         when(users.existsByEmailIgnoreCase("walkin@example.test")).thenReturn(false);
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        request.setScheme("http");
-        request.setServerName("backend-unipod.onrender.com");
-        request.setServerPort(8080);
-        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
-        try {
-            var account = withoutBaseUrl.createAssistedSubmitter("walkin@example.test");
+        when(users.saveAndFlush(any(ApiUser.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-            assertEquals(
-                    "http://backend-unipod.onrender.com:8080/set-password?token=" + account.setPasswordToken(),
-                    account.setPasswordUrl()
-            );
-        } finally {
-            RequestContextHolder.resetRequestAttributes();
-        }
+        var account = withoutBaseUrl.createAssistedSubmitter("walkin@example.test");
+
+        assertTrue(account.setPasswordUrl().startsWith("http://localhost:5173/set-password?token="));
     }
 
     @Test

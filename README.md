@@ -152,8 +152,8 @@ Drafts are private to their owner and do not appear in the queue. The list is or
 | GET    | `/api/me/invoices/{id}/receipt`      | Returns receipt metadata for an owned invoice.          |
 | POST   | `/api/invoices`                      | Creates an invoice as finance staff.                    |
 | GET    | `/api/invoices`                      | Lists invoices as finance staff, optionally by `status`. |
-| POST   | `/api/invoices/{id}/verify`          | Verifies payment proof.                                 |
-| POST   | `/api/invoices/{id}/reject`          | Rejects payment proof with a reason.                    |
+| POST   | `/api/invoices/{id}/verify`          | Verifies payment proof (`proofId` query parameter).     |
+| POST   | `/api/invoices/{id}/reject`          | Rejects payment proof (`reason` and `proofId` in body). |
 | POST   | `/api/invoices/{id}/receipt`         | Issues a receipt after payment is verified.             |
 | GET    | `/api/finance/summary`               | Returns invoice and income totals.                      |
 | GET    | `/api/facilities`                    | Lists facilities.                                       |
@@ -563,9 +563,11 @@ owner-scoped `/api/me/invoices/{id}/proof/file` and
 
 Finance Officers and Administrators create invoices with `POST /api/invoices`,
 list them with `GET /api/invoices?status=`, verify or reject payment with
-`POST /api/invoices/{id}/verify|reject`, and issue a receipt with
-`POST /api/invoices/{id}/receipt`. Receipts are issued only after payment is
-`PAID`. `GET /api/finance/summary` returns invoice and income totals.
+`POST /api/invoices/{id}/verify?proofId=` or
+`POST /api/invoices/{id}/reject` (`reason` + `proofId`), and issue a receipt with
+`POST /api/invoices/{id}/receipt`. The `proofId` is the `paymentProof.id`
+returned on the invoice. Receipts are issued only after payment is `PAID`.
+`GET /api/finance/summary` returns invoice and income totals.
 
 Submitters list and create their own facility bookings with
 `GET|POST /api/me/bookings`, read one with `GET /api/me/bookings/{id}`, and
@@ -610,12 +612,18 @@ Configure the following environment variables in the deployment environment.
 | `JWT_ISSUER_URI` | Issuer URI embedded in and checked against each JWT. |
 | `JWT_AUDIENCE` | Audience required for this API; defaults to `unipod-erp-api`. |
 | `JWT_ACCESS_TOKEN_TTL` | Token lifetime as a Spring duration; defaults to `PT15M` and cannot exceed one hour. |
+| `JWT_REFRESH_TOKEN_TTL` | Refresh token lifetime as a Spring duration; defaults to `P14D` and cannot exceed 30 days. |
 | `BOOTSTRAP_ADMIN_EMAIL` | Email for the first Administrator account. |
 | `BOOTSTRAP_ADMIN_PASSWORD` | Initial Administrator password (minimum 12 characters). |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated list of exact browser origins allowed to call the API. |
-| `APP_PUBLIC_BASE_URL` | Public frontend base URL used in password-setup links, for example `https://app.example.test`. When unset, assisted accounts fall back to the origin of the incoming API request and log a warning. |
+| `APP_PUBLIC_BASE_URL` | Frontend base URL used in password-setup links; defaults to `http://localhost:5173` until a public frontend is deployed. |
 | `JWT_ROLES_CLAIM` | JWT claim containing role names. Defaults to `roles`. |
 | `JWT_SUBJECT_CLAIM` | JWT claim used as the authenticated user identifier. Defaults to `sub`. |
+| `DOCUMENTS_ORGANISATION_NAME` | Name printed at the top of invoice, receipt and report PDFs. |
+| `DOCUMENTS_ADDRESS` | Address lines for printed documents; separate lines with `\|`. |
+| `DOCUMENTS_CONTACT` | Phone and email line for printed documents. |
+| `DOCUMENTS_BANK_DETAILS` | How to pay, printed on invoices; separate lines with `\|` (bank, account name, account number, branch). |
+| `DOCUMENTS_FOOTER` | Footer text on every printed document. |
 | `NOTIFICATION_EMAIL_ENABLED` | Enables the scheduled outbox email worker; defaults to `false`. |
 | `NOTIFICATION_EMAIL_PROVIDER` | How the worker sends email: `smtp` (default) or `emailjs`. Use `emailjs` on hosts that block outbound SMTP. |
 | `EMAILJS_SERVICE_ID`, `EMAILJS_TEMPLATE_ID` | EmailJS service and template. The template uses `{{to_email}}` as To, `{{subject}}` as Subject and `{{message}}` as Content. |
@@ -634,7 +642,7 @@ Configure the following environment variables in the deployment environment.
 | `S3_PATH_STYLE_ACCESS` | Enables path-style bucket addressing (defaults to `true`). |
 | `S3_MAX_FILE_BYTES` | Maximum stored file size in bytes (defaults to `15728640`, 15 MB). |
 | `S3_MAX_REQUEST_BYTES` | Multipart request envelope limit in bytes (defaults to `16777216`, 16 MB). |
-| `APP_PUBLIC_BASE_URL` | Public frontend base URL used to build password-setup links. When unset, assisted accounts fall back to the origin of the incoming API request and log a warning. |
+| `APP_PUBLIC_BASE_URL` | Frontend base URL used to build password-setup links; defaults to `http://localhost:5173` until a public frontend is deployed. |
 
 Use the AWS SDK default credential provider chain for S3 credentials (for
 example, a workload IAM role or `AWS_ACCESS_KEY_ID` and
@@ -709,7 +717,7 @@ connection details (do not use the external database URL):
 | `BOOTSTRAP_ADMIN_EMAIL` | Initial Administrator email |
 | `BOOTSTRAP_ADMIN_PASSWORD` | Initial password, at least 12 characters |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:3000` for localhost development |
-| `APP_PUBLIC_BASE_URL` | Public frontend URL used in password-setup links, for example `https://app.example.test` |
+| `APP_PUBLIC_BASE_URL` | `http://localhost:5173` while the frontend is local; password-setup links only work for users running the frontend at that address. |
 
 The database connection above uses the private Render hostname, port `5432`,
 and database `unipod_erp`. Keep the database inbound rule private for

@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import org.unipod.unipoderpbackend.validation.HttpsUrl;
 
 public record SectorRequest(
         @NotBlank @Size(max = 120) String name,
@@ -17,9 +18,16 @@ public record SectorRequest(
         )
         String notificationEmail,
         @NotNull Boolean active,
-        Long version
+        Long version,
+        @Size(max = 500)
+        @HttpsUrl(message = "must be an absolute https:// invite link")
+        String whatsappGroupUrl
 ) {
     public SectorRequest(String name, String notificationEmail, Boolean active) {
-        this(name, notificationEmail, active, null);
+        this(name, notificationEmail, active, null, null);
+    }
+
+    public SectorRequest(String name, String notificationEmail, Boolean active, Long version) {
+        this(name, notificationEmail, active, version, null);
     }
 }

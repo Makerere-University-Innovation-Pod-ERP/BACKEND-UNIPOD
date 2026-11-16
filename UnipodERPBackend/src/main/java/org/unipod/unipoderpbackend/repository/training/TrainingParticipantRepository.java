@@ -4,6 +4,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.time.Instant;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -55,4 +56,18 @@ public interface TrainingParticipantRepository extends JpaRepository<TrainingPar
             where p.sessionId = :sessionId and p.id in :ids
             """)
     List<TrainingParticipant> findAllBySessionIdAndIdIn(@Param("sessionId") UUID sessionId, @Param("ids") Collection<UUID> ids);
+
+    @Query("""
+            select count(distinct p.sessionId)
+            from TrainingParticipant p, TrainingSession s
+            where s.id = p.sessionId
+              and lower(p.contactEmail) = lower(:email)
+              and p.status <> org.unipod.unipoderpbackend.model.training.RegistrationStatus.CANCELLED
+              and s.published = true
+              and s.startsAt >= :now
+            """)
+    long countUpcomingSessionsForEmail(
+            @Param("email") String email,
+            @Param("now") Instant now
+    );
 }

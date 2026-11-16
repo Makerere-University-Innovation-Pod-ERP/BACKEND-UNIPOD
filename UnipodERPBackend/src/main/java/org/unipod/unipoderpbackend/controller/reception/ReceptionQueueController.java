@@ -1,6 +1,7 @@
 package org.unipod.unipoderpbackend.controller.reception;
 
 import org.unipod.unipoderpbackend.dto.reception.ReceptionQueueResponse;
+import org.unipod.unipoderpbackend.dto.submission.MissingDocsQueueResponse;
 import org.unipod.unipoderpbackend.service.submission.SubmissionService;
 
 import jakarta.validation.constraints.Max;
@@ -32,5 +33,18 @@ public class ReceptionQueueController {
         return submissions.receptionQueue(
                 PageRequest.of(page, size)
         );
+    }
+
+    /**
+     * Briefs waiting on the submitter after reception requested more
+     * information, with overdue flags and the last reminder time.
+     */
+    @GetMapping("/reception/missing-docs")
+    @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'RECEPTIONIST', 'FACT_FINDING_OFFICER')")
+    public MissingDocsQueueResponse missingDocs(
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "25") @Min(1) @Max(100) int size
+    ) {
+        return submissions.missingDocsQueue(PageRequest.of(page, size));
     }
 }

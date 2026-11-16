@@ -3,6 +3,7 @@ package org.unipod.unipoderpbackend.service.submission;
 import org.unipod.unipoderpbackend.exception.submission.InvalidSubmissionException;
 import org.unipod.unipoderpbackend.exception.submission.SubmissionConflictException;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.unipod.unipoderpbackend.model.submission.DocumentStatus;
 import org.unipod.unipoderpbackend.model.submission.Submission;
 import org.unipod.unipoderpbackend.model.submission.SubmissionCategory;
@@ -14,7 +15,6 @@ import java.time.Instant;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class SubmissionTest {
@@ -67,7 +67,7 @@ class SubmissionTest {
     }
 
     @Test
-    void registrationKeepsTrackingReferenceAndClearsInformationRequest() {
+    void registrationKeepsTrackingReference() {
         Instant createdAt = Instant.parse("2026-11-04T00:00:00Z");
         Instant requestedAt = Instant.parse("2026-11-04T01:00:00Z");
         Submission submission = new Submission(
@@ -85,22 +85,17 @@ class SubmissionTest {
                 createdAt
         );
         submission.assignTrackingReference("GEN-2026-000001");
-        submission.requestInformation("Please attach a brief.", "receptionist-1", requestedAt);
         submission.applyIntakeDetails(null, null, null, null, null, null, "2026-01");
 
         submission.register("GEN-2026-000001", requestedAt.plusSeconds(60), "receptionist-1");
 
         assertEquals("GEN-2026-000001", submission.getCode());
         assertEquals(SubmissionStage.SUBMITTED, submission.getStage());
-        assertNull(submission.getInformationRequestedNote());
-        assertNull(submission.getInformationRequestedBy());
-        assertNull(submission.getInformationRequestedAt());
     }
 
     @Test
-    void draftUpdatePreservesAnOutstandingInformationRequestUntilSubmitterResponds() {
+    void requestInformationRejectsDraftSubmissions() {
         Instant createdAt = Instant.parse("2026-11-04T00:00:00Z");
-        Instant updatedAt = Instant.parse("2026-11-04T02:00:00Z");
         Submission submission = new Submission(
                 UUID.randomUUID(),
                 SubmissionCategory.GENERAL,
@@ -115,23 +110,15 @@ class SubmissionTest {
                 null,
                 createdAt
         );
-        submission.requestInformation("Please attach a brief.", "receptionist-1", createdAt.plusSeconds(60));
 
-        submission.updateDraft(
-                "Updated idea",
-                "Improve access",
-                "Current access is limited",
-                null,
-                null,
-                null,
-                null,
-                updatedAt
+        assertThrows(
+                SubmissionConflictException.class,
+                () -> submission.requestInformation(
+                        "Please attach a brief.",
+                        "receptionist-1",
+                        createdAt.plusSeconds(60)
+                )
         );
-
-        assertEquals("Updated idea", submission.getTitle());
-        assertEquals("Please attach a brief.", submission.getInformationRequestedNote());
-        assertEquals("receptionist-1", submission.getInformationRequestedBy());
-        assertEquals(createdAt.plusSeconds(60), submission.getInformationRequestedAt());
     }
 
     @Test
@@ -221,6 +208,174 @@ class SubmissionTest {
         Instant receivedAt = Instant.parse("2026-12-31T21:30:00Z");
 
         assertEquals(2027, SubmissionService.caseYear(receivedAt));
+    }
+
+    @Test
+    void submitRequiresBriefContent() {
+        Instant createdAt = Instant.parse("2026-11-04T00:00:00Z");
+        Submission submission = new Submission(
+                UUID.randomUUID(),
+                SubmissionCategory.GENERAL,
+                "",
+                "",
+                "",
+                "submitter@example.test",
+                "submitter@example.test",
+                null,
+                null,
+                null,
+                null,
+                createdAt
+        );
+        submission.applyIntakeDetails(null, null, null, null, null, null, "2026-01");
+
+        assertThrows(
+                InvalidSubmissionException.class,
+                () -> submission.submit("GEN-2026-000001", createdAt.plusSeconds(60))
+        );
+        assertEquals(SubmissionStage.DRAFT, submission.getStage());
+    }
+
+    @Test
+    void patchDraftUpdatesOnlySuppliedFields() {
+        Instant createdAt = Instant.parse("2026-11-04T00:00:00Z");
+        Submission submission = new Submission(
+                UUID.randomUUID(),
+                SubmissionCategory.GENERAL,
+                "Original title",
+                "Original purpose",
+                "Original problem",
+                "submitter@example.test",
+                "submitter@example.test",
+                null,
+                null,
+                null,
+                null,
+                createdAt
+        );
+
+        submission.patchDraft(
+                "Working title",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                "+256700000000",
+                null,
+                null,
+                null,
+                null,
+                null,
+                "2026-01",
+                "submitter@example.test",
+                null,
+                createdAt.plusSeconds(60)
+        );
+
+        assertEquals("Working title", submission.getTitle());
+        assertEquals("Original purpose", submission.getPurpose());
+        assertEquals("Original problem", submission.getProblemAddressed());
+        assertEquals("+256700000000", submission.getSubmitterPhone());
+        assertEquals("2026-01", submission.getAcceptedRulesVersion());
+        assertEquals(SubmissionStage.DRAFT, submission.getStage());
+    }
+
+    @Test
+    void patchDraftRejectsBriefThatHasLeftDraft() {
+        Instant createdAt = Instant.parse("2026-11-04T00:00:00Z");
+        Submission submission = new Submission(
+                UUID.randomUUID(),
+                SubmissionCategory.GENERAL,
+                "Public idea",
+                "Improve access",
+                "Current access is limited",
+                "submitter@example.test",
+                "submitter@example.test",
+                null,
+                null,
+                null,
+                null,
+                createdAt
+        );
+        submission.applyIntakeDetails("+256700000000", null, null, null, null, null, "2026-01");
+        submission.submit("GEN-2026-000001", createdAt.plusSeconds(60));
+
+        assertThrows(
+                SubmissionConflictException.class,
+                () -> submission.patchDraft(
+                        "Changed after submit",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        createdAt.plusSeconds(120)
+                )
+        );
+    }
+
+    @Test
+    void resubmittedCaseCanBeSentBackForMoreImprovement() {
+        Submission submission = new Submission(
+                UUID.randomUUID(),
+                SubmissionCategory.GENERAL,
+                "Public idea",
+                "Improve access",
+                "Current access is limited",
+                "staff-1",
+                null,
+                null,
+                null,
+                null,
+                Instant.parse("2026-11-04T00:00:00Z")
+        );
+        ReflectionTestUtils.setField(submission, "stage", SubmissionStage.RESUBMITTED);
+
+        submission.transitionTo(
+                SubmissionStage.IMPROVEMENT_REQUESTED,
+                Instant.parse("2026-11-04T01:00:00Z")
+        );
+
+        assertEquals(SubmissionStage.IMPROVEMENT_REQUESTED, submission.getStage());
+    }
+
+    @Test
+    void forwardedCaseCannotSkipFactFindingForAnImprovementRequest() {
+        Submission submission = new Submission(
+                UUID.randomUUID(),
+                SubmissionCategory.GENERAL,
+                "Public idea",
+                "Improve access",
+                "Current access is limited",
+                "staff-1",
+                null,
+                null,
+                null,
+                null,
+                Instant.parse("2026-11-04T00:00:00Z")
+        );
+        ReflectionTestUtils.setField(submission, "stage", SubmissionStage.FORWARDED);
+
+        assertThrows(
+                SubmissionConflictException.class,
+                () -> submission.transitionTo(
+                        SubmissionStage.IMPROVEMENT_REQUESTED,
+                        Instant.parse("2026-11-04T01:00:00Z")
+                )
+        );
+        assertEquals(SubmissionStage.FORWARDED, submission.getStage());
     }
 
     @Test

@@ -60,6 +60,8 @@ public class SecurityConfiguration {
                                 "/auth/set-password",
                                 "/auth/signup",
                                 "/auth/forgot-password",
+                                "/auth/refresh",
+                                "/auth/logout",
                                 "/services/catalogue"
                         ).permitAll()
                         .anyRequest().authenticated())

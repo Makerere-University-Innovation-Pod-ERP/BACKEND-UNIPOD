@@ -8,5 +8,8 @@ public enum AuthorizationAction {
     CASE_REVIEW,
     CASE_DECIDE,
     AUDIT_VIEW,
-    USER_MANAGE
+    USER_MANAGE,
+    PRICE_LIST_MANAGE,
+    PRICE_LIST_PROPOSE,
+    REPORT_VIEW
 }

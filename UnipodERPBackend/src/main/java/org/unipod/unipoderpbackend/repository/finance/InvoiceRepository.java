@@ -37,6 +37,11 @@ public interface InvoiceRepository extends JpaRepository<Invoice, UUID> {
 
     long countByStatus(InvoiceStatus status);
 
+    long countByCustomerEmailIgnoreCaseAndStatusIn(
+            String customerEmail,
+            Collection<InvoiceStatus> statuses
+    );
+
     @Query("select coalesce(sum(invoice.amount), 0) from Invoice invoice where invoice.status in :statuses")
     long sumAmountByStatusIn(@Param("statuses") Collection<InvoiceStatus> statuses);
 
