@@ -522,9 +522,18 @@ class WaluubeApiIntegrationTest {
         mockMvc.perform(post("/cases/{id}/transitions", id)
                         .with(coordinator)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"to_stage\":\"IMPROVEMENT_REQUESTED\",\"note\":"
-                                + "\"Add field data\",\"version\":"
-                                + caseVersion(id, coordinator) + "}"))
+                        .content("""
+                                {
+                                  "to_stage": "IMPROVEMENT_REQUESTED",
+                                  "note": "Add field data",
+                                  "dueDate": "%s",
+                                  "requestedChanges": ["Add field data"],
+                                  "version": %d
+                                }
+                                """.formatted(
+                                LocalDate.now(ZoneId.of("Africa/Kampala")).plusDays(7),
+                                caseVersion(id, coordinator)
+                        )))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.submission.stage").value("IMPROVEMENT_REQUESTED"));
 
@@ -554,7 +563,7 @@ class WaluubeApiIntegrationTest {
         String replied = mockMvc.perform(post("/submissions/{id}/reply", id)
                         .with(submitterUser)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{}"))
+                        .content("{\"note\":\"Added the revised brief.\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.stage").value("RESUBMITTED"))
                 .andReturn()
@@ -562,10 +571,10 @@ class WaluubeApiIntegrationTest {
                 .getContentAsString();
 
         assertEquals(
-                "Your reply has been received and the brief is back with reception.",
+                "Your improved version has been received and is awaiting coordinator review.",
                 jdbcTemplate.queryForObject(
                         "SELECT payload ->> 'message' FROM notification_outbox "
-                                + "WHERE aggregate_id = ? AND event_type = 'submission.reply_received' "
+                                + "WHERE aggregate_id = ? AND event_type = 'submission.improved_version_received' "
                                 + "AND payload ->> 'notificationEmail' = ?",
                         String.class,
                         UUID.fromString(id),
@@ -578,9 +587,18 @@ class WaluubeApiIntegrationTest {
         mockMvc.perform(post("/cases/{id}/transitions", id)
                         .with(coordinator)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"to_stage\":\"IMPROVEMENT_REQUESTED\",\"note\":"
-                                + "\"Still missing field data\",\"version\":"
-                                + versionOf(replied) + "}"))
+                        .content("""
+                                {
+                                  "to_stage": "IMPROVEMENT_REQUESTED",
+                                  "note": "Still missing field data",
+                                  "dueDate": "%s",
+                                  "requestedChanges": ["Add the missing field data"],
+                                  "version": %d
+                                }
+                                """.formatted(
+                                LocalDate.now(ZoneId.of("Africa/Kampala")).plusDays(7),
+                                versionOf(replied)
+                        )))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.submission.stage").value("IMPROVEMENT_REQUESTED"));
     }
@@ -1010,9 +1028,16 @@ class WaluubeApiIntegrationTest {
         Matcher versionMatcher = Pattern.compile("\"version\":(\\d+)").matcher(forwarded);
         assertTrue(versionMatcher.find(), "Forward response should include the current version.");
         long version = Long.parseLong(versionMatcher.group(1));
+        var officer = user("fact-finding-officer").roles("FACT_FINDING_OFFICER");
+        mockMvc.perform(post("/cases/{id}/transitions", id)
+                        .with(officer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"to_stage\":\"IN_FACT_FINDING\",\"version\":" + version + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.submission.stage").value("IN_FACT_FINDING"));
 
         mockMvc.perform(post("/cases/{id}/refinement-requests", id)
-                        .with(user("fact-finding-officer").roles("FACT_FINDING_OFFICER"))
+                        .with(officer)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -1023,7 +1048,7 @@ class WaluubeApiIntegrationTest {
                                 }
                                 """.formatted(
                                 LocalDate.now(ZoneId.of("Africa/Kampala")).plusDays(7),
-                                version
+                                caseVersion(id, officer)
                         )))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.cycle").value(1))

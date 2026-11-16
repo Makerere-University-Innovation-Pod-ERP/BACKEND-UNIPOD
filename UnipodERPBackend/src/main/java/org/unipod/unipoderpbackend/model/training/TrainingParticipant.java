@@ -134,11 +134,11 @@ public class TrainingParticipant {
         if (!sessionIsSafetyCourse) {
             throw new TrainingConflictException("Only safety courses record a pass.");
         }
+        if (passed) {
+            throw new TrainingConflictException("This participant has already passed.");
+        }
         if (status != RegistrationStatus.CONFIRMED || attendance != AttendanceStatus.PRESENT) {
             throw new TrainingConflictException("A participant must be marked present before passing.");
-        }
-        if (passed) {
-            return; // idempotent for bulk operations
         }
         passed = true;
         passedAt = now;

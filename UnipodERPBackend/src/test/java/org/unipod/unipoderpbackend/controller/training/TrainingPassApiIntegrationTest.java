@@ -23,6 +23,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -127,6 +128,25 @@ class TrainingPassApiIntegrationTest {
                 .andExpect(jsonPath("$.detail").value("This participant has already passed."));
 
         assertEquals(1, TrainingFixtures.auditLines(entityManager, jdbcTemplate, participant.getId()).size());
+    }
+
+    @Test
+    void bulkPassRemainsIdempotentForAlreadyPassedParticipants() throws Exception {
+        TrainingParticipant participant = present(safetyCourse, "R-4-bulk");
+        String request = "{\"userIds\":[\"" + participant.getId() + "\"]}";
+
+        mockMvc.perform(post("/operations/training/sessions/{id}/attendance/pass", safetyCourse.getId())
+                        .with(administrator("assessor@test.local"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(request))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.passed_count").value(1));
+        mockMvc.perform(post("/operations/training/sessions/{id}/attendance/pass", safetyCourse.getId())
+                        .with(administrator("assessor@test.local"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(request))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.passed_count").value(0));
     }
 
     @Test

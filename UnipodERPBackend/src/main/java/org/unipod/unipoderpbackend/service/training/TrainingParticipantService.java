@@ -135,12 +135,15 @@ public class TrainingParticipantService {
                     || (p.getUserId() != null && requested.stream().anyMatch(id -> id.toString().equalsIgnoreCase(p.getUserId())));
             if (!match) continue;
             if (p.getStatus() != RegistrationStatus.CONFIRMED) continue;
+            if (p.isPassed()) {
+                if (grantEligibility(session, p, actor.email(), now)) unlocked++;
+                continue;
+            }
             if (p.getAttendance() != AttendanceStatus.PRESENT) {
                 p.markAttendance(AttendanceStatus.PRESENT, now);
             }
-            boolean wasPassed = p.isPassed();
             p.markPassed(true, now);
-            if (!wasPassed && p.isPassed()) passedCount++;
+            passedCount++;
             if (grantEligibility(session, p, actor.email(), now)) unlocked++;
         }
         participants.saveAll(inSession);
