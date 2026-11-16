@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.unipod.unipoderpbackend.dto.booking.CreateFacilityRequest;
 import org.unipod.unipoderpbackend.dto.booking.FacilityResponse;
+import org.unipod.unipoderpbackend.dto.booking.UpdateFacilitySafetyPassRequest;
 import org.unipod.unipoderpbackend.dto.booking.UpdateFacilityStatusRequest;
 import org.unipod.unipoderpbackend.service.booking.FacilityService;
 
@@ -57,4 +58,16 @@ public class FacilityController {
     ) {
         return facilities.updateStatus(id, request.status(), authentication.getName());
     }
+
+    @PatchMapping("/{id}/safety-pass")
+    @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INNOVATION_COORDINATOR', 'DEPARTMENT_COORDINATOR', 'SECTOR_OFFICER')")
+    public FacilityResponse updateSafetyPassRequirement(
+            @PathVariable UUID id,
+            @Valid @RequestBody UpdateFacilitySafetyPassRequest request,
+            Authentication authentication
+    ) {
+        return facilities.updateSafetyPassRequirement(
+                id, request.requiresSafetyPass(), authentication.getName());
+    }
+
 }

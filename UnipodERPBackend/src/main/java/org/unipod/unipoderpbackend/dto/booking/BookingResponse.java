@@ -19,6 +19,16 @@ public record BookingResponse(
         String operator,
         BookingStatus status,
         String rejectionReason,
+        String requestType,
+        boolean isEquipmentRequest,
+        String equipmentName,
+        String purposeDetail,
+        String decisionNote,
+        Instant decidedAt,
+        String conditionOut,
+        String conditionReturned,
+        Instant returnedAt,
+        String returnNotes,
         Instant createdAt,
         Instant updatedAt
 ) {
@@ -37,8 +47,31 @@ public record BookingResponse(
                 booking.getOperator(),
                 booking.getStatus(),
                 booking.getRejectionReason(),
+                booking.getRequestType(),
+                booking.isEquipmentRequest(),
+                booking.getEquipmentName(),
+                booking.getPurposeDetail(),
+                booking.getDecisionNote(),
+                booking.getDecidedAt(),
+                booking.getConditionOut(),
+                booking.getConditionReturned(),
+                booking.getReturnedAt(),
+                booking.getReturnNotes(),
                 booking.getCreatedAt(),
                 booking.getUpdatedAt()
         );
     }
+
+    public static BookingResponse forSubmitter(Booking booking) {
+        BookingResponse response = from(booking);
+        return new BookingResponse(
+                response.id(), response.reference(), response.facilityId(), response.facilityName(),
+                response.facilityLocation(), response.requesterId(), response.purpose(), response.startsAt(),
+                response.endsAt(), response.attendees(), response.operator(), response.status(),
+                response.rejectionReason(), response.requestType(), response.isEquipmentRequest(),
+                response.equipmentName(), response.purposeDetail(), null, null, null, null, null, null,
+                response.createdAt(), response.updatedAt()
+        );
+    }
 }
+

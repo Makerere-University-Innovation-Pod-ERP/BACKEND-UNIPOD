@@ -13,6 +13,11 @@ public record CreateBookingRequest(
         @NotNull Instant startsAt,
         @NotNull Instant endsAt,
         @Positive int attendees,
-        @Size(max = 254) String operator
+        @Size(max = 254) String operator,
+        @Size(max = 16) String requestType,
+        Boolean isEquipmentRequest,
+        @Size(max = 255) String equipmentName,
+        @Size(max = 2000) String purposeDetail
 ) {
 }
+

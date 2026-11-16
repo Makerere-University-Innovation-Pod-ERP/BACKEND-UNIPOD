@@ -32,6 +32,9 @@ public class Facility {
     @Column(length = 100)
     private String department;
 
+    @Column(name = "requires_safety_pass", nullable = false)
+    private boolean requiresSafetyPass;
+
     @Column(name = "created_by", nullable = false)
     private String createdBy;
 
@@ -58,12 +61,27 @@ public class Facility {
             String createdBy,
             Instant now
     ) {
+        this(id, name, location, capacity, status, department, "CNC".equalsIgnoreCase(department), createdBy, now);
+    }
+
+    public Facility(
+            UUID id,
+            String name,
+            String location,
+            int capacity,
+            FacilityStatus status,
+            String department,
+            boolean requiresSafetyPass,
+            String createdBy,
+            Instant now
+    ) {
         this.id = id;
         this.name = name;
         this.location = location;
         this.capacity = capacity;
         this.status = status;
         this.department = department;
+        this.requiresSafetyPass = requiresSafetyPass;
         this.createdBy = createdBy;
         this.createdAt = now;
         this.updatedAt = now;
@@ -71,6 +89,11 @@ public class Facility {
 
     public void updateStatus(FacilityStatus status, Instant now) {
         this.status = status;
+        this.updatedAt = now;
+    }
+
+    public void updateSafetyPassRequirement(boolean required, Instant now) {
+        this.requiresSafetyPass = required;
         this.updatedAt = now;
     }
 
@@ -96,6 +119,10 @@ public class Facility {
 
     public String getDepartment() {
         return department;
+    }
+
+    public boolean isSafetyPassRequired() {
+        return requiresSafetyPass;
     }
 
     public String getCreatedBy() {

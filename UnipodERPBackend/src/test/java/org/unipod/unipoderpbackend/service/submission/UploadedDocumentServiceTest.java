@@ -13,6 +13,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionStatus;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.multipart.MultipartFile;
 import org.unipod.unipoderpbackend.exception.storage.StorageObjectNotFoundException;
 import org.unipod.unipoderpbackend.exception.submission.InvalidSubmissionException;
@@ -158,6 +159,51 @@ class UploadedDocumentServiceTest {
         assertEquals(MissingItemStatus.RESOLVED, openRequest.getStatus());
         assertEquals("actor", openRequest.getResolvedBy());
         verify(missingItems).saveAll(List.of(openRequest));
+    }
+
+    @Test
+    void submitterCanUploadDocumentsForAnImprovementRequest() throws Exception {
+        UUID id = UUID.randomUUID();
+        Submission submission = new Submission(
+                id,
+                SubmissionCategory.GENERAL,
+                "Title",
+                "Purpose",
+                "Problem",
+                "actor",
+                "actor",
+                null,
+                null,
+                null,
+                null,
+                FIXED_TIME
+        );
+        ReflectionTestUtils.setField(submission, "stage", SubmissionStage.IMPROVEMENT_REQUESTED);
+        when(submissions.findByIdForUpdate(id)).thenReturn(Optional.of(submission));
+        when(storage.upload(any())).thenReturn("improved-version-object");
+        when(documents.maxVersion(id, DocumentType.PROJECT_BRIEF)).thenReturn(3L);
+        when(documents.saveAndFlush(any(SubmissionDocument.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        var result = service.upload(
+                id,
+                "Updated project brief",
+                DocumentType.PROJECT_BRIEF,
+                DocumentStatus.SUBMITTED,
+                file(),
+                "actor",
+                true
+        );
+
+        verify(storage).upload(any());
+        var documentCaptor = org.mockito.ArgumentCaptor.forClass(SubmissionDocument.class);
+        verify(documents).saveAndFlush(documentCaptor.capture());
+        SubmissionDocument saved = documentCaptor.getValue();
+        assertEquals("Updated project brief", saved.getName());
+        assertEquals(DocumentStatus.SUBMITTED, saved.getStatus());
+        assertEquals(DocumentType.PROJECT_BRIEF, saved.getDocumentType());
+        assertEquals(4, saved.getVersion());
+        assertEquals(4, result.version());
     }
 
     @org.junit.jupiter.params.ParameterizedTest
