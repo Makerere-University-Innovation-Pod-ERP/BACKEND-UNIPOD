@@ -44,6 +44,12 @@ public class TrainingParticipant {
     @Column(nullable = false)
     private boolean passed;
 
+    @Column(name = "passed_at")
+    private Instant passedAt;
+
+    @Column(name = "user_id", length = 254)
+    private String userId;
+
     @Version
     @Column(nullable = false)
     private long version;
@@ -132,10 +138,15 @@ public class TrainingParticipant {
             throw new TrainingConflictException("A participant must be marked present before passing.");
         }
         if (passed) {
-            throw new TrainingConflictException("This participant has already passed.");
+            return; // idempotent for bulk operations
         }
         passed = true;
+        passedAt = now;
         updatedAt = now;
+    }
+
+    public void linkUserId(String userId) {
+        if (userId != null && !userId.isBlank()) this.userId = userId.strip();
     }
 
     private static String required(String value, String field) {
@@ -180,6 +191,9 @@ public class TrainingParticipant {
     public boolean isPassed() {
         return passed;
     }
+
+    public Instant getPassedAt() { return passedAt; }
+    public String getUserId() { return userId; }
 
     public long getVersion() {
         return version;

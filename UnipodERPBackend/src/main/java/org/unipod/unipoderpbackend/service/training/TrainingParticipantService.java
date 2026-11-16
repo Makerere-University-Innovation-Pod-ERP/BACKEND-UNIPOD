@@ -2,18 +2,22 @@ package org.unipod.unipoderpbackend.service.training;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.unipod.unipoderpbackend.dto.operations.BulkAttendancePassResponse;
 import org.unipod.unipoderpbackend.dto.training.AttendanceRequest;
 import org.unipod.unipoderpbackend.dto.training.SessionResponse;
+import org.unipod.unipoderpbackend.exception.training.TrainingConflictException;
 import org.unipod.unipoderpbackend.exception.training.TrainingNotFoundException;
 import org.unipod.unipoderpbackend.model.audit.AuditEvent;
 import org.unipod.unipoderpbackend.model.authorization.Actor;
+import org.unipod.unipoderpbackend.model.operations.MachineBookingEligibility;
+import org.unipod.unipoderpbackend.model.training.AttendanceStatus;
+import org.unipod.unipoderpbackend.model.training.RegistrationStatus;
 import org.unipod.unipoderpbackend.model.training.TrainingParticipant;
 import org.unipod.unipoderpbackend.model.training.TrainingSession;
+import org.unipod.unipoderpbackend.repository.operations.MachineBookingEligibilityRepository;
 import org.unipod.unipoderpbackend.repository.training.TrainingParticipantRepository;
 import org.unipod.unipoderpbackend.repository.training.TrainingSessionRepository;
 import org.unipod.unipoderpbackend.service.audit.AuditService;
@@ -29,16 +33,19 @@ public class TrainingParticipantService {
 
     private final TrainingSessionRepository sessions;
     private final TrainingParticipantRepository participants;
+    private final MachineBookingEligibilityRepository eligibilities;
     private final AuditService audit;
     private final Clock clock;
 
     public TrainingParticipantService(
             TrainingSessionRepository sessions,
             TrainingParticipantRepository participants,
+            MachineBookingEligibilityRepository eligibilities,
             AuditService audit,
             Clock clock) {
         this.sessions = sessions;
         this.participants = participants;
+        this.eligibilities = eligibilities;
         this.audit = audit;
         this.clock = clock;
     }
@@ -92,10 +99,56 @@ public class TrainingParticipantService {
         Instant now = clock.instant();
         registration.participant().markPassed(registration.session().isSafetyCourse(), now);
         participants.saveAndFlush(registration.participant());
+        if (registration.session().isSafetyCourse()) {
+            grantEligibility(registration.session(), registration.participant(), actor.email(), now);
+        }
         record(actor, "training.participant.passed", registration,
                 Map.of("passed", false),
                 Map.of("passed", true, "sessionId", sessionId.toString()));
         return view(registration.session(), now);
+    }
+
+    @Transactional
+    public BulkAttendancePassResponse bulkPass(UUID sessionId, List<UUID> userIds, Actor actor) {
+        TrainingSession session = sessions.findByIdForUpdate(sessionId)
+                .orElseThrow(TrainingNotFoundException::session);
+        if (!session.isSafetyCourse()) {
+            throw new TrainingConflictException("Only safety courses record a pass.");
+        }
+        Instant now = clock.instant();
+        Set<UUID> requested = userIds == null ? Set.of() : new HashSet<>(userIds);
+        List<TrainingParticipant> inSession = participants.findActiveBySessionId(sessionId);
+        int passedCount = 0;
+        int unlocked = 0;
+        for (TrainingParticipant p : inSession) {
+            boolean match = requested.contains(p.getId())
+                    || (p.getUserId() != null && requested.stream().anyMatch(id -> id.toString().equalsIgnoreCase(p.getUserId())));
+            if (!match) continue;
+            if (p.getStatus() != RegistrationStatus.CONFIRMED) continue;
+            if (p.getAttendance() != AttendanceStatus.PRESENT) {
+                p.markAttendance(AttendanceStatus.PRESENT, now);
+            }
+            boolean wasPassed = p.isPassed();
+            p.markPassed(true, now);
+            if (!wasPassed && p.isPassed()) passedCount++;
+            if (grantEligibility(session, p, actor.email(), now)) unlocked++;
+        }
+        participants.saveAll(inSession);
+        audit.log(new AuditEvent(actor, "training.attendance.bulk_pass", "training_session", sessionId, null,
+                Map.of("passedCount", passedCount, "eligibleUnlocked", unlocked), session.getDepartmentId()));
+        return new BulkAttendancePassResponse(sessionId, passedCount, unlocked);
+    }
+
+    private boolean grantEligibility(TrainingSession session, TrainingParticipant participant, String grantedBy, Instant now) {
+        String userId = participant.getUserId();
+        if (userId == null || userId.isBlank()) {
+            // fallback to contact email if linked to a user identity by email
+            userId = participant.getContactEmail();
+        }
+        if (userId == null || userId.isBlank()) return false;
+        if (eligibilities.existsByUserIdAndDepartmentIgnoreCase(userId, "CNC")) return false;
+        eligibilities.save(new MachineBookingEligibility(UUID.randomUUID(), userId, "CNC", session.getId(), now, grantedBy));
+        return true;
     }
 
     private SessionResponse view(TrainingSession session, Instant now) {

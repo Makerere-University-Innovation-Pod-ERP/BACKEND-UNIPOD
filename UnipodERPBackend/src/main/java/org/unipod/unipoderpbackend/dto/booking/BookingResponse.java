@@ -19,6 +19,17 @@ public record BookingResponse(
         String operator,
         BookingStatus status,
         String rejectionReason,
+        String requestType,
+        boolean isEquipmentRequest,
+        String equipmentName,
+        String purposeDetail,
+        String decisionNote,
+        Instant decidedAt,
+        String conditionOut,
+        String conditionReturned,
+        Instant returnedAt,
+        String returnNotes,
+        Instant deliveredAt,
         Instant createdAt,
         Instant updatedAt
 ) {
@@ -37,8 +48,20 @@ public record BookingResponse(
                 booking.getOperator(),
                 booking.getStatus(),
                 booking.getRejectionReason(),
+                booking.getRequestType(),
+                booking.isEquipmentRequest(),
+                booking.getEquipmentName(),
+                booking.getPurposeDetail(),
+                booking.getDecisionNote(),
+                booking.getDecidedAt(),
+                booking.getConditionOut(),
+                booking.getConditionReturned(),
+                booking.getReturnedAt(),
+                booking.getReturnNotes(),
+                booking.getDeliveredAt(),
                 booking.getCreatedAt(),
                 booking.getUpdatedAt()
         );
     }
 }
+

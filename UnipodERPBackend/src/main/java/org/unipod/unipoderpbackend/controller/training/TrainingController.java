@@ -16,6 +16,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.unipod.unipoderpbackend.dto.operations.BulkAttendancePassRequest;
+import org.unipod.unipoderpbackend.dto.operations.BulkAttendancePassResponse;
 import org.unipod.unipoderpbackend.dto.training.AttendanceRequest;
 import org.unipod.unipoderpbackend.dto.training.CreateFollowUpRequest;
 import org.unipod.unipoderpbackend.dto.training.CreateSessionRequest;
@@ -116,6 +118,13 @@ public class TrainingController {
     public SessionResponse markPassed(
             @PathVariable UUID id, @PathVariable UUID participantId, Authentication authentication) {
         return participants.markPassed(id, participantId, currentActor.from(authentication));
+    }
+
+    @PostMapping("/sessions/{id}/attendance/pass")
+    @PreAuthorize(MANAGE_ROLES)
+    public BulkAttendancePassResponse bulkPass(
+            @PathVariable UUID id, @Valid @RequestBody BulkAttendancePassRequest request, Authentication authentication) {
+        return participants.bulkPass(id, request.user_ids(), currentActor.from(authentication));
     }
 
     @PostMapping("/mentorship")

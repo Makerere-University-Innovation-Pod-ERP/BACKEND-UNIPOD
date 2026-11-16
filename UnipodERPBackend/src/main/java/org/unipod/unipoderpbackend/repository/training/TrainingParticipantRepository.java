@@ -10,7 +10,6 @@ import org.springframework.data.repository.query.Param;
 import org.unipod.unipoderpbackend.model.training.TrainingParticipant;
 
 public interface TrainingParticipantRepository extends JpaRepository<TrainingParticipant, UUID> {
-    // One query for every listed session, so the overview never loads participants per session.
     @Query("""
             select p from TrainingParticipant p
             where p.sessionId in :sessionIds
@@ -19,7 +18,14 @@ public interface TrainingParticipantRepository extends JpaRepository<TrainingPar
             """)
     List<TrainingParticipant> findActiveBySessionIds(@Param("sessionIds") Collection<UUID> sessionIds);
 
-    // A cancelled registration counts as gone, so it is never found here (D-023).
+    @Query("""
+            select p from TrainingParticipant p
+            where p.sessionId = :sessionId
+              and p.status <> org.unipod.unipoderpbackend.model.training.RegistrationStatus.CANCELLED
+            order by p.registeredAt asc, p.id asc
+            """)
+    List<TrainingParticipant> findActiveBySessionId(@Param("sessionId") UUID sessionId);
+
     @Query("""
             select p from TrainingParticipant p
             where p.id = :participantId
@@ -29,7 +35,6 @@ public interface TrainingParticipantRepository extends JpaRepository<TrainingPar
     Optional<TrainingParticipant> findActive(
             @Param("sessionId") UUID sessionId, @Param("participantId") UUID participantId);
 
-    // Seats are held by PENDING_PAYMENT and CONFIRMED registrations (D-022).
     @Query("""
             select count(p) from TrainingParticipant p
             where p.sessionId = :sessionId
@@ -37,7 +42,6 @@ public interface TrainingParticipantRepository extends JpaRepository<TrainingPar
             """)
     long countSeats(@Param("sessionId") UUID sessionId);
 
-    // Same expression as uq_training_participants_session_reg_number, so the lookup uses that index.
     @Query("""
             select count(p) > 0 from TrainingParticipant p
             where p.sessionId = :sessionId
@@ -45,4 +49,10 @@ public interface TrainingParticipantRepository extends JpaRepository<TrainingPar
               and p.status <> org.unipod.unipoderpbackend.model.training.RegistrationStatus.CANCELLED
             """)
     boolean existsActiveRegNumber(@Param("sessionId") UUID sessionId, @Param("regNumber") String regNumber);
+
+    @Query("""
+            select p from TrainingParticipant p
+            where p.sessionId = :sessionId and p.id in :ids
+            """)
+    List<TrainingParticipant> findAllBySessionIdAndIdIn(@Param("sessionId") UUID sessionId, @Param("ids") Collection<UUID> ids);
 }

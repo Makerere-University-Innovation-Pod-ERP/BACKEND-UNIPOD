@@ -28,6 +28,7 @@ import org.unipod.unipoderpbackend.repository.booking.BookingRepository;
 import org.unipod.unipoderpbackend.repository.booking.FacilityRepository;
 import org.unipod.unipoderpbackend.service.audit.AuditTrail;
 import org.unipod.unipoderpbackend.service.notification.NotificationService;
+import org.unipod.unipoderpbackend.repository.operations.TimetableBlockRepository;
 
 @Service
 public class BookingService {
@@ -35,13 +36,15 @@ public class BookingService {
     private static final List<BookingStatus> BLOCKING_STATUSES = List.of(
             BookingStatus.PENDING,
             BookingStatus.APPROVED,
-            BookingStatus.CHECKED_IN
+            BookingStatus.CHECKED_IN,
+            BookingStatus.OUT
     );
 
     private final BookingRepository bookings;
     private final FacilityRepository facilities;
     private final NotificationService notifications;
     private final AuditTrail auditTrail;
+    private final TimetableBlockRepository timetable;
     private final Clock clock;
 
     public BookingService(
@@ -49,12 +52,14 @@ public class BookingService {
             FacilityRepository facilities,
             NotificationService notifications,
             AuditTrail auditTrail,
+            TimetableBlockRepository timetable,
             Clock clock
     ) {
         this.bookings = bookings;
         this.facilities = facilities;
         this.notifications = notifications;
         this.auditTrail = auditTrail;
+        this.timetable = timetable;
         this.clock = clock;
     }
 
@@ -70,9 +75,12 @@ public class BookingService {
             throw new InvalidBookingException("The group size exceeds the facility capacity.");
         }
         requireNoConflict(facility.getId(), request.startsAt(), request.endsAt(), null);
+        requireNoTimetableClash(facility.getId(), request.startsAt(), request.endsAt());
         Instant now = clock.instant();
         int year = LocalDate.ofInstant(now, KAMPALA).getYear();
         long sequence = bookings.nextReferenceNumber();
+        String reqType = request.requestType() == null || request.requestType().isBlank() ? "FACILITY" : request.requestType().trim().toUpperCase();
+        boolean equipment = Boolean.TRUE.equals(request.isEquipmentRequest()) || "EQUIPMENT".equals(reqType) || "ALLOCATION".equals(reqType);
         Booking booking = new Booking(
                 UUID.randomUUID(),
                 "BKG-%d-%06d".formatted(year, sequence),
@@ -83,6 +91,10 @@ public class BookingService {
                 request.endsAt(),
                 request.attendees(),
                 clean(request.operator()),
+                reqType,
+                equipment,
+                clean(request.equipmentName()),
+                clean(request.purposeDetail()),
                 now
         );
         bookings.saveAndFlush(booking);
@@ -90,7 +102,8 @@ public class BookingService {
                 AuditTrail.details(
                         "reference", booking.getReference(),
                         "facility", facility.getName(),
-                        "status", booking.getStatus().name()
+                        "status", booking.getStatus().name(),
+                        "requestType", booking.getRequestType()
                 ));
         return BookingResponse.from(booking);
     }
@@ -136,36 +149,67 @@ public class BookingService {
 
     @Transactional
     public BookingResponse approve(UUID id, String actor) {
-        Booking booking = lockBooking(id);
-        Facility facility = lockFacility(booking);
-        requireNotMaintenance(facility);
-        requireNoConflict(facility.getId(), booking.getStartsAt(), booking.getEndsAt(), booking.getId());
-        booking.approve(clock.instant());
-        bookings.saveAndFlush(booking);
-        notifyRequester(booking, NotificationType.BOOKING_APPROVED,
-                "Booking approved: " + booking.getReference(),
-                "Your booking for " + facility.getName() + " has been approved.");
-        auditTrail.record(actor, "booking.approved", "booking", id,
-                AuditTrail.details("status", BookingStatus.PENDING.name()),
-                AuditTrail.details("status", booking.getStatus().name()));
-        return BookingResponse.from(booking);
+        return decide(id, "APPROVED", null, actor);
     }
 
     @Transactional
     public BookingResponse reject(UUID id, String reason, String actor) {
-        String cleanReason = clean(reason);
-        if (cleanReason == null || cleanReason.length() > 500) {
-            throw new InvalidBookingException("A rejection reason is required.");
-        }
+        return decide(id, "DECLINED", reason, actor);
+    }
+
+    @Transactional
+    public BookingResponse decide(UUID id, String decision, String note, String actor) {
         Booking booking = lockBooking(id);
-        booking.reject(cleanReason, clock.instant());
+        Facility facility = lockFacility(booking);
+        String d = decision == null ? "" : decision.trim().toUpperCase();
+        if ("APPROVED".equals(d)) {
+            requireNotMaintenance(facility);
+            requireNoConflict(facility.getId(), booking.getStartsAt(), booking.getEndsAt(), booking.getId());
+            requireNoTimetableClash(facility.getId(), booking.getStartsAt(), booking.getEndsAt());
+            if (booking.isEquipmentRequest() || "EQUIPMENT".equalsIgnoreCase(booking.getRequestType()) || "ALLOCATION".equalsIgnoreCase(booking.getRequestType())) {
+                booking.approveOut(clean(note), actor, "WORKING", clock.instant());
+            } else {
+                booking.approve(clean(note), actor, clock.instant());
+            }
+            bookings.saveAndFlush(booking);
+            notifyRequester(booking, NotificationType.BOOKING_APPROVED,
+                    "Booking approved: " + booking.getReference(),
+                    "Your booking for " + facility.getName() + " has been approved.");
+            auditTrail.record(actor, "booking.approved", "booking", id,
+                    AuditTrail.details("status", BookingStatus.PENDING.name()),
+                    AuditTrail.details("status", booking.getStatus().name(), "decision", d));
+            return BookingResponse.from(booking);
+        }
+        if ("DECLINED".equals(d) || "REJECTED".equals(d)) {
+            String cleanReason = clean(note);
+            if (cleanReason == null) throw new InvalidBookingException("A rejection reason is required.");
+            booking.reject(cleanReason, actor, clock.instant());
+            bookings.saveAndFlush(booking);
+            notifyRequester(booking, NotificationType.BOOKING_REJECTED,
+                    "Booking rejected: " + booking.getReference(),
+                    "Your booking was rejected. Reason: " + cleanReason);
+            auditTrail.record(actor, "booking.rejected", "booking", id,
+                    AuditTrail.details("status", BookingStatus.PENDING.name()),
+                    AuditTrail.details("status", booking.getStatus().name(), "reason", cleanReason));
+            return BookingResponse.from(booking);
+        }
+        throw new InvalidBookingException("decision must be APPROVED or DECLINED.");
+    }
+
+    @Transactional
+    public BookingResponse returnAllocation(UUID id, Instant returnedAt, String conditionReturned, String notes, String actor) {
+        Booking booking = lockBooking(id);
+        String condition = clean(conditionReturned);
+        if (condition == null) throw new InvalidBookingException("condition_returned is required.");
+        String normalized = condition.trim().toUpperCase();
+        if (!Set.of("WORKING","BEING_REPAIRED","DAMAGED","FAULTY","OK").contains(normalized)) {
+            throw new InvalidBookingException("condition_returned must be WORKING or BEING_REPAIRED/DAMAGED.");
+        }
+        String stored = (normalized.equals("WORKING") || normalized.equals("OK")) ? "WORKING" : "BEING_REPAIRED";
+        booking.markReturned(returnedAt, stored, notes, clock.instant());
         bookings.saveAndFlush(booking);
-        notifyRequester(booking, NotificationType.BOOKING_REJECTED,
-                "Booking rejected: " + booking.getReference(),
-                "Your booking was rejected. Reason: " + cleanReason);
-        auditTrail.record(actor, "booking.rejected", "booking", id,
-                AuditTrail.details("status", BookingStatus.PENDING.name()),
-                AuditTrail.details("status", booking.getStatus().name(), "reason", cleanReason));
+        auditTrail.record(actor, "booking.returned", "booking", id, null,
+                AuditTrail.details("status", booking.getStatus().name(), "condition", stored));
         return BookingResponse.from(booking);
     }
 
@@ -176,6 +220,7 @@ public class BookingService {
         Facility facility = lockFacility(booking);
         requireNotMaintenance(facility);
         requireNoConflict(facility.getId(), startsAt, endsAt, booking.getId());
+        requireNoTimetableClash(facility.getId(), startsAt, endsAt);
         Instant previousStart = booking.getStartsAt();
         booking.reschedule(startsAt, endsAt, clock.instant());
         bookings.saveAndFlush(booking);
@@ -243,6 +288,13 @@ public class BookingService {
                         facilityId, excludeId, BLOCKING_STATUSES, startsAt, endsAt);
         if (conflict) {
             throw new BookingConflictException("The facility is already booked for that time.");
+        }
+    }
+
+    private void requireNoTimetableClash(UUID facilityId, Instant startsAt, Instant endsAt) {
+        if (facilityId == null || timetable == null) return;
+        if (!timetable.findOverlapping(facilityId, startsAt, endsAt).isEmpty()) {
+            throw new BookingConflictException("The selected time clashes with a scheduled timetable block.");
         }
     }
 
