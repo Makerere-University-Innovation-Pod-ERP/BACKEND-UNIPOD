@@ -4058,7 +4058,7 @@ paths:
     get:
       tags: [Notifications]
       operationId: listNotifications
-      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, FINANCE_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
       summary: My notifications, newest first
       parameters:
         - name: unread
@@ -4087,7 +4087,7 @@ paths:
     get:
       tags: [Notifications]
       operationId: getUnreadNotificationCount
-      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, FINANCE_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
       summary: Number for the red badge on the bell
       responses:
         '200':
@@ -4102,7 +4102,7 @@ paths:
     post:
       tags: [Notifications]
       operationId: markNotificationRead
-      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, FINANCE_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
       summary: Mark one of my notifications as read
       description: Safe to repeat; the first read time is kept. Someone else's notification returns 404.
       parameters:
@@ -4127,7 +4127,7 @@ paths:
     post:
       tags: [Notifications]
       operationId: markAllNotificationsRead
-      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, FINANCE_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
       summary: Mark all my notifications as read
       responses:
         '200':
@@ -4142,10 +4142,10 @@ paths:
     get:
       tags: [Configuration]
       operationId: getConfig
-      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, FINANCE_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
       summary: Current settings
       description: |
-        Read-only. Values are cached for up to 60 seconds. Only the future
+        Available to every authenticated role. Read-only. Values are cached for up to 60 seconds. Only the future
         settings endpoint (D2) writes them. The number of reviews for a single
         brief is still set per brief by the coordinator (CO1); the value here is
         only the default.
@@ -7523,11 +7523,11 @@ components:
       required: [nextStep, saveOutcome, updateDocumentStatus, canEditDraft, canRespondInfo, canUploadRevision, canReceptionForward, canFactFind, canAssignReviewers, canRecordDecision, canDepartmentRespond, lock_reasons]
       properties:
         nextStep:
-          $ref: '#/components/schemas/Capability'
+          $ref: '#/components/schemas/CaseFileCapability'
         saveOutcome:
-          $ref: '#/components/schemas/Capability'
+          $ref: '#/components/schemas/CaseFileCapability'
         updateDocumentStatus:
-          $ref: '#/components/schemas/Capability'
+          $ref: '#/components/schemas/CaseFileCapability'
         canEditDraft:
           type: boolean
           description: The caller may edit the brief while it is a draft.
@@ -7560,7 +7560,7 @@ components:
           description: A reason for every capability that is false, keyed by the capability name.
           additionalProperties:
             type: string
-    Capability:
+    CaseFileCapability:
       type: object
       required: [enabled, reason]
       properties:
