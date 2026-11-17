@@ -586,7 +586,7 @@ class RefinementRequestApiIntegrationTest {
                 "respondedAt", "requestedChanges", "revision"), new HashSet<>(response.get("requests").get(0).propertyNames()));
         assertEquals(Set.of("position", "text"),
                 new HashSet<>(response.get("requests").get(0).get("requestedChanges").get(0).propertyNames()));
-        assertEquals(Set.of("versionNumber", "whatChanged", "submittedBy", "submittedAt"),
+        assertEquals(Set.of("versionNumber", "whatChanged", "submittedBy", "submittedAt", "id"),
                 new HashSet<>(response.get("requests").get(0).get("revision").propertyNames()));
     }
 

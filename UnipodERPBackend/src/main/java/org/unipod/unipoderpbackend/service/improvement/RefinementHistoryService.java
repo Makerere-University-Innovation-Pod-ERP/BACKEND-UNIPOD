@@ -90,7 +90,8 @@ public class RefinementHistoryService {
                                     revision.getVersionNumber(),
                                     revision.getWhatChanged(),
                                     revision.getSubmittedBy(),
-                                    revision.getSubmittedAt()));
+                                    revision.getSubmittedAt(),
+                                    revision.getId()));
                 })
                 .toList());
     }

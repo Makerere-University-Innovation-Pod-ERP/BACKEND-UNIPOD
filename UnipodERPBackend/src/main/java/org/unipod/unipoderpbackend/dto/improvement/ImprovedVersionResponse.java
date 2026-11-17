@@ -10,6 +10,7 @@ public record ImprovedVersionResponse(
         String whatChanged,
         Instant submittedAt,
         int requestCycle,
-        SubmissionStage briefStage
+        SubmissionStage briefStage,
+        Long revisionId
 ) {
 }

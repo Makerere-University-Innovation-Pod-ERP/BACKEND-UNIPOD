@@ -24,6 +24,6 @@ public record RefinementHistoryResponse(UUID briefId, List<Request> requests) {
     ) {
     }
 
-    public record Revision(int versionNumber, String whatChanged, String submittedBy, Instant submittedAt) {
+    public record Revision(int versionNumber, String whatChanged, String submittedBy, Instant submittedAt, Long id) {
     }
 }

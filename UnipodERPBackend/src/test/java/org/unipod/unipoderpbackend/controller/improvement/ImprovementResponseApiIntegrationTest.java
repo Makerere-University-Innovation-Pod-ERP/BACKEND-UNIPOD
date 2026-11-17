@@ -531,7 +531,8 @@ class ImprovementResponseApiIntegrationTest {
     void jsonFieldNamesMatchTheRecords() throws Exception {
         Submission brief = askedBrief("Round one.", List.of("A1"));
         JsonNode answered = json(body(answer(brief, answerBody("Answer.", 0L)).andExpect(status().isCreated())));
-        assertEquals(Set.of("briefId", "versionNumber", "whatChanged", "submittedAt", "requestCycle", "briefStage"),
+        assertEquals(Set.of("briefId", "versionNumber", "whatChanged", "submittedAt", "requestCycle", "briefStage",
+                "revisionId"),
                 new HashSet<>(answered.propertyNames()));
         backToReviewAndAskAgain(brief, "Round two.", List.of("B1"));
 
@@ -544,7 +545,7 @@ class ImprovementResponseApiIntegrationTest {
         JsonNode previous = view.get("previousRequests").get(0);
         assertEquals(Set.of("cycle", "guidanceNote", "dueDate", "requestedChanges", "respondedAt", "revision"),
                 new HashSet<>(previous.propertyNames()));
-        assertEquals(Set.of("versionNumber", "whatChanged", "submittedAt"),
+        assertEquals(Set.of("versionNumber", "whatChanged", "submittedAt", "id"),
                 new HashSet<>(previous.get("revision").propertyNames()));
     }
 

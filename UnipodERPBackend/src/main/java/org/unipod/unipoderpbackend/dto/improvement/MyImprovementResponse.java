@@ -37,6 +37,6 @@ public record MyImprovementResponse(
     ) {
     }
 
-    public record Revision(int versionNumber, String whatChanged, Instant submittedAt) {
+    public record Revision(int versionNumber, String whatChanged, Instant submittedAt, Long id) {
     }
 }

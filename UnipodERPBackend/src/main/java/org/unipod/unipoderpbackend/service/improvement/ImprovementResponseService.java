@@ -120,7 +120,8 @@ public class ImprovementResponseService {
                 previous.add(new MyImprovementResponse.PreviousRequest(request.getCycle(), request.getGuidanceNote(),
                         request.getDueDate(), items, request.getRespondedAt(),
                         revision == null ? null : new MyImprovementResponse.Revision(
-                                revision.getVersionNumber(), revision.getWhatChanged(), revision.getSubmittedAt())));
+                                revision.getVersionNumber(), revision.getWhatChanged(), revision.getSubmittedAt(),
+                                revision.getId())));
             }
         }
         return new MyImprovementResponse(briefId, brief.getStage(), open, previous);
@@ -191,7 +192,7 @@ public class ImprovementResponseService {
         // Structural values only: no whatChanged text and no field values (see ImprovementAudit).
         audit.improvedVersionSubmitted(authentication.getName(), open, versionNumber);
         return new ImprovedVersionResponse(briefId, revision.getVersionNumber(), revision.getWhatChanged(),
-                revision.getSubmittedAt(), open.getCycle(), brief.getStage());
+                revision.getSubmittedAt(), open.getCycle(), brief.getStage(), revision.getId());
     }
 
     static <T> T persist(Supplier<T> write) {
