@@ -186,7 +186,7 @@ class AuditLogIntegrationTest {
     }
 
     @Test
-    void assistedSubmissionSucceedsWithoutAConfiguredPublicBaseUrl() throws Exception {
+    void assistedSubmissionSucceedsWithAConfiguredPublicBaseUrl() throws Exception {
         String admin = createUser("audit-admin4@example.test", ApiUserRole.ADMINISTRATOR);
         String token = login(admin);
 

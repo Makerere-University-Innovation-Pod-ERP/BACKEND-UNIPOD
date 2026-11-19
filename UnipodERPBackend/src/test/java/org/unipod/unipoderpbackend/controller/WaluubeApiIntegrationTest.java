@@ -12,6 +12,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -454,7 +456,155 @@ class WaluubeApiIntegrationTest {
     }
 
     @Test
-    void submitterCanCompleteRequestedDraftAndReceptionCanForwardItAtomically() throws Exception {
+    void improvementRequestCarriesFilesNotifiesTheSubmitterAndLinksThePendingAction() throws Exception {
+        String submitter = "revision-" + UUID.randomUUID() + "@example.test";
+        var submitterUser = user(submitter).roles("SUBMITTER");
+        var receptionist = user("reception-revision-" + UUID.randomUUID()).roles("RECEPTIONIST");
+        var coordinator = user("coordinator-revision-" + UUID.randomUUID())
+                .roles("INNOVATION_COORDINATOR");
+        var officer = user("officer-revision-" + UUID.randomUUID()).roles("FACT_FINDING_OFFICER");
+
+        String created = mockMvc.perform(post("/submissions")
+                        .with(receptionist)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "category": "general",
+                                  "title": "Revision upload test",
+                                  "purpose": "Verify the improvement module integration",
+                                  "problemAddressed": "An improved version must carry files",
+                                  "submitterId": "%s",
+                                  "acceptedRulesVersion": "2026-01"
+                                }
+                                """.formatted(submitter)))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String id = idOf(created);
+
+        mockMvc.perform(post("/submissions/{id}/register", id).with(receptionist))
+                .andExpect(status().isOk());
+        completeReceptionChecklist(id, receptionist);
+        var sector = sectors.create(new SectorRequest(
+                "Revision sector " + UUID.randomUUID(),
+                "revision-sector@example.invalid",
+                true
+        ));
+        mockMvc.perform(post("/submissions/{id}/forward", id)
+                        .with(receptionist)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sectorId\":\"" + sector.id() + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stage").value("FORWARDED"));
+
+        // A fact-finding officer starts fact-finding from FORWARDED; requesting
+        // improvement before that is not offered and is rejected as a role error
+        // rather than a 409 from the domain transition map.
+        mockMvc.perform(get("/cases/{id}/transitions/allowed", id).with(officer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.allowedTransitions.length()").value(1))
+                .andExpect(jsonPath("$.allowedTransitions[0]").value("IN_FACT_FINDING"));
+        mockMvc.perform(post("/cases/{id}/transitions", id)
+                        .with(officer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"to_stage\":\"IMPROVEMENT_REQUESTED\",\"note\":"
+                                + "\"Skip fact finding\",\"version\":"
+                                + caseVersion(id, coordinator) + "}"))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/cases/{id}/transitions", id)
+                        .with(coordinator)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"to_stage\":\"IN_FACT_FINDING\",\"version\":"
+                                + caseVersion(id, coordinator) + "}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/cases/{id}/transitions", id)
+                        .with(coordinator)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "to_stage": "IMPROVEMENT_REQUESTED",
+                                  "note": "Add field data",
+                                  "dueDate": "%s",
+                                  "requestedChanges": ["Add field data"],
+                                  "version": %d
+                                }
+                                """.formatted(
+                                LocalDate.now(ZoneId.of("Africa/Kampala")).plusDays(7),
+                                caseVersion(id, coordinator)
+                        )))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.submission.stage").value("IMPROVEMENT_REQUESTED"));
+
+        // The pending action comes from the transition path, which does not set
+        // outcomeNote, so the link points at the case where the guidance lives.
+        mockMvc.perform(get("/me/submissions/{id}", id).with(submitterUser))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stage").value("IMPROVEMENT_REQUESTED"))
+                .andExpect(jsonPath("$.pendingAction").value("PROVIDE_INFORMATION"))
+                .andExpect(jsonPath("$.pendingActionHref").value("/cases/" + id))
+                .andExpect(jsonPath("$.waitingForYou").value(
+                        "Reviewers requested an improved version. Open the case for the guidance."));
+
+        mockMvc.perform(post("/submissions/{id}/documents", id)
+                        .with(submitterUser)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "Revised brief",
+                                  "documentType": "PROJECT_BRIEF",
+                                  "status": "SUBMITTED",
+                                  "fileReference": "improved_brief"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        String replied = mockMvc.perform(post("/submissions/{id}/reply", id)
+                        .with(submitterUser)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"note\":\"Added the revised brief.\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stage").value("RESUBMITTED"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        assertEquals(
+                "Your improved version has been received and is awaiting coordinator review.",
+                jdbcTemplate.queryForObject(
+                        "SELECT payload ->> 'message' FROM notification_outbox "
+                                + "WHERE aggregate_id = ? AND event_type = 'submission.improved_version_received' "
+                                + "AND payload ->> 'notificationEmail' = ?",
+                        String.class,
+                        UUID.fromString(id),
+                        submitter
+                )
+        );
+
+        // Asking for more changes straight after a RESUBMITTED version needs no
+        // extra accept step.
+        mockMvc.perform(post("/cases/{id}/transitions", id)
+                        .with(coordinator)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "to_stage": "IMPROVEMENT_REQUESTED",
+                                  "note": "Still missing field data",
+                                  "dueDate": "%s",
+                                  "requestedChanges": ["Add the missing field data"],
+                                  "version": %d
+                                }
+                                """.formatted(
+                                LocalDate.now(ZoneId.of("Africa/Kampala")).plusDays(7),
+                                versionOf(replied)
+                        )))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.submission.stage").value("IMPROVEMENT_REQUESTED"));
+    }
+
+    @Test
+    void submitterCanCompleteRequestedInformationAndReceptionCanForwardItAtomically() throws Exception {
         String submitter = "owner-" + UUID.randomUUID() + "@example.test";
         String receptionist = "reception-" + UUID.randomUUID();
         var submitterUser = user(submitter).roles("SUBMITTER");
@@ -469,9 +619,15 @@ class WaluubeApiIntegrationTest {
                                   "title": "Submitter intake test",
                                   "purpose": "Complete the requested student details",
                                   "problemAddressed": "Validate submitter ownership and intake",
-                                  "submitterId": "%s"
+                                  "submitterId": "%s",
+                                  "submitterEmail": "%s",
+                                  "studentNumber": "STU-00001",
+                                  "programme": "Engineering",
+                                  "supervisor": "Dr Example",
+                                  "recommendationLetterStatus": "SUBMITTED",
+                                  "acceptedRulesVersion": "2026-01"
                                 }
-                                """.formatted(submitter)))
+                                """.formatted(submitter, submitter)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.stage").value("DRAFT"))
                 .andExpect(jsonPath("$.code").value(org.hamcrest.Matchers.startsWith("BRF-")))
@@ -487,6 +643,20 @@ class WaluubeApiIntegrationTest {
         String id = idMatcher.group(1);
         String code = codeMatcher.group(1);
 
+        // A draft has not been submitted, so reception cannot ask for more
+        // information yet: the request would be unreachable.
+        mockMvc.perform(post("/submissions/{id}/request-information", id)
+                        .with(receptionistUser)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"note":"Please provide your student number and supervisor."}
+                                """))
+                .andExpect(status().isConflict());
+
+        mockMvc.perform(post("/submissions/{id}/submit", id).with(submitterUser))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stage").value("SUBMITTED"));
+
         mockMvc.perform(post("/submissions/{id}/request-information", id)
                         .with(receptionistUser)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -494,6 +664,7 @@ class WaluubeApiIntegrationTest {
                                 {"note":"Please provide your student number and supervisor."}
                                 """))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stage").value("AWAITING_INFORMATION"))
                 .andExpect(jsonPath("$.informationRequestedNote")
                         .value("Please provide your student number and supervisor."))
                 .andExpect(jsonPath("$.informationRequestedBy").doesNotExist());
@@ -528,6 +699,17 @@ class WaluubeApiIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.documentType").value("RECOMMENDATION_LETTER"));
 
+        // The submitter answers the request; the brief returns to reception.
+        mockMvc.perform(post("/submissions/{id}/reply", id)
+                        .with(submitterUser)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(code))
+                .andExpect(jsonPath("$.stage").value("SUBMITTED"))
+                .andExpect(jsonPath("$.informationRequestedNote").doesNotExist())
+                .andExpect(jsonPath("$.informationRequestedBy").doesNotExist());
+
         String completedDraft = """
                 {
                   "category": "student",
@@ -542,16 +724,6 @@ class WaluubeApiIntegrationTest {
                   "acceptedRulesVersion": "2026-01"
                 }
                 """;
-        mockMvc.perform(put("/submissions/{id}", id)
-                        .with(submitterUser)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(completedDraft))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(code))
-                .andExpect(jsonPath("$.submitterId").value(submitter))
-                .andExpect(jsonPath("$.informationRequestedNote").doesNotExist())
-                .andExpect(jsonPath("$.informationRequestedBy").doesNotExist());
-
         mockMvc.perform(put("/submissions/{id}", id)
                         .with(user("another-owner").roles("SUBMITTER"))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -598,7 +770,8 @@ class WaluubeApiIntegrationTest {
                 Integer.class,
                 submissionId
         ));
-        assertEquals(4, jdbcTemplate.queryForObject(
+        // DRAFT, SUBMITTED, AWAITING_INFORMATION, SUBMITTED, FORWARDED.
+        assertEquals(5, jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM case_stage_history WHERE submission_id = ?",
                 Integer.class,
                 submissionId
@@ -689,7 +862,7 @@ class WaluubeApiIntegrationTest {
         mockMvc.perform(get("/cases/{id}", id).with(user(submitter).roles("SUBMITTER")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.currentStage").value("SUBMITTED"))
-                .andExpect(jsonPath("$.stepper.length()").value(9))
+                .andExpect(jsonPath("$.stepper.length()").value(10))
                 .andExpect(jsonPath("$.outcome.status").value("NOT_STARTED"))
                 .andExpect(jsonPath("$.openRequests[0].label").value("Supervisor contact"))
                 .andExpect(jsonPath("$.openRequests[0].dueAt").isNotEmpty())
@@ -809,6 +982,169 @@ class WaluubeApiIntegrationTest {
     }
 
     @Test
+    void improvementWorkflowCreatesRequestsAcceptsDocumentsAndResubmits() throws Exception {
+        String receptionistName = "improvement-intake-" + UUID.randomUUID();
+        String submitter = "improvement-" + UUID.randomUUID() + "@example.test";
+        var receptionist = user(receptionistName).roles("RECEPTIONIST");
+        String created = mockMvc.perform(post("/submissions")
+                        .with(receptionist)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "category": "general",
+                                  "title": "Improvement flow test",
+                                  "purpose": "Exercise revision submission",
+                                  "problemAddressed": "An improved version must be coordinator-reviewed",
+                                  "submitterId": "%s",
+                                  "submitterEmail": "%s",
+                                  "acceptedRulesVersion": "2026-01"
+                                }
+                                """.formatted(submitter, submitter)))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        Matcher idMatcher = Pattern.compile("\"id\":\"([^\"]+)\"").matcher(created);
+        assertTrue(idMatcher.find(), "Create response should include the submission id.");
+        String id = idMatcher.group(1);
+
+        mockMvc.perform(post("/submissions/{id}/register", id).with(receptionist))
+                .andExpect(status().isOk());
+        completeReceptionChecklist(id, receptionist);
+        var forwardSector = sectors.create(new SectorRequest(
+                "Improvement flow sector " + UUID.randomUUID(),
+                "improvement-flow@example.invalid",
+                true
+        ));
+        String forwarded = mockMvc.perform(post("/submissions/{id}/forward", id)
+                        .with(receptionist)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sectorId\":\"" + forwardSector.id() + "\",\"note\":\"Ready for review\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stage").value("FORWARDED"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        Matcher versionMatcher = Pattern.compile("\"version\":(\\d+)").matcher(forwarded);
+        assertTrue(versionMatcher.find(), "Forward response should include the current version.");
+        long version = Long.parseLong(versionMatcher.group(1));
+        var officer = user("fact-finding-officer").roles("FACT_FINDING_OFFICER");
+        mockMvc.perform(post("/cases/{id}/transitions", id)
+                        .with(officer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"to_stage\":\"IN_FACT_FINDING\",\"version\":" + version + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.submission.stage").value("IN_FACT_FINDING"));
+
+        mockMvc.perform(post("/cases/{id}/refinement-requests", id)
+                        .with(officer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "guidanceNote": "Please include the latest field measurements.",
+                                  "dueDate": "%s",
+                                  "requestedChanges": ["Add measurement dates"],
+                                  "version": %d
+                                }
+                                """.formatted(
+                                LocalDate.now(ZoneId.of("Africa/Kampala")).plusDays(7),
+                                caseVersion(id, officer)
+                        )))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.cycle").value(1))
+                .andExpect(jsonPath("$.status").value("OPEN"))
+                .andExpect(jsonPath("$.requestedChanges[0]").value("Add measurement dates"));
+
+        mockMvc.perform(multipart("/submissions/{id}/documents/upload", id)
+                        .file(new MockMultipartFile(
+                                "file",
+                                "improved-project-brief.pdf",
+                                MediaType.APPLICATION_PDF_VALUE,
+                                "Improved project brief content".getBytes(java.nio.charset.StandardCharsets.UTF_8)
+                        ))
+                        .param("name", "Improved project brief")
+                        .param("documentType", "PROJECT_BRIEF")
+                        .param("status", "SUBMITTED")
+                        .with(user(submitter).roles("SUBMITTER")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.documentType").value("PROJECT_BRIEF"))
+                .andExpect(jsonPath("$.version").value(1));
+
+        String improved = mockMvc.perform(post("/cases/{id}/improved-version", id)
+                        .with(user(submitter).roles("SUBMITTER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"note\":\"Added the latest field measurements.\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.stage").value("RESUBMITTED"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        Matcher improvedVersionMatcher = Pattern.compile("\"version\":(\\d+)").matcher(improved);
+        assertTrue(improvedVersionMatcher.find(), "Improved-version response should include its version.");
+        long improvedVersion = Long.parseLong(improvedVersionMatcher.group(1));
+
+        Long requestId = jdbcTemplate.queryForObject(
+                "SELECT id FROM refinement_requests WHERE brief_id = ? AND cycle = 1",
+                Long.class,
+                UUID.fromString(id)
+        );
+        assertEquals("RESPONDED", jdbcTemplate.queryForObject(
+                "SELECT status FROM refinement_requests WHERE id = ?",
+                String.class,
+                requestId
+        ));
+        assertTrue(jdbcTemplate.queryForObject(
+                "SELECT responded_at IS NOT NULL FROM refinement_requests WHERE id = ?",
+                Boolean.class,
+                requestId
+        ));
+        assertEquals(2, jdbcTemplate.queryForObject(
+                "SELECT version_number FROM case_revisions WHERE brief_id = ?",
+                Integer.class,
+                UUID.fromString(id)
+        ));
+        assertEquals(requestId, jdbcTemplate.queryForObject(
+                "SELECT request_id FROM case_revisions WHERE brief_id = ?",
+                Long.class,
+                UUID.fromString(id)
+        ));
+        assertEquals("Added the latest field measurements.", jdbcTemplate.queryForObject(
+                "SELECT what_changed FROM case_revisions WHERE brief_id = ?",
+                String.class,
+                UUID.fromString(id)
+        ));
+        assertEquals(submitter, jdbcTemplate.queryForObject(
+                "SELECT submitted_by FROM case_revisions WHERE brief_id = ?",
+                String.class,
+                UUID.fromString(id)
+        ));
+        assertTrue(jdbcTemplate.queryForObject(
+                "SELECT submitted_at IS NOT NULL FROM case_revisions WHERE brief_id = ?",
+                Boolean.class,
+                UUID.fromString(id)
+        ));
+
+        mockMvc.perform(get("/cases/{id}", id)
+                        .with(user("coordinator").roles("INNOVATION_COORDINATOR")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentStage").value("RESUBMITTED"))
+                .andExpect(jsonPath("$.submission.stage").value("RESUBMITTED"));
+
+        mockMvc.perform(post("/cases/{id}/transitions", id)
+                        .with(user("coordinator").roles("INNOVATION_COORDINATOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"to_stage":"IN_REVIEW","note":"Version accepted","version":%d}
+                                """.formatted(improvedVersion)))
+                .andExpect(status().isConflict());
+        mockMvc.perform(get("/cases/{id}", id)
+                        .with(user("coordinator").roles("INNOVATION_COORDINATOR")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentStage").value("RESUBMITTED"))
+                .andExpect(jsonPath("$.submission.stage").value("RESUBMITTED"));
+    }
+
+    @Test
     void intakeRoleCanReadQueueAndManagersCanReadDashboard() throws Exception {
         mockMvc.perform(get("/queues/reception").with(user("receptionist").roles("RECEPTIONIST")))
                 .andExpect(status().isOk())
@@ -850,7 +1186,7 @@ class WaluubeApiIntegrationTest {
                             .value(org.hamcrest.Matchers.lessThanOrEqualTo(5)))
                     .andExpect(jsonPath("$.overdueEquipmentReturns.availability")
                             .value("NOT_CONFIGURED"))
-                    .andExpect(jsonPath("$.recentActivity.availability").value("NOT_CONFIGURED"))
+                    .andExpect(jsonPath("$.recentActivity.availability").value("AVAILABLE"))
                     .andExpect(jsonPath("$.studentSubmissions").doesNotExist())
                     .andExpect(jsonPath("$.byStage").doesNotExist())
                     .andExpect(jsonPath("$.operations").doesNotExist())
@@ -925,7 +1261,7 @@ class WaluubeApiIntegrationTest {
                 .andExpect(jsonPath("$.needsAttention[0].id").value(id))
                 .andExpect(jsonPath("$.needsAttention[0].reason").value("Fact-finding in progress"))
                 .andExpect(jsonPath("$.overdueEquipmentReturns.availability").value("NOT_CONFIGURED"))
-                .andExpect(jsonPath("$.recentActivity.availability").value("NOT_CONFIGURED"));
+                .andExpect(jsonPath("$.recentActivity.availability").value("AVAILABLE"));
 
         jdbcTemplate.update("UPDATE submissions SET stage = 'READY_FOR_REVIEW' WHERE id = ?",
                 UUID.fromString(id));
@@ -1313,7 +1649,7 @@ class WaluubeApiIntegrationTest {
     }
 
     @Test
-    void updatingAndSubmittingADraftClearsInformationItems() throws Exception {
+    void informationRequestOnADraftIsRejectedWithoutCreatingItems() throws Exception {
         String submitter = "draft-items-" + UUID.randomUUID() + "@example.test";
         var submitterUser = user(submitter).roles("SUBMITTER");
         var receptionist = user("reception-draft-items-" + UUID.randomUUID()).roles("RECEPTIONIST");
@@ -1325,7 +1661,7 @@ class WaluubeApiIntegrationTest {
                                 {
                                   "category": "general",
                                   "title": "Draft with requested items",
-                                  "purpose": "Verify item resolution on draft update",
+                                  "purpose": "Verify draft-stage requests are refused",
                                   "problemAddressed": "Reception needs one more detail",
                                   "submitterId": "%s",
                                   "submitterEmail": "%s",
@@ -1344,13 +1680,13 @@ class WaluubeApiIntegrationTest {
                         .content("""
                                 {"items":[{"label":"Student number"}]}
                                 """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.stage").value("DRAFT"));
+                .andExpect(status().isConflict());
 
-        mockMvc.perform(get("/me/submissions/{id}", id).with(submitterUser))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.pendingAction").value("PROVIDE_INFORMATION"))
-                .andExpect(jsonPath("$.waitingForYou").value("Reception needs: Student number."));
+        assertEquals(0, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM missing_items WHERE submission_id = ?",
+                Integer.class,
+                UUID.fromString(id)
+        ));
 
         mockMvc.perform(put("/submissions/{id}", id)
                         .with(submitterUser)
@@ -1359,7 +1695,7 @@ class WaluubeApiIntegrationTest {
                                 {
                                   "category": "general",
                                   "title": "Draft with requested items completed",
-                                  "purpose": "Verify item resolution on draft update",
+                                  "purpose": "Verify draft-stage requests are refused",
                                   "problemAddressed": "Reception needs one more detail"
                                 }
                                 """))
@@ -1368,19 +1704,6 @@ class WaluubeApiIntegrationTest {
         mockMvc.perform(post("/submissions/{id}/submit", id).with(submitterUser))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.stage").value("SUBMITTED"));
-
-        mockMvc.perform(get("/me/submissions/{id}", id).with(submitterUser))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.pendingAction").value(org.hamcrest.Matchers.nullValue()))
-                .andExpect(jsonPath("$.waitingForYou").value(org.hamcrest.Matchers.nullValue()))
-                .andExpect(jsonPath("$.waitingSince").value(org.hamcrest.Matchers.nullValue()));
-
-        assertEquals(0, jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM missing_items WHERE submission_id = ? "
-                        + "AND kind = 'INFORMATION' AND status = 'OPEN'",
-                Integer.class,
-                UUID.fromString(id)
-        ));
     }
 
     private void completeReceptionChecklist(String id, RequestPostProcessor principal) throws Exception {
@@ -1408,6 +1731,21 @@ class WaluubeApiIntegrationTest {
                 .getContentAsString();
         Matcher matcher = Pattern.compile("\"totalBriefs\":(\\d+)").matcher(body);
         assertTrue(matcher.find(), "Dashboard response should include totalBriefs.");
+        return Long.parseLong(matcher.group(1));
+    }
+
+    private long caseVersion(String id, RequestPostProcessor principal) throws Exception {
+        String body = mockMvc.perform(get("/cases/{id}", id).with(principal))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        return versionOf(body);
+    }
+
+    private static long versionOf(String response) {
+        Matcher matcher = Pattern.compile("\"version\":(\\d+)").matcher(response);
+        assertTrue(matcher.find(), "Response should include a version.");
         return Long.parseLong(matcher.group(1));
     }
 

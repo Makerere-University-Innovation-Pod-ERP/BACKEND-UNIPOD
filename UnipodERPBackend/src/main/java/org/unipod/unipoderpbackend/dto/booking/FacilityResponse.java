@@ -12,6 +12,7 @@ public record FacilityResponse(
         int capacity,
         FacilityStatus status,
         String department,
+        boolean requiresSafetyPass,
         Instant createdAt,
         Instant updatedAt
 ) {
@@ -23,6 +24,7 @@ public record FacilityResponse(
                 facility.getCapacity(),
                 facility.getStatus(),
                 facility.getDepartment(),
+                facility.isSafetyPassRequired(),
                 facility.getCreatedAt(),
                 facility.getUpdatedAt()
         );

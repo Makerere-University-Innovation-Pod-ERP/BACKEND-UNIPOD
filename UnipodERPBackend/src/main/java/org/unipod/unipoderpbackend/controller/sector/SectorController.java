@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.unipod.unipoderpbackend.dto.sector.AdminSectorResponse;
 import org.unipod.unipoderpbackend.dto.sector.SectorMemberRequest;
 import org.unipod.unipoderpbackend.dto.sector.SectorRequest;
 import org.unipod.unipoderpbackend.dto.sector.SectorResponse;
@@ -48,20 +49,20 @@ public class SectorController {
 
     @GetMapping("/catalog")
     @PreAuthorize("hasRole('ADMINISTRATOR')")
-    public List<SectorResponse> allSectors() {
+    public List<AdminSectorResponse> allSectors() {
         return sectors.allSectors();
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasRole('ADMINISTRATOR')")
-    public SectorResponse create(@Valid @RequestBody SectorRequest request) {
+    public AdminSectorResponse create(@Valid @RequestBody SectorRequest request) {
         return sectors.create(request);
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMINISTRATOR')")
-    public SectorResponse update(@PathVariable UUID id, @Valid @RequestBody SectorRequest request) {
+    public AdminSectorResponse update(@PathVariable UUID id, @Valid @RequestBody SectorRequest request) {
         return sectors.update(id, request);
     }
 

@@ -13,9 +13,11 @@ public record ParticipantResponse(
         String regNumber,
         String department,
         String contactEmail,
+        String userId,
         RegistrationStatus status,
         AttendanceStatus attendance,
         boolean passed,
+        OffsetDateTime passedAt,
         OffsetDateTime registeredAt) {
 
     public static ParticipantResponse from(TrainingParticipant participant, ZoneId zone) {
@@ -25,9 +27,11 @@ public record ParticipantResponse(
                 participant.getRegNumber(),
                 participant.getDepartment(),
                 participant.getContactEmail(),
+                participant.getUserId(),
                 participant.getStatus(),
                 participant.getAttendance(),
                 participant.isPassed(),
+                participant.getPassedAt() == null ? null : participant.getPassedAt().atZone(zone).toOffsetDateTime(),
                 participant.getRegisteredAt().atZone(zone).toOffsetDateTime());
     }
 }

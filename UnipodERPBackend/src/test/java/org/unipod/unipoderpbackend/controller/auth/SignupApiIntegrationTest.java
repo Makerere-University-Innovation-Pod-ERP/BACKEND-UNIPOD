@@ -44,6 +44,7 @@ class SignupApiIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.tokenType").value("Bearer"))
                 .andExpect(jsonPath("$.mustChangePassword").value(false))
+                .andExpect(jsonPath("$.refreshToken").isNotEmpty())
                 .andReturn().getResponse().getContentAsString();
         String token = objectMapper.readTree(response).get("accessToken").asString();
 
@@ -119,6 +120,15 @@ class SignupApiIntegrationTest {
     void rulesMustBeAccepted() throws Exception {
         Map<String, Object> body = new HashMap<>(student("martha@example.test", "2400700001"));
         body.put("rulesAccepted", false);
+        mockMvc.perform(signup(body))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("rulesAccepted"));
+    }
+
+    @Test
+    void missingRulesAcceptedIsAFieldErrorNotAMalformedBody() throws Exception {
+        Map<String, Object> body = new HashMap<>(student("lydia@example.test", "2400700002"));
+        body.remove("rulesAccepted");
         mockMvc.perform(signup(body))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("rulesAccepted"));

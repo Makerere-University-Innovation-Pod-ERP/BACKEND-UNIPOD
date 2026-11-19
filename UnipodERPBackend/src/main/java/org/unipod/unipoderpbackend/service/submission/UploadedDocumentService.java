@@ -130,6 +130,24 @@ public class UploadedDocumentService {
             String actor,
             boolean submitter
     ) {
+        return upload(submissionId, name, documentType, status, file, actor, submitter, null);
+    }
+
+    /**
+     * @param missingItemId the open requested item this file answers. When
+     *                      supplied, only that item is resolved instead of
+     *                      every open item with the same document type.
+     */
+    public DocumentResponse upload(
+            UUID submissionId,
+            String name,
+            DocumentType documentType,
+            DocumentStatus status,
+            MultipartFile file,
+            String actor,
+            boolean submitter,
+            UUID missingItemId
+    ) {
         if (file == null || file.isEmpty() || file.getSize() > maxFileSize) {
             throw new InvalidSubmissionException("The uploaded file is empty or exceeds the allowed size.");
         }
@@ -178,7 +196,7 @@ public class UploadedDocumentService {
                 pending.assignVersion(version);
                 SubmissionDocument saved = documents.saveAndFlush(pending);
                 if (status == DocumentStatus.SUBMITTED || status == DocumentStatus.VERIFIED) {
-                    resolveMissingDocuments(submissionId, documentType, documentName, actor, now);
+                    resolveMissingDocuments(submissionId, documentType, documentName, actor, now, missingItemId);
                 }
                 return saved;
             });
@@ -206,12 +224,9 @@ public class UploadedDocumentService {
         if (stage == SubmissionStage.COMPLETED || stage == SubmissionStage.CLOSED) {
             throw new SubmissionConflictException("The submission cannot be changed in its current state.");
         }
-        if (submitter
-                && stage != SubmissionStage.DRAFT
-                && stage != SubmissionStage.SUBMITTED
-                && stage != SubmissionStage.AWAITING_INFORMATION) {
+        if (submitter && !SubmissionService.canSubmitterUploadDocuments(stage)) {
             throw new org.springframework.security.access.AccessDeniedException(
-                    "Submitters may only attach documents before the submission is forwarded."
+                    "Submitters may attach documents only while the brief can still change, before forwarding or while an improvement request is open."
             );
         }
     }
@@ -221,8 +236,23 @@ public class UploadedDocumentService {
             DocumentType documentType,
             String documentName,
             String actor,
-            Instant now
+            Instant now,
+            UUID missingItemId
     ) {
+        if (missingItemId != null) {
+            MissingItem item = missingItems.findByIdAndSubmissionId(missingItemId, submissionId)
+                    .orElseThrow(() -> new InvalidSubmissionException(
+                            "The requested item this file answers is no longer available."
+                    ));
+            if (item.getStatus() != MissingItemStatus.OPEN) {
+                throw new InvalidSubmissionException(
+                        "The requested item this file answers has already been resolved."
+                );
+            }
+            item.resolve(actor, "Document uploaded: " + documentName, now);
+            missingItems.save(item);
+            return;
+        }
         List<MissingItem> openItems = missingItems
                 .findAllBySubmissionIdAndKindAndDocumentTypeAndStatus(
                         submissionId,

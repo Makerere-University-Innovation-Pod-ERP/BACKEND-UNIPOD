@@ -4,24 +4,30 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.mail.MailSendException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionStatus;
 import tools.jackson.databind.ObjectMapper;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class OutboxNotificationDispatcherTest {
     private final JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
     private final JavaMailSender mailSender = mock(JavaMailSender.class);
+    private final PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
     private final UUID eventId = UUID.randomUUID();
     private OutboxNotificationDispatcher dispatcher;
 
@@ -31,7 +37,7 @@ class OutboxNotificationDispatcherTest {
                 jdbcTemplate,
                 mailSender::send,
                 new ObjectMapper(),
-                mock(PlatformTransactionManager.class),
+                transactionManager,
                 "no-reply@example.invalid"
         );
     }
@@ -85,6 +91,51 @@ class OutboxNotificationDispatcherTest {
         assertEquals("submitter@example.invalid", message.getValue().getTo()[0]);
         assertEquals("More information needed for submission GEN-2026-000001", message.getValue().getSubject());
         assertTrue(message.getValue().getText().contains("Please attach a project brief."));
+    }
+
+    @Test
+    void notifiesSubmitterWhenImprovedVersionIsReceived() {
+        dispatcher.dispatch(new OutboxNotificationDispatcher.OutboxMessage(
+                eventId,
+                "submission.improved_version_received",
+                """
+                        {
+                          "notificationEmail": "submitter@example.invalid",
+                          "caseCode": "GEN-2026-000001",
+                          "subject": "Improved version received",
+                          "message": "Your improved version is awaiting coordinator review."
+                        }
+                        """,
+                1,
+                UUID.randomUUID()
+        ));
+
+        var message = org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(message.capture());
+        assertEquals("submitter@example.invalid", message.getValue().getTo()[0]);
+        assertEquals("Improved version received", message.getValue().getSubject());
+        assertTrue(message.getValue().getText().contains("awaiting coordinator review"));
+        verify(jdbcTemplate).update(
+                contains("published_at = CURRENT_TIMESTAMP"),
+                eq((Object) eventId),
+                any(Object.class)
+        );
+    }
+
+    @Test
+    void claimsImprovedVersionNotificationEvents() {
+        when(transactionManager.getTransaction(any())).thenReturn(mock(TransactionStatus.class));
+        doReturn(java.util.List.of()).when(jdbcTemplate).query(
+                anyString(),
+                any(RowMapper.class),
+                any(Object[].class)
+        );
+
+        dispatcher.claimNext();
+
+        var sql = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(jdbcTemplate).query(sql.capture(), any(RowMapper.class), any(Object[].class));
+        assertTrue(sql.getValue().contains("'submission.improved_version_received'"));
     }
 
     @Test

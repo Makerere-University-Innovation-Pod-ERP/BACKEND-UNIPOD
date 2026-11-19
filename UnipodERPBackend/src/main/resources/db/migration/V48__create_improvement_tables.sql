@@ -19,6 +19,7 @@ CREATE TABLE refinement_requests (
     updated_at TIMESTAMPTZ NOT NULL,
     version BIGINT NOT NULL DEFAULT 0,
     CONSTRAINT pk_refinement_requests PRIMARY KEY (id),
+    CONSTRAINT uq_refinement_requests_id_brief UNIQUE (id, brief_id),
     CONSTRAINT ck_refinement_requests_cycle CHECK (cycle >= 1),
     CONSTRAINT ck_refinement_requests_source CHECK (source IN ('FACT_FINDING', 'COORDINATOR')),
     CONSTRAINT ck_refinement_requests_status CHECK (status IN ('OPEN', 'RESPONDED')),
@@ -52,6 +53,6 @@ CREATE TABLE case_revisions (
     CONSTRAINT ck_case_revisions_version_number CHECK (version_number >= 2),
     CONSTRAINT uq_case_revisions_brief_version UNIQUE (brief_id, version_number),
     CONSTRAINT uq_case_revisions_request UNIQUE (request_id),
-    CONSTRAINT fk_case_revisions_request
-        FOREIGN KEY (request_id) REFERENCES refinement_requests (id)
+    CONSTRAINT fk_case_revisions_request_brief
+        FOREIGN KEY (request_id, brief_id) REFERENCES refinement_requests (id, brief_id)
 );

@@ -13,22 +13,26 @@ import org.unipod.unipoderpbackend.dto.auth.ChangePasswordRequest;
 import org.unipod.unipoderpbackend.dto.auth.ForgotPasswordRequest;
 import org.unipod.unipoderpbackend.dto.auth.LoginRequest;
 import org.unipod.unipoderpbackend.dto.auth.LoginResponse;
+import org.unipod.unipoderpbackend.dto.auth.RefreshTokenRequest;
 import org.unipod.unipoderpbackend.dto.auth.SetPasswordRequest;
 import org.unipod.unipoderpbackend.service.auth.AuthenticationService;
+import org.unipod.unipoderpbackend.service.auth.SessionService;
 
 @RestController
 @RequestMapping("/auth")
 public class AuthenticationController {
     private final AuthenticationService authentication;
+    private final SessionService sessions;
 
-    public AuthenticationController(AuthenticationService authentication) {
+    public AuthenticationController(AuthenticationService authentication, SessionService sessions) {
         this.authentication = authentication;
+        this.sessions = sessions;
     }
 
     @PostMapping("/login")
     @ResponseStatus(HttpStatus.OK)
     public LoginResponse login(@Valid @RequestBody LoginRequest request) {
-        return authentication.login(request);
+        return sessions.login(request);
     }
 
     @PostMapping("/change-password")
@@ -38,13 +42,25 @@ public class AuthenticationController {
             @Valid @RequestBody ChangePasswordRequest request,
             Authentication authentication
     ) {
-        this.authentication.changePassword(authentication.getName(), request);
+        sessions.endAllSessions(this.authentication.changePassword(authentication.getName(), request));
     }
 
     @PostMapping("/set-password")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void setPassword(@Valid @RequestBody SetPasswordRequest request) {
-        authentication.setPassword(request);
+        sessions.endAllSessions(authentication.setPassword(request));
+    }
+
+    @PostMapping("/refresh")
+    @ResponseStatus(HttpStatus.OK)
+    public LoginResponse refresh(@Valid @RequestBody RefreshTokenRequest request) {
+        return sessions.refresh(request.refreshToken());
+    }
+
+    @PostMapping("/logout")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void logout(@Valid @RequestBody RefreshTokenRequest request) {
+        sessions.logout(request.refreshToken());
     }
 
     @PostMapping("/forgot-password")

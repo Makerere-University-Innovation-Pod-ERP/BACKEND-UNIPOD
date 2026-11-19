@@ -27,6 +27,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
@@ -39,6 +40,9 @@ import org.unipod.unipoderpbackend.exception.booking.FacilityNotFoundException;
 import org.unipod.unipoderpbackend.exception.booking.InvalidBookingException;
 import org.unipod.unipoderpbackend.exception.finance.InvalidInvoiceException;
 import org.unipod.unipoderpbackend.exception.finance.InvoiceConflictException;
+import org.unipod.unipoderpbackend.exception.operations.InvalidOperationsRequestException;
+import org.unipod.unipoderpbackend.exception.operations.OperationsConflictException;
+import org.unipod.unipoderpbackend.exception.operations.OperationsNotFoundException;
 import org.unipod.unipoderpbackend.exception.finance.InvoiceNotFoundException;
 import org.unipod.unipoderpbackend.exception.finance.ReceiptNotFoundException;
 import org.unipod.unipoderpbackend.exception.notification.NotificationNotFoundException;
@@ -158,9 +162,33 @@ public class ApiExceptionHandler {
         );
     }
 
+    @ExceptionHandler(OperationsNotFoundException.class)
+    ResponseEntity<ProblemDetail> handleOperationsNotFound(OperationsNotFoundException exception) {
+        return problem(HttpStatus.NOT_FOUND, "Not found", exception.getMessage(), "NOT_FOUND");
+    }
+
+    @ExceptionHandler(InvalidOperationsRequestException.class)
+    ResponseEntity<ProblemDetail> handleInvalidOperations(InvalidOperationsRequestException exception) {
+        return problem(HttpStatus.UNPROCESSABLE_CONTENT, "Invalid request", exception.getMessage(), "INVALID_REQUEST");
+    }
+
+    @ExceptionHandler(OperationsConflictException.class)
+    ResponseEntity<ProblemDetail> handleOperationsConflict(OperationsConflictException exception) {
+        String code = exception.getCode() == null ? "CONFLICT" : exception.getCode();
+        HttpStatus status = "PAYMENT_REQUIRED".equals(code) ? HttpStatus.CONFLICT : HttpStatus.CONFLICT;
+        ProblemDetail problem = problemDetail(status, "Conflict", exception.getMessage());
+        problem.setProperty("code", code);
+        return response(status, problem);
+    }
+
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     ResponseEntity<ProblemDetail> handleMaxUploadSize(MaxUploadSizeExceededException exception) {
         return problem(HttpStatus.PAYLOAD_TOO_LARGE, "Upload too large", "The uploaded file exceeds the allowed size.");
+    }
+
+    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+    ResponseEntity<ProblemDetail> handleOptimisticLock(ObjectOptimisticLockingFailureException exception) {
+        return problem(HttpStatus.CONFLICT, "Edit conflict", "Someone else changed this record at the same time. Reload it and try again.", "EDIT_CONFLICT");
     }
 
     @ExceptionHandler(InvalidSignupException.class)
