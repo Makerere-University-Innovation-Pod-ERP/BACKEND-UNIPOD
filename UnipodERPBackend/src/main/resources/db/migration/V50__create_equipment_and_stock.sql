@@ -107,7 +107,10 @@ CREATE TABLE equipment_loans (
     CONSTRAINT ck_equipment_loans_borrower_contact CHECK (length(btrim(borrower_contact)) > 0),
     CONSTRAINT ck_equipment_loans_dates CHECK (date_back >= date_out),
     CONSTRAINT ck_equipment_loans_status CHECK (status IN ('PENDING_APPROVAL', 'DECLINED', 'ACTIVE', 'RETURNED')),
-    CONSTRAINT ck_equipment_loans_decision CHECK ((status = 'PENDING_APPROVAL') = (decided_at IS NULL)),
+    CONSTRAINT ck_equipment_loans_decision CHECK (
+        (status = 'PENDING_APPROVAL') = (decided_at IS NULL)
+        AND (decided_by IS NULL) = (decided_at IS NULL)
+    ),
     CONSTRAINT ck_equipment_loans_return CHECK (
         (status = 'RETURNED') = (returned_at IS NOT NULL)
         AND (status <> 'RETURNED' OR incoming_condition IS NOT NULL)
@@ -128,7 +131,7 @@ ALTER TABLE stock_items
 ALTER TABLE stock_items
     ADD CONSTRAINT ck_stock_items_minimum CHECK (minimum >= 0),
     ADD CONSTRAINT ck_stock_items_department CHECK (
-        department IS NULL OR department IN ('MULTIMEDIA', 'TEXTILE', 'CNC', 'TELECOMS')
+        department IS NOT NULL AND department IN ('MULTIMEDIA', 'TEXTILE', 'CNC', 'TELECOMS')
     ) NOT VALID;
 
 ALTER TABLE stock_movements

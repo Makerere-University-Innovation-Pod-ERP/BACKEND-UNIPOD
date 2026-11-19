@@ -8,6 +8,7 @@ import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -67,7 +68,7 @@ class EquipmentSchemaTest {
         insertEquipment("First", tag, 1, 1, "AVAILABLE");
 
         assertViolates("uq_equipment_items_asset_tag",
-                () -> insertEquipment("Second", tag.toLowerCase(), 1, 1, "AVAILABLE"));
+                () -> insertEquipment("Second", tag.toLowerCase(Locale.ROOT), 1, 1, "AVAILABLE"));
     }
 
     @Test
@@ -80,7 +81,7 @@ class EquipmentSchemaTest {
         String name = "Machine " + UUID.randomUUID();
         insertMachine(name, "TEXTILE", "WORKING");
 
-        assertViolates("uq_machines_department_name", () -> insertMachine(name.toUpperCase(), "TEXTILE", "WORKING"));
+        assertViolates("uq_machines_department_name", () -> insertMachine(name.toUpperCase(Locale.ROOT), "TEXTILE", "WORKING"));
         insertMachine(name, "CNC", "WORKING");
     }
 
@@ -134,6 +135,25 @@ class EquipmentSchemaTest {
         assertViolates("ck_equipment_loans_decision", () -> insertLoan(equipment, 1, "PENDING_APPROVAL", NOW, null));
         assertViolates("ck_equipment_loans_return", () -> insertLoan(equipment, 1, "RETURNED", NOW, null));
         insertLoan(equipment, 1, "RETURNED", NOW, NOW);
+    }
+
+    @Test
+    void whoDecidedAndWhenAreSetTogetherOrNotAtAll() {
+        UUID equipment = insertEquipment("Loan Decider", tag(), 3, 3, "AVAILABLE");
+
+        assertViolates("ck_equipment_loans_decision", () -> insertDecidedLoan(equipment, "ACTIVE", null, NOW));
+        assertViolates("ck_equipment_loans_decision", () -> insertDecidedLoan(equipment, "ACTIVE", "m@test.local", null));
+        insertDecidedLoan(equipment, "ACTIVE", "m@test.local", NOW);
+    }
+
+    @Test
+    void newStockItemsNeedADepartment() {
+        assertViolates("ck_stock_items_department", () -> jdbc.update(
+                "INSERT INTO stock_items (id, sku, name, department, quantity_on_hand, updated_at) "
+                        + "VALUES (?, ?, 'No department', NULL, 1, ?)", UUID.randomUUID(), "NODEPT-" + UUID.randomUUID(), NOW));
+        assertViolates("ck_stock_items_department", () -> jdbc.update(
+                "INSERT INTO stock_items (id, sku, name, department, quantity_on_hand, updated_at) "
+                        + "VALUES (?, ?, 'Odd department', 'KITCHEN', 1, ?)", UUID.randomUUID(), "ODD-" + UUID.randomUUID(), NOW));
     }
 
     @Test
@@ -220,6 +240,14 @@ class EquipmentSchemaTest {
                 UUID.randomUUID(), loanCode(), equipment, quantity, Date.valueOf("2026-11-19"), Date.valueOf("2026-11-26"),
                 status, decidedAt == null ? null : "m@test.local", decidedAt,
                 returnedAt == null ? null : "Fine", returnedAt, NOW, NOW);
+    }
+
+    private void insertDecidedLoan(UUID equipment, String status, String decidedBy, Timestamp decidedAt) {
+        jdbc.update("INSERT INTO equipment_loans (id, code, equipment_id, quantity, borrower_name, borrower_type, "
+                        + "borrower_contact, date_out, date_back, status, requested_by, decided_by, decided_at, created_at, "
+                        + "updated_at) VALUES (?, ?, ?, 1, 'Borrower', 'Student', 'contact', ?, ?, ?, 'a@test.local', ?, ?, ?, ?)",
+                UUID.randomUUID(), loanCode(), equipment, Date.valueOf("2026-11-19"), Date.valueOf("2026-11-26"),
+                status, decidedBy, decidedAt, NOW, NOW);
     }
 
     private static String loanCode() {
