@@ -61,6 +61,45 @@ class DepartmentOrderStockDeductionTest {
     }
 
     @Test
+    void aFractionalQuantityIsDeductedAsGivenNotRoundedDown() throws Exception {
+        String sku = "FRAC-" + UUID.randomUUID().toString().substring(0, 8);
+        UUID item = stockItem(sku, "10");
+        UUID order = paidOrder("CNC-" + UUID.randomUUID().toString().substring(0, 8));
+
+        orders.changeStage("cnc", order, stage("[{\"sku\": \"" + sku + "\", \"quantity\": \"1.5\"}]"), "staff@test.local");
+
+        assertEquals(0, new BigDecimal("8.5").compareTo(balance(item)));
+    }
+
+    @Test
+    void completingTheSameOrderAgainDoesNotDeductItsMaterialsAgain() throws Exception {
+        String sku = "TWICE-" + UUID.randomUUID().toString().substring(0, 8);
+        UUID item = stockItem(sku, "10");
+        UUID order = paidOrder("CNC-" + UUID.randomUUID().toString().substring(0, 8));
+        String materials = "[{\"sku\": \"" + sku + "\", \"qty\": 4}]";
+
+        orders.changeStage("cnc", order, stage(materials), "staff@test.local");
+        orders.changeStage("cnc", order, stage(materials), "staff@test.local");
+
+        assertEquals(0, new BigDecimal("6").compareTo(balance(item)));
+        assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM stock_movements WHERE stock_item_id = ?", Long.class, item));
+    }
+
+    @Test
+    void movingFromOneCompletionStageToAnotherDoesNotDeductAgain() throws Exception {
+        String sku = "NEXT-" + UUID.randomUUID().toString().substring(0, 8);
+        UUID item = stockItem(sku, "10");
+        UUID order = paidOrder("CNC-" + UUID.randomUUID().toString().substring(0, 8));
+        String materials = "[{\"sku\": \"" + sku + "\", \"qty\": 4}]";
+
+        orders.changeStage("cnc", order, stage(materials), "staff@test.local");
+        orders.changeStage("cnc", order, new DepartmentOrderStageRequest("COLLECTED", mapper.readTree(materials), null, null, null, null),
+                "staff@test.local");
+
+        assertEquals(0, new BigDecimal("6").compareTo(balance(item)));
+    }
+
+    @Test
     void notEnoughStockIsStillAConflictAndLeavesTheBalanceAlone() throws Exception {
         String sku = "SHORT-" + UUID.randomUUID().toString().substring(0, 8);
         UUID item = stockItem(sku, "3");

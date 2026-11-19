@@ -146,7 +146,10 @@ public class DepartmentOrderService {
             order.setCompletion(materialsJson, clean(request.machine_time_used()),
                     request.quality_checklist() == null ? null : writeJson(request.quality_checklist()),
                     clean(request.collection_signature()), now);
-            deductStockIfAny(order, request.materials_used(), actor, now);
+            // Re-submitting a completed order must not take its materials out of stock a second time.
+            if (previous == null || !isCompletionStage(previous)) {
+                deductStockIfAny(order, request.materials_used(), actor, now);
+            }
             if (isPaid(order.getInvoiceStatus())) {
                 order.confirmPayment(order.getInvoiceStatus(), now);
             }
@@ -194,8 +197,8 @@ public class DepartmentOrderService {
     private void deductOne(DepartmentOrder order, JsonNode n, String actor, Instant now) {
         String sku = textOr(n, "sku", null);
         String itemId = textOr(n, "itemId", null);
-        int qty = n.path("qty").asInt(n.path("quantity").asInt(0));
-        if ((sku == null && itemId == null) || qty <= 0) return;
+        BigDecimal needed = quantityOf(n);
+        if ((sku == null && itemId == null) || needed.signum() <= 0) return;
 
         StockItem item = null;
         if (itemId != null) {
@@ -207,7 +210,6 @@ public class DepartmentOrderService {
         if (item == null) {
             throw new InvalidOperationsRequestException("Stock item not found for deduction: " + (sku != null ? sku : itemId));
         }
-        BigDecimal needed = BigDecimal.valueOf(qty);
         if (item.getQuantityOnHand().compareTo(needed) < 0) {
             throw new OperationsConflictException("STOCK_INSUFFICIENT", "Insufficient stock for " + item.getSku());
         }
@@ -216,6 +218,16 @@ public class DepartmentOrderService {
                 actor, now);
         stockItems.save(item);
         stockMovements.save(movement);
+    }
+
+    /** `qty` or `quantity`, as a decimal: stock is counted in fractions too (1.5 metres), so nothing is rounded down. */
+    private static BigDecimal quantityOf(JsonNode material) {
+        JsonNode value = material.has("qty") ? material.get("qty") : material.path("quantity");
+        try {
+            return value.isNumber() ? value.decimalValue() : new BigDecimal(value.asText("0").trim());
+        } catch (NumberFormatException notANumber) {
+            return BigDecimal.ZERO;
+        }
     }
 
     private String appendHistoryJson(String existing, String stage, String actor, String notes, Instant now, Map<String,String> extra) {
