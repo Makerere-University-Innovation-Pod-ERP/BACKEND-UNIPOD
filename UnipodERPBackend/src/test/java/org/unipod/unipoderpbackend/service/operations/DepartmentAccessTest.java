@@ -106,11 +106,21 @@ class DepartmentAccessTest {
     @Test
     void sectorNamesMatchTheDepartmentAliases() {
         assertEquals(Optional.of(DepartmentCode.TELECOMS), DepartmentSectorNames.codeOf(" Telecom Lab "));
+        assertEquals(Optional.of(DepartmentCode.TELECOMS), DepartmentSectorNames.codeOf("Telecommunications"));
         assertEquals(Optional.of(DepartmentCode.MULTIMEDIA), DepartmentSectorNames.codeOf("MEDIA"));
         assertEquals(Optional.of(DepartmentCode.TELECOMS), DepartmentSectorNames.codeOf("telecom-lab"));
         assertEquals(Optional.of(DepartmentCode.TELECOMS), DepartmentSectorNames.codeOf("TELECOM_LAB"));
         assertEquals(Optional.empty(), DepartmentSectorNames.codeOf("Digital Technology"));
         assertEquals(Optional.empty(), DepartmentSectorNames.codeOf(null));
+    }
+
+    @Test
+    void aTelecommunicationsSectorStillMapsToTelecoms() {
+        UUID telecommunications = OperationsTestData.sector(jdbcTemplate, "Telecommunications");
+        Actor coordinator = new Actor("c@test.local", ApiUserRole.DEPARTMENT_COORDINATOR, Set.of(telecommunications));
+
+        assertDoesNotThrow(() -> access.requireManage(coordinator, DepartmentCode.TELECOMS));
+        assertEquals(Set.of(DepartmentCode.TELECOMS), access.departmentsOf(coordinator));
     }
 
     @Test

@@ -19,7 +19,7 @@ public class DepartmentLookup {
             DepartmentCode.MULTIMEDIA, List.of("multimedia", "media"),
             DepartmentCode.TEXTILE, List.of("textile", "textiles"),
             DepartmentCode.CNC, List.of("cnc"),
-            DepartmentCode.TELECOMS, List.of("telecoms", "telecom", "telecommunications"));
+            DepartmentCode.TELECOMS, List.of("telecoms", "telecom", "telecommunications", "telecom lab"));
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -31,7 +31,8 @@ public class DepartmentLookup {
     public Optional<UUID> sectorId(DepartmentCode department) {
         List<String> names = NAMES.get(department);
         return jdbcTemplate.query(
-                "SELECT id FROM sectors WHERE active AND lower(btrim(name)) IN (" + marks(names)
+                "SELECT id FROM sectors WHERE active AND btrim(regexp_replace(lower(name), '[\\s_-]+', ' ', 'g')) IN ("
+                        + marks(names)
                         + ") ORDER BY name LIMIT 1",
                 (resultSet, row) -> resultSet.getObject("id", UUID.class),
                 names.toArray()).stream().findFirst();
@@ -41,7 +42,8 @@ public class DepartmentLookup {
     public List<UUID> sectorIds(DepartmentCode department) {
         List<String> names = NAMES.get(department);
         return jdbcTemplate.query(
-                "SELECT id FROM sectors WHERE active AND lower(btrim(name)) IN (" + marks(names) + ")",
+                "SELECT id FROM sectors WHERE active AND btrim(regexp_replace(lower(name), '[\\s_-]+', ' ', 'g')) IN ("
+                        + marks(names) + ")",
                 (resultSet, row) -> resultSet.getObject("id", UUID.class), names.toArray());
     }
 
@@ -49,7 +51,8 @@ public class DepartmentLookup {
     public Optional<UUID> facilityId(DepartmentCode department) {
         List<String> names = NAMES.get(department);
         return jdbcTemplate.query(
-                "SELECT id FROM facilities WHERE lower(btrim(department)) IN (" + marks(names)
+                "SELECT id FROM facilities WHERE btrim(regexp_replace(lower(department), '[\\s_-]+', ' ', 'g')) IN ("
+                        + marks(names)
                         + ") ORDER BY name LIMIT 1",
                 (resultSet, row) -> resultSet.getObject("id", UUID.class),
                 names.toArray()).stream().findFirst();
