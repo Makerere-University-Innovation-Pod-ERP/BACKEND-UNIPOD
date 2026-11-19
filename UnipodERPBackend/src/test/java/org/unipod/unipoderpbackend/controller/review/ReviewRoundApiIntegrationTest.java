@@ -523,8 +523,10 @@ class ReviewRoundApiIntegrationTest {
         long requestVersion = json(body(mockMvc.perform(get("/cases/{id}/my-improvement", brief.getId())
                 .with(user(OWNER).roles("SUBMITTER"))).andExpect(status().isOk())))
                 .get("openRequest").get("version").asLong();
+        // Main's improved-version takes ReplySubmissionRequest: the what-changed text is "note". Main has no
+        // request version, so requestVersion (read above, as before) is no longer sent.
         mockMvc.perform(json(post("/cases/{id}/improved-version", brief.getId()),
-                        Map.of("whatChanged", "Improved.", "requestVersion", requestVersion))
+                        Map.of("note", "Improved."))
                         .with(user(OWNER).roles("SUBMITTER")))
                 .andExpect(status().isCreated());
     }
@@ -534,7 +536,7 @@ class ReviewRoundApiIntegrationTest {
         body.put("guidanceNote", "Please improve.");
         body.put("dueDate", today().plusDays(10).toString());
         body.put("requestedChanges", List.of("One change"));
-        body.put("caseVersion", caseVersion(brief));
+        body.put("version", caseVersion(brief));
         mockMvc.perform(json(post("/cases/{id}/refinement-requests", brief.getId()), body).with(coordinator()))
                 .andExpect(status().isCreated());
     }

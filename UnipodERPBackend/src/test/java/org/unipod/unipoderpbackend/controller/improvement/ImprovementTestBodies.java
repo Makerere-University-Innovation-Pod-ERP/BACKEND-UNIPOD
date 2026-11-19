@@ -19,14 +19,16 @@ final class ImprovementTestBodies {
         body.put("guidanceNote", guidance);
         body.put("dueDate", dueDate == null ? null : dueDate.toString());
         body.put("requestedChanges", changes);
-        body.put("caseVersion", caseVersion);
+        // Main's RefinementRequestAskRequest: the case version goes in "version".
+        body.put("version", caseVersion);
         return body;
     }
 
     static Map<String, Object> answerBody(String whatChanged, Long requestVersion) {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("whatChanged", whatChanged);
-        body.put("requestVersion", requestVersion);
+        // Main's ReplySubmissionRequest: the what-changed text goes in "note". Main has no request version,
+        // so requestVersion is accepted for the callers' signatures but not sent.
+        body.put("note", whatChanged);
         return body;
     }
 }

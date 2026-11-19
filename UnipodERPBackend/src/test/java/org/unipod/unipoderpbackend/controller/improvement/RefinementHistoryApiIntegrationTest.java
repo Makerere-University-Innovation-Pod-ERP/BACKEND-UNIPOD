@@ -307,7 +307,8 @@ class RefinementHistoryApiIntegrationTest {
         body.put("guidanceNote", guidance);
         body.put("dueDate", dueDate == null ? null : dueDate.toString());
         body.put("requestedChanges", changes);
-        body.put("caseVersion", caseVersion);
+        // Main's RefinementRequestAskRequest: the case version goes in "version".
+        body.put("version", caseVersion);
         return body;
     }
 

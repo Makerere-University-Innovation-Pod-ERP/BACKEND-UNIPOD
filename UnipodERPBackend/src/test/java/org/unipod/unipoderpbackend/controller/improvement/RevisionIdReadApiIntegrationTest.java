@@ -67,7 +67,8 @@ class RevisionIdReadApiIntegrationTest {
     void historyAndMyImprovementShowTheStoredIdOnlyWhereARevisionExists() throws Exception {
         Submission brief = briefInReview();
         ask(brief, "Round one.");
-        long firstRevision = answer(brief, "Answer one.").get("revisionId").asLong();
+        answer(brief, "Answer one.");
+        long firstRevision = latestRevisionIdFromHistory(brief);
         accept(brief, firstRevision).andExpect(status().isOk());
         ask(brief, "Round two.");
 
@@ -148,6 +149,13 @@ class RevisionIdReadApiIntegrationTest {
         return json(mockMvc.perform(json(post("/cases/{id}/improved-version", brief.getId()),
                         ImprovementTestBodies.answerBody(whatChanged, requestVersion)).with(owner()))
                 .andExpect(status().isCreated()));
+    }
+
+    /** Main's improved-version response has no revision id: read it from the staff refinement history. */
+    private long latestRevisionIdFromHistory(Submission brief) throws Exception {
+        JsonNode requests = json(mockMvc.perform(get("/cases/{id}/refinement-history", brief.getId())
+                .with(coordinator())).andExpect(status().isOk())).get("requests");
+        return requests.get(requests.size() - 1).get("revision").get("id").asLong();
     }
 
     private ResultActions accept(Submission brief, long revisionId) throws Exception {
