@@ -4138,6 +4138,62 @@ paths:
                 $ref: '#/components/schemas/ReadAllResult'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /notifications/push/config:
+    get:
+      tags: [Notifications]
+      operationId: getBrowserPushConfiguration
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, FINANCE_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
+      summary: Get the browser push configuration
+      responses:
+        '200':
+          description: Whether browser push is configured and the public VAPID key when enabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PushConfiguration'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /notifications/push/subscriptions:
+    put:
+      tags: [Notifications]
+      operationId: registerBrowserPushSubscription
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, FINANCE_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
+      summary: Register the signed-in user's browser push subscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PushSubscriptionRequest'
+      responses:
+        '204':
+          description: The subscription is registered
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: The browser subscription is already registered to another account
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          description: Browser push is not configured on the server
+    delete:
+      tags: [Notifications]
+      operationId: deleteBrowserPushSubscription
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, FINANCE_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
+      summary: Remove the signed-in user's browser push subscription
+      parameters:
+        - name: endpoint
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uri
+            maxLength: 2048
+      responses:
+        '204':
+          description: The subscription was removed if it belonged to the signed-in user
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /config:
     get:
       tags: [Configuration]
@@ -7145,6 +7201,29 @@ components:
           format: date-time
         read:
           type: boolean
+    PushConfiguration:
+      type: object
+      required: [enabled, publicKey]
+      properties:
+        enabled:
+          type: boolean
+        publicKey:
+          type: [string, 'null']
+          description: Public VAPID application server key, omitted from use when disabled.
+    PushSubscriptionRequest:
+      type: object
+      required: [endpoint, p256dh, auth]
+      properties:
+        endpoint:
+          type: string
+          format: uri
+          maxLength: 2048
+        p256dh:
+          type: string
+          maxLength: 128
+        auth:
+          type: string
+          maxLength: 128
     NotificationPage:
       type: object
       required: [items, page, size, totalElements, totalPages]
