@@ -2,14 +2,18 @@ package org.unipod.unipoderpbackend.service.notification;
 
 import java.io.IOException;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.Security;
-import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.util.Base64;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.apache.http.HttpResponse;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.jose4j.lang.JoseException;
@@ -30,6 +34,7 @@ import org.unipod.unipoderpbackend.model.notification.WebPushSubscription;
 import org.unipod.unipoderpbackend.repository.notification.WebPushSubscriptionRepository;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
+import nl.martijndwars.webpush.Encoding;
 import nl.martijndwars.webpush.Notification;
 import nl.martijndwars.webpush.PushService;
 
@@ -37,6 +42,8 @@ import nl.martijndwars.webpush.PushService;
 public class WebPushNotificationService {
     private static final Logger log = LoggerFactory.getLogger(WebPushNotificationService.class);
     private static final int TIME_TO_LIVE_SECONDS = 86_400;
+    private static final int MAX_ENCRYPTED_PAYLOAD_BYTES = 4096;
+    private static final long SEND_TIMEOUT_SECONDS = 10;
     private static final Set<String> PUSH_HOSTS = Set.of(
             "fcm.googleapis.com",
             "push.services.mozilla.com",
@@ -98,6 +105,7 @@ public class WebPushNotificationService {
     public void subscribe(String recipient, PushSubscriptionRequest request) {
         requireEnabled();
         validateEndpoint(request.endpoint());
+        validateSubscriptionKeys(request.p256dh(), request.auth());
         String normalizedRecipient = recipient.trim().toLowerCase(Locale.ROOT);
         WebPushSubscription subscription = subscriptions.findByEndpoint(request.endpoint())
                 .orElse(null);
@@ -133,20 +141,6 @@ public class WebPushNotificationService {
     public void sendAfterCommit(NotificationCreatedEvent event) {
         if (pushService == null) return;
 
-        String payload;
-        try {
-            payload = objectMapper.writeValueAsString(new PushPayload(
-                    event.type().name(),
-                    event.title(),
-                    truncate(event.body(), 1200),
-                    routeFor(event.entityType()),
-                    "notification-" + event.id()
-            ));
-        } catch (JacksonException exception) {
-            log.error("Could not encode push notification {}.", event.id(), exception);
-            return;
-        }
-
         for (WebPushSubscription subscription : subscriptions.findByRecipient(event.recipient())) {
             if (!isAllowedEndpoint(subscription.getEndpoint())) {
                 log.warn("Skipping notification {} because a stored push endpoint is not allowed.", event.id());
@@ -154,23 +148,36 @@ public class WebPushNotificationService {
             }
 
             try {
-                HttpResponse response = pushService.send(new Notification(
+                String payload = payloadFor(event, subscription);
+                Notification notification = new Notification(
                         subscription.getEndpoint(),
                         subscription.getP256dh(),
                         subscription.getAuth(),
                         payload.getBytes(StandardCharsets.UTF_8),
                         TIME_TO_LIVE_SECONDS
-                ));
+                );
+                HttpResponse response = awaitResponse(pushService.sendAsync(notification, Encoding.AES128GCM));
                 int status = response.getStatusLine().getStatusCode();
                 if (status == 404 || status == 410) {
                     subscriptions.deleteById(subscription.getId());
                 } else if (status < 200 || status >= 300) {
                     log.warn("Push provider rejected notification {} with HTTP {}.", event.id(), status);
                 }
+            } catch (TimeoutException exception) {
+                log.warn("Push delivery timed out for notification {} after {} seconds.",
+                        event.id(), SEND_TIMEOUT_SECONDS);
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
                 log.warn("Push delivery was interrupted for notification {}.", event.id());
                 return;
+            } catch (PayloadTooLargeException exception) {
+                log.warn("Skipping notification {} because its non-body fields exceed the encrypted payload limit.",
+                        event.id());
+            } catch (JacksonException exception) {
+                log.error("Could not encode push notification {}.", event.id(), exception);
+            } catch (IllegalArgumentException exception) {
+                log.warn("Skipping notification {} because a stored push subscription has invalid encryption keys.",
+                        event.id());
             } catch (GeneralSecurityException | IOException | JoseException | ExecutionException exception) {
                 log.warn("Push delivery failed for notification {}: {}.",
                         event.id(), exception.getClass().getSimpleName());
@@ -212,6 +219,95 @@ public class WebPushNotificationService {
         }
     }
 
+    private static void validateSubscriptionKeys(String p256dh, String auth) {
+        try {
+            byte[] publicKeyBytes = Base64.getUrlDecoder().decode(p256dh);
+            if (publicKeyBytes.length != 65 || publicKeyBytes[0] != 0x04) {
+                throw new IllegalArgumentException("Invalid P-256 public key encoding.");
+            }
+            nl.martijndwars.webpush.Utils.loadPublicKey(publicKeyBytes);
+
+            if (Base64.getUrlDecoder().decode(auth).length != 16) {
+                throw new IllegalArgumentException("Invalid authentication secret length.");
+            }
+        } catch (IllegalArgumentException | GeneralSecurityException exception) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Push subscription encryption keys are invalid.",
+                    exception);
+        }
+    }
+
+    String payloadFor(NotificationCreatedEvent event, WebPushSubscription subscription)
+            throws JacksonException, GeneralSecurityException, IOException, JoseException, PayloadTooLargeException {
+        String body = event.body() == null ? "" : event.body();
+        int bodyCodePoints = body.codePointCount(0, body.length());
+        String payload = serializePayload(event, body);
+        if (fitsEncryptedPayload(subscription, payload)) {
+            return payload;
+        }
+
+        int low = 0;
+        int high = bodyCodePoints;
+        while (low < high) {
+            int candidateLength = low + (high - low + 1) / 2;
+            String candidateBody = prefixByCodePoints(body, candidateLength);
+            String candidatePayload = serializePayload(event, candidateBody);
+            if (fitsEncryptedPayload(subscription, candidatePayload)) {
+                low = candidateLength;
+                payload = candidatePayload;
+            } else {
+                high = candidateLength - 1;
+            }
+        }
+        if (low == 0) {
+            payload = serializePayload(event, "");
+            if (!fitsEncryptedPayload(subscription, payload)) {
+                throw new PayloadTooLargeException();
+            }
+        }
+        return payload;
+    }
+
+    private String serializePayload(NotificationCreatedEvent event, String body) throws JacksonException {
+        return objectMapper.writeValueAsString(new PushPayload(
+                event.type().name(),
+                event.title(),
+                body,
+                routeFor(event.entityType()),
+                "notification-" + event.id()
+        ));
+    }
+
+    private boolean fitsEncryptedPayload(WebPushSubscription subscription, String payload)
+            throws GeneralSecurityException, IOException, JoseException {
+        Notification notification = new Notification(
+                subscription.getEndpoint(),
+                subscription.getP256dh(),
+                subscription.getAuth(),
+                payload.getBytes(StandardCharsets.UTF_8),
+                TIME_TO_LIVE_SECONDS
+        );
+        long encryptedLength = pushService.preparePost(notification, Encoding.AES128GCM)
+                .getEntity()
+                .getContentLength();
+        return encryptedLength <= MAX_ENCRYPTED_PAYLOAD_BYTES;
+    }
+
+    private static String prefixByCodePoints(String value, int codePointCount) {
+        return value.substring(0, value.offsetByCodePoints(0, codePointCount));
+    }
+
+    static HttpResponse awaitResponse(Future<HttpResponse> request)
+            throws InterruptedException, ExecutionException, TimeoutException {
+        try {
+            return request.get(SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (TimeoutException | InterruptedException exception) {
+            request.cancel(true);
+            throw exception;
+        }
+    }
+
     private static String routeFor(String entityType) {
         if (entityType == null) return "/overview";
         return switch (entityType.toLowerCase(Locale.ROOT)) {
@@ -222,9 +318,7 @@ public class WebPushNotificationService {
         };
     }
 
-    private static String truncate(String value, int maxLength) {
-        if (value == null) return "";
-        return value.length() <= maxLength ? value : value.substring(0, maxLength);
+    static final class PayloadTooLargeException extends Exception {
     }
 
     private record PushPayload(String type, String title, String body, String url, String tag) {
