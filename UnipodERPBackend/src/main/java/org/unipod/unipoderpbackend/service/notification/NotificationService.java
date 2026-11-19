@@ -3,6 +3,7 @@ package org.unipod.unipoderpbackend.service.notification;
 import java.time.Clock;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -11,6 +12,7 @@ import org.unipod.unipoderpbackend.dto.PageResponse;
 import org.unipod.unipoderpbackend.dto.notification.NotificationResponse;
 import org.unipod.unipoderpbackend.exception.notification.NotificationNotFoundException;
 import org.unipod.unipoderpbackend.model.notification.Notification;
+import org.unipod.unipoderpbackend.model.notification.NotificationCreatedEvent;
 import org.unipod.unipoderpbackend.model.notification.NotificationEvent;
 import org.unipod.unipoderpbackend.repository.notification.NotificationRepository;
 
@@ -18,10 +20,16 @@ import org.unipod.unipoderpbackend.repository.notification.NotificationRepositor
 public class NotificationService {
     private final NotificationRepository notifications;
     private final Clock clock;
+    private final ApplicationEventPublisher events;
 
-    public NotificationService(NotificationRepository notifications, Clock clock) {
+    public NotificationService(
+            NotificationRepository notifications,
+            Clock clock,
+            ApplicationEventPublisher events
+    ) {
         this.notifications = notifications;
         this.clock = clock;
+        this.events = events;
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
@@ -39,6 +47,15 @@ public class NotificationService {
                 ))
                 .toList();
         notifications.saveAll(rows);
+        rows.forEach(row -> events.publishEvent(new NotificationCreatedEvent(
+                row.getId(),
+                row.getRecipient(),
+                row.getType(),
+                row.getTitle(),
+                row.getBody(),
+                row.getEntityType(),
+                row.getEntityId()
+        )));
     }
 
     @Transactional(readOnly = true)
