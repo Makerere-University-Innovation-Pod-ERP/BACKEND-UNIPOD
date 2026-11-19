@@ -27,7 +27,7 @@ import org.unipod.unipoderpbackend.service.submission.SubmissionVisibility;
  */
 @Service
 public class RefinementHistoryService {
-    static final String HISTORY_ROLES = RefinementRequestService.ASK_ROLES;
+    static final String HISTORY_ROLES = ImprovementRoles.STAFF_ROLES;
 
     private final SubmissionRepository submissions;
     private final RefinementRequestRepository requests;
@@ -49,9 +49,9 @@ public class RefinementHistoryService {
     @Transactional(readOnly = true)
     @PreAuthorize(HISTORY_ROLES)
     public RefinementHistoryResponse history(UUID briefId, Authentication authentication) {
-        boolean allowed = RefinementRequestService.has(authentication, "ROLE_FACT_FINDING_OFFICER")
-                || RefinementRequestService.has(authentication, "ROLE_INNOVATION_COORDINATOR")
-                || RefinementRequestService.has(authentication, "ROLE_ADMINISTRATOR");
+        boolean allowed = ImprovementRoles.has(authentication, "ROLE_FACT_FINDING_OFFICER")
+                || ImprovementRoles.has(authentication, "ROLE_INNOVATION_COORDINATOR")
+                || ImprovementRoles.has(authentication, "ROLE_ADMINISTRATOR");
         if (!allowed) {
             throw new AccessDeniedException("Only fact-finding officers, coordinators and administrators can read "
                     + "the refinement history.");

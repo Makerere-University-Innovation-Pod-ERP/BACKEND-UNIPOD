@@ -383,7 +383,7 @@ class RevisionAcceptanceApiIntegrationTest {
 
     private void ask(Submission brief, String guidance) throws Exception {
         mockMvc.perform(json(post("/cases/{id}/refinement-requests", brief.getId()),
-                        RefinementRequestApiIntegrationTest.body(guidance, LocalDate.now(HUB_ZONE).plusDays(10),
+                        ImprovementTestBodies.body(guidance, LocalDate.now(HUB_ZONE).plusDays(10),
                                 List.of("Change one"), caseVersion(brief)))
                         .with(coordinator()))
                 .andExpect(status().isCreated());
@@ -391,7 +391,7 @@ class RevisionAcceptanceApiIntegrationTest {
 
     private void answer(Submission brief, String whatChanged, long requestVersion) throws Exception {
         mockMvc.perform(json(post("/cases/{id}/improved-version", brief.getId()),
-                        ImprovementResponseApiIntegrationTest.answerBody(whatChanged, requestVersion))
+                        ImprovementTestBodies.answerBody(whatChanged, requestVersion))
                         .with(user(OWNER).roles("SUBMITTER")))
                 .andExpect(status().isCreated());
     }

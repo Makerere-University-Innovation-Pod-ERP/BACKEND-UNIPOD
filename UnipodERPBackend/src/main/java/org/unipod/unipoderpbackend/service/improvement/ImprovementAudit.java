@@ -7,7 +7,7 @@ import org.unipod.unipoderpbackend.model.improvement.RefinementRequest;
 import org.unipod.unipoderpbackend.service.audit.AuditTrail;
 
 /**
- * Audit entries for improvement writes, recorded through the shared {@link AuditTrail} inside the caller's
+ * Audit entry for accepting an improved version, recorded through the shared {@link AuditTrail} inside the caller's
  * transaction (AuditService.log is MANDATORY propagation).
  *
  * <p>Entries use entity type {@value #ENTITY_TYPE} with the brief id as entity id. The brief history
@@ -19,31 +19,12 @@ import org.unipod.unipoderpbackend.service.audit.AuditTrail;
 @Component
 public class ImprovementAudit {
     public static final String ENTITY_TYPE = "improvement";
-    public static final String IMPROVEMENT_REQUESTED = "submission.improvement_requested";
-    public static final String IMPROVED_VERSION_SUBMITTED = "submission.improved_version_submitted";
     public static final String IMPROVED_VERSION_ACCEPTED = "submission.improved_version_accepted";
 
     private final AuditTrail trail;
 
     public ImprovementAudit(AuditTrail trail) {
         this.trail = trail;
-    }
-
-    void improvementRequested(String actor, RefinementRequest request, int changeCount, boolean adopted) {
-        Map<String, Object> details = new LinkedHashMap<>();
-        details.put("cycle", request.getCycle());
-        details.put("source", request.getSource().name());
-        details.put("changeCount", changeCount);
-        details.put("dueDate", request.getDueDate().toString());
-        details.put("adopted", adopted);
-        trail.record(actor, IMPROVEMENT_REQUESTED, ENTITY_TYPE, request.getBriefId(), null, details);
-    }
-
-    void improvedVersionSubmitted(String actor, RefinementRequest request, int versionNumber) {
-        Map<String, Object> details = new LinkedHashMap<>();
-        details.put("cycle", request.getCycle());
-        details.put("versionNumber", versionNumber);
-        trail.record(actor, IMPROVED_VERSION_SUBMITTED, ENTITY_TYPE, request.getBriefId(), null, details);
     }
 
     void improvedVersionAccepted(String actor, RefinementRequest request, int versionNumber) {

@@ -72,8 +72,8 @@ public class RevisionAcceptanceService {
             AcceptRevisionRequest request,
             Authentication authentication
     ) {
-        boolean operator = RefinementRequestService.has(authentication, "ROLE_INNOVATION_COORDINATOR")
-                || RefinementRequestService.has(authentication, "ROLE_ADMINISTRATOR");
+        boolean operator = ImprovementRoles.has(authentication, "ROLE_INNOVATION_COORDINATOR")
+                || ImprovementRoles.has(authentication, "ROLE_ADMINISTRATOR");
         if (!operator) {
             throw new AccessDeniedException("Only a coordinator or administrator can accept an improved version.");
         }
@@ -96,7 +96,7 @@ public class RevisionAcceptanceService {
         RefinementRequest answered = requests.findById(revision.getRequestId()).orElseThrow();
 
         // Waluube's transition: roles, version check, fact-finding guard, history row and audit entry.
-        caseFiles.transition(briefId, new CaseTransitionRequest(CaseStage.IN_REVIEW, ACCEPT_NOTE,
+        caseFiles.transition(briefId, new CaseTransitionRequest(CaseStage.IN_REVIEW, ACCEPT_NOTE, null, null,
                 request.caseVersion()), authentication);
 
         // Structural values only (see ImprovementAudit).
