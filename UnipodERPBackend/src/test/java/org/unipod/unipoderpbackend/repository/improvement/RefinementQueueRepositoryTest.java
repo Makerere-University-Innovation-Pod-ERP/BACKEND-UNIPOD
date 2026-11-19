@@ -306,12 +306,143 @@ class RefinementQueueRepositoryTest {
         assertEquals(3, small.getTotalPages());
     }
 
+    // ---- counters (countQueue) ----------------------------------------------------------------
+
+    @Test
+    void anEmptyQueueCountsZerosNotNulls() {
+        brief(2001, SubmissionStage.IN_REVIEW);
+        request(2001, 1, RefinementStatus.OPEN, TODAY.minusDays(1));
+
+        assertEquals(new RefinementQueueCounters(0, 0, 0, 0), counters());
+    }
+
+    @Test
+    void oneBriefInEachStateIsCountedInItsState() {
+        brief(2101, SubmissionStage.IMPROVEMENT_REQUESTED);
+        request(2101, 1, RefinementStatus.OPEN, TODAY.plusDays(2));
+        brief(2102, SubmissionStage.IMPROVEMENT_REQUESTED);
+        request(2102, 1, RefinementStatus.OPEN, TODAY.minusDays(1));
+        brief(2103, SubmissionStage.RESUBMITTED);
+        request(2103, 1, RefinementStatus.RESPONDED, TODAY.minusDays(4));
+        brief(2104, SubmissionStage.IMPROVEMENT_REQUESTED);
+        brief(2105, SubmissionStage.IMPROVEMENT_REQUESTED);
+        request(2105, 1, RefinementStatus.RESPONDED, TODAY.plusDays(1));
+
+        assertEquals(new RefinementQueueCounters(2, 1, 1, 2), counters());
+    }
+
+    @Test
+    void dueTodayIsNotOverdueAndDueYesterdayIs() {
+        brief(2201, SubmissionStage.IMPROVEMENT_REQUESTED);
+        request(2201, 1, RefinementStatus.OPEN, TODAY);
+        assertEquals(new RefinementQueueCounters(1, 0, 0, 0), counters());
+
+        brief(2202, SubmissionStage.IMPROVEMENT_REQUESTED);
+        request(2202, 1, RefinementStatus.OPEN, TODAY.minusDays(1));
+        assertEquals(new RefinementQueueCounters(2, 1, 0, 0), counters());
+    }
+
+    @Test
+    void aBriefWithTwoCyclesIsCountedOnceByItsLatestCycle() {
+        // Cycle 1 open and overdue, cycle 2 answered: only cycle 2 counts (needs a request, not overdue).
+        brief(2301, SubmissionStage.IMPROVEMENT_REQUESTED);
+        request(2301, 1, RefinementStatus.OPEN, TODAY.minusDays(5));
+        request(2301, 2, RefinementStatus.RESPONDED, TODAY.plusDays(5));
+        // Cycle 1 answered, cycle 2 open and overdue: waiting and overdue once.
+        brief(2302, SubmissionStage.IMPROVEMENT_REQUESTED);
+        request(2302, 1, RefinementStatus.RESPONDED, TODAY.plusDays(5));
+        request(2302, 2, RefinementStatus.OPEN, TODAY.minusDays(2));
+
+        assertEquals(new RefinementQueueCounters(1, 1, 0, 1), counters());
+    }
+
+    @Test
+    void briefsInOtherStagesAreNotCounted() {
+        long n = 2400;
+        for (SubmissionStage stage : List.of(SubmissionStage.IN_REVIEW, SubmissionStage.READY_FOR_REVIEW,
+                SubmissionStage.IN_FACT_FINDING, SubmissionStage.CLOSED, SubmissionStage.COMPLETED,
+                SubmissionStage.DRAFT, SubmissionStage.SUBMITTED)) {
+            brief(n, stage);
+            request(n, 1, RefinementStatus.OPEN, TODAY.minusDays(3));
+            n++;
+            brief(n, stage);
+            request(n, 1, RefinementStatus.RESPONDED, TODAY.plusDays(3));
+            n++;
+        }
+        // Back in review after an accepted improvement, with old RESPONDED requests.
+        brief(n, SubmissionStage.IN_REVIEW);
+        request(n, 1, RefinementStatus.RESPONDED, TODAY.minusDays(20));
+        request(n, 2, RefinementStatus.RESPONDED, TODAY.minusDays(10));
+
+        assertEquals(new RefinementQueueCounters(0, 0, 0, 0), counters());
+    }
+
+    @Test
+    void theCountersEqualTheRowsOfEachStateAcrossAllPages() {
+        long n = 2500;
+        for (int i = 0; i < 7; i++, n++) {
+            brief(n, SubmissionStage.IMPROVEMENT_REQUESTED);
+            request(n, 1, RefinementStatus.OPEN, TODAY.plusDays(i - 3));
+        }
+        for (int i = 0; i < 4; i++, n++) {
+            brief(n, SubmissionStage.RESUBMITTED);
+            request(n, 1, RefinementStatus.RESPONDED, TODAY.plusDays(i));
+        }
+        for (int i = 0; i < 3; i++, n++) {
+            brief(n, SubmissionStage.IMPROVEMENT_REQUESTED);
+        }
+        for (int i = 0; i < 2; i++, n++) {
+            brief(n, SubmissionStage.IMPROVEMENT_REQUESTED);
+            request(n, 1, RefinementStatus.RESPONDED, TODAY.minusDays(i));
+            request(n, 2, RefinementStatus.RESPONDED, TODAY.plusDays(i));
+        }
+        brief(n, SubmissionStage.RESUBMITTED);
+        request(n, 1, RefinementStatus.OPEN, TODAY.minusDays(1));
+
+        entityManager.flush();
+        entityManager.clear();
+        long waiting = 0;
+        long overdue = 0;
+        long ready = 0;
+        long needs = 0;
+        long rows = 0;
+        for (int page = 0; ; page++) {
+            Page<RefinementQueueEntry> current = repository.findQueue(TODAY, PageRequest.of(page, 4));
+            for (RefinementQueueEntry entry : current.getContent()) {
+                rows++;
+                if (entry.stage() == SubmissionStage.RESUBMITTED) {
+                    ready++;
+                } else if (entry.requestStatus() == RefinementStatus.OPEN) {
+                    waiting++;
+                    if (entry.dueDate().isBefore(TODAY)) {
+                        overdue++;
+                    }
+                } else {
+                    needs++;
+                }
+            }
+            if (!current.hasNext()) {
+                break;
+            }
+        }
+
+        assertEquals(16, rows);
+        assertEquals(new RefinementQueueCounters(waiting, overdue, ready, needs), counters());
+        assertEquals(new RefinementQueueCounters(7, 3, 4, 5), counters());
+    }
+
     // ---- helpers -------------------------------------------------------------------------------
 
     private Page<RefinementQueueEntry> queue(int size) {
         entityManager.flush();
         entityManager.clear();
         return repository.findQueue(TODAY, PageRequest.of(0, size));
+    }
+
+    private RefinementQueueCounters counters() {
+        entityManager.flush();
+        entityManager.clear();
+        return repository.countQueue(TODAY);
     }
 
     private static RefinementQueueEntry single(Page<RefinementQueueEntry> page) {

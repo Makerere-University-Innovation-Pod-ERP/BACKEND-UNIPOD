@@ -16,13 +16,14 @@ import org.unipod.unipoderpbackend.dto.improvement.RefinementQueueRow;
 import org.unipod.unipoderpbackend.dto.improvement.RefinementQueueState;
 import org.unipod.unipoderpbackend.model.improvement.RefinementStatus;
 import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
+import org.unipod.unipoderpbackend.repository.improvement.RefinementQueueCounters;
 import org.unipod.unipoderpbackend.repository.improvement.RefinementQueueEntry;
 import org.unipod.unipoderpbackend.repository.improvement.RefinementRequestRepository;
 
 /**
- * The staff queue of briefs being improved. Read-only and not audited: one page query plus, when needed, its
- * count. "Today" is the hub's date (Africa/Kampala) from the shared clock, and the same date decides both the
- * query's overdue-first order and each row's overdue flag.
+ * The staff queue of briefs being improved. Read-only and not audited: one page query, its count when needed,
+ * and one counters query. "Today" is the hub's date (Africa/Kampala) from the shared clock; the same date decides
+ * the query's overdue-first order, each row's overdue flag and the overdue counter.
  */
 @Service
 public class RefinementQueueService {
@@ -49,7 +50,9 @@ public class RefinementQueueService {
         }
         LocalDate today = LocalDate.now(clock.withZone(HUB_ZONE));
         Page<RefinementQueueRow> rows = requests.findQueue(today, pageable).map(entry -> rowOf(entry, today));
-        return new RefinementQueueResponse(PageResponse.from(rows));
+        RefinementQueueCounters counters = requests.countQueue(today);
+        return new RefinementQueueResponse(PageResponse.from(rows), counters.waitingForSubmitter(),
+                counters.overdue(), counters.readyToAccept(), counters.needsRequest());
     }
 
     static RefinementQueueRow rowOf(RefinementQueueEntry entry, LocalDate today) {

@@ -60,4 +60,26 @@ public interface RefinementRequestRepository extends JpaRepository<RefinementReq
             """,
             countQuery = "select count(s) " + QUEUE_FROM_WHERE)
     Page<RefinementQueueEntry> findQueue(@Param("today") LocalDate today, Pageable pageable);
+
+    /**
+     * The queue's counters over all its rows, with the same from/where as {@link #findQueue}. Uses
+     * {@code count(case ... then 1 end)}, so an empty queue gives zeros rather than nulls.
+     */
+    @Query("""
+            select new org.unipod.unipoderpbackend.repository.improvement.RefinementQueueCounters(
+                count(case when s.stage = org.unipod.unipoderpbackend.model.submission.SubmissionStage.IMPROVEMENT_REQUESTED
+                                and r.status = org.unipod.unipoderpbackend.model.improvement.RefinementStatus.OPEN
+                           then 1 end),
+                count(case when s.stage = org.unipod.unipoderpbackend.model.submission.SubmissionStage.IMPROVEMENT_REQUESTED
+                                and r.status = org.unipod.unipoderpbackend.model.improvement.RefinementStatus.OPEN
+                                and r.dueDate < :today
+                           then 1 end),
+                count(case when s.stage = org.unipod.unipoderpbackend.model.submission.SubmissionStage.RESUBMITTED
+                           then 1 end),
+                count(case when s.stage = org.unipod.unipoderpbackend.model.submission.SubmissionStage.IMPROVEMENT_REQUESTED
+                                and (r.id is null
+                                     or r.status <> org.unipod.unipoderpbackend.model.improvement.RefinementStatus.OPEN)
+                           then 1 end))
+            """ + QUEUE_FROM_WHERE)
+    RefinementQueueCounters countQueue(@Param("today") LocalDate today);
 }

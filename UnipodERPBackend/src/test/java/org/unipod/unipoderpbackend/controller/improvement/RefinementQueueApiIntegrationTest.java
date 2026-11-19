@@ -98,6 +98,9 @@ class RefinementQueueApiIntegrationTest {
     private EntityManager entityManager;
 
     @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
+    @Autowired
     private ObjectMapper objectMapper;
 
     // ---- 1-5: states through the real workflow ---------------------------------------------
@@ -381,7 +384,8 @@ class RefinementQueueApiIntegrationTest {
 
         JsonNode response = json(queue(coordinator()).andExpect(status().isOk()).andReturn());
 
-        assertEquals(Set.of("rows"), new HashSet<>(response.propertyNames()));
+        assertEquals(Set.of("rows", "waitingForSubmitter", "overdue", "readyToAccept", "needsRequest"),
+                new HashSet<>(response.propertyNames()));
         assertEquals(Set.of("items", "page", "size", "totalElements", "totalPages"),
                 new HashSet<>(response.get("rows").propertyNames()));
         JsonNode items = response.get("rows").get("items");
@@ -434,6 +438,121 @@ class RefinementQueueApiIntegrationTest {
         assertFalse(body.contains("CHANGES_NEEDED"), body);
         assertFalse(body.contains("queue-reviewer@example.test"), body);
         assertFalse(body.contains("officer@example.test"), body);
+    }
+
+    // ---- counters ----------------------------------------------------------------------------
+
+    @Test
+    void theResponseCarriesTheFourCountersForAMixedSet() throws Exception {
+        ask(inReview(), "Waiting.", today().plusDays(6));
+        Submission late = submissions.saveAndFlush(
+                ImprovementTestBriefs.ownedBy(OWNER, SubmissionStage.IMPROVEMENT_REQUESTED, "CASE-QC-"));
+        savedRequest(late, 1, RefinementStatus.OPEN, today().minusDays(1));
+        Submission answered = inReview();
+        ask(answered, "Answer me.", today().plusDays(2));
+        answer(answered, "Answered.");
+        submissions.saveAndFlush(
+                ImprovementTestBriefs.ownedBy(OWNER, SubmissionStage.IMPROVEMENT_REQUESTED, "CASE-QC-"));
+
+        queue(coordinator())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rows.totalElements").value(4))
+                .andExpect(jsonPath("$.waitingForSubmitter").value(2))
+                .andExpect(jsonPath("$.overdue").value(1))
+                .andExpect(jsonPath("$.readyToAccept").value(1))
+                .andExpect(jsonPath("$.needsRequest").value(1));
+    }
+
+    @Test
+    void theCountersAreTheSameOnEveryPageAndCoverAllRows() throws Exception {
+        for (int i = 0; i < 20; i++) {
+            ask(inReview(), "Brief " + i, today().plusDays(1 + i));
+        }
+        for (int i = 0; i < 3; i++) {
+            Submission brief = inReview();
+            ask(brief, "Answered " + i, today().plusDays(30 + i));
+            answer(brief, "Done " + i);
+        }
+        for (int i = 0; i < 2; i++) {
+            submissions.saveAndFlush(
+                    ImprovementTestBriefs.ownedBy(OWNER, SubmissionStage.IMPROVEMENT_REQUESTED, "CASE-QP-"));
+        }
+        for (int page = 0; page < 3; page++) {
+            queue(coordinator(), Map.of("page", String.valueOf(page), "size", "10"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.rows.items", hasSize(page < 2 ? 10 : 5)))
+                    .andExpect(jsonPath("$.rows.totalElements").value(25))
+                    .andExpect(jsonPath("$.waitingForSubmitter").value(20))
+                    .andExpect(jsonPath("$.overdue").value(0))
+                    .andExpect(jsonPath("$.readyToAccept").value(3))
+                    .andExpect(jsonPath("$.needsRequest").value(2));
+        }
+    }
+
+    @Test
+    void anEmptyQueueHasAllCountersZero() throws Exception {
+        queue(coordinator())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rows.totalElements").value(0))
+                .andExpect(jsonPath("$.waitingForSubmitter").value(0))
+                .andExpect(jsonPath("$.overdue").value(0))
+                .andExpect(jsonPath("$.readyToAccept").value(0))
+                .andExpect(jsonPath("$.needsRequest").value(0));
+    }
+
+    @Test
+    void answeringAndAcceptingMoveTheCounters() throws Exception {
+        Submission brief = inReview();
+        ask(brief, "Add a costed budget.", today().plusDays(5));
+        queue(coordinator())
+                .andExpect(jsonPath("$.waitingForSubmitter").value(1))
+                .andExpect(jsonPath("$.readyToAccept").value(0));
+
+        answer(brief, "Added a budget table.");
+        queue(coordinator())
+                .andExpect(jsonPath("$.waitingForSubmitter").value(0))
+                .andExpect(jsonPath("$.readyToAccept").value(1));
+
+        accept(brief);
+        queue(coordinator())
+                .andExpect(jsonPath("$.waitingForSubmitter").value(0))
+                .andExpect(jsonPath("$.readyToAccept").value(0))
+                .andExpect(jsonPath("$.needsRequest").value(0));
+    }
+
+    @Test
+    void readingTheQueueWritesNothing() throws Exception {
+        ask(inReview(), "Waiting.", today().plusDays(3));
+        Submission answered = inReview();
+        ask(answered, "Answer me.", today().plusDays(4));
+        answer(answered, "Answered.");
+        submissions.saveAndFlush(
+                ImprovementTestBriefs.ownedBy(OWNER, SubmissionStage.IMPROVEMENT_REQUESTED, "CASE-QW-"));
+        entityManager.flush();
+        Map<String, Object> before = tableCounts();
+
+        for (RequestPostProcessor reader : List.of(coordinator(),
+                user("officer@example.test").roles("FACT_FINDING_OFFICER"),
+                user("admin@example.test").roles("ADMINISTRATOR"))) {
+            queue(reader).andExpect(status().isOk());
+        }
+        entityManager.flush();
+
+        assertEquals(before, tableCounts());
+    }
+
+    /** Row counts of every table the queue could touch, plus the latest update times of the read tables. */
+    private Map<String, Object> tableCounts() {
+        return jdbcTemplate.queryForMap("""
+                SELECT (SELECT count(*) FROM refinement_requests) AS requests,
+                       (SELECT count(*) FROM refinement_requested_changes) AS changes,
+                       (SELECT count(*) FROM case_revisions) AS revisions,
+                       (SELECT count(*) FROM submissions) AS submissions,
+                       (SELECT count(*) FROM audit_log) AS audit,
+                       (SELECT count(*) FROM notification_outbox) AS outbox,
+                       (SELECT max(updated_at) FROM submissions) AS last_submission_update,
+                       (SELECT max(updated_at) FROM refinement_requests) AS last_request_update
+                """);
     }
 
     // ---- helpers -----------------------------------------------------------------------------
