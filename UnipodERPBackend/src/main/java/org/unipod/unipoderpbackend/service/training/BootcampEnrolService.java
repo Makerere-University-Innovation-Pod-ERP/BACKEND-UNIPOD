@@ -6,6 +6,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.unipod.unipoderpbackend.dto.training.BootcampResponse;
 import org.unipod.unipoderpbackend.dto.training.EnrollBootcampRequest;
 import org.unipod.unipoderpbackend.dto.training.RegisterParticipantRequest;
+import org.unipod.unipoderpbackend.exception.operations.InvalidOperationsRequestException;
 import org.unipod.unipoderpbackend.exception.training.TrainingNotFoundException;
 import org.unipod.unipoderpbackend.model.authorization.Actor;
 import org.unipod.unipoderpbackend.model.operations.DepartmentCode;
@@ -54,6 +55,11 @@ public class BootcampEnrolService {
 
     private static String registrationNumber(String studentNumber) {
         if (studentNumber != null && !studentNumber.isBlank()) {
+            // The prefix marks numbers we generated, so nobody can be given one as their own.
+            if (studentNumber.strip().regionMatches(true, 0, BootcampView.NO_STUDENT_NUMBER_PREFIX, 0,
+                    BootcampView.NO_STUDENT_NUMBER_PREFIX.length())) {
+                throw new InvalidOperationsRequestException("A student number cannot start with EXT-.");
+            }
             return studentNumber.strip();
         }
         return BootcampView.NO_STUDENT_NUMBER_PREFIX + UUID.randomUUID().toString().substring(0, 8);

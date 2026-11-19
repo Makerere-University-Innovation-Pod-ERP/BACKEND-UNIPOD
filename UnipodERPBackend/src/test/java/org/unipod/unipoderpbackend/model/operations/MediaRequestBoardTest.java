@@ -78,7 +78,7 @@ class MediaRequestBoardTest {
         assertEquals("Katia", request.getAssignee());
         assertEquals(T1, request.getScheduledAt());
         assertEquals("Highlights reel", request.getDescription());
-        assertNotNull(request.getUpdatedAt());
+        assertEquals(T1, request.getUpdatedAt());
     }
 
     @ParameterizedTest

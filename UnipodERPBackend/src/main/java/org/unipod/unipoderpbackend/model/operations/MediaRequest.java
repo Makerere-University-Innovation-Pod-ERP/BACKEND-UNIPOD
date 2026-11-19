@@ -88,11 +88,16 @@ public class MediaRequest {
         }
     }
 
-    /** Sets the four board fields as given; a delivered, completed or cancelled request is closed to edits. */
-    public void assign(UUID studioId, String assignee, Instant scheduledAt, String description, Instant now) {
+    /** Refuses a request that is finished or cancelled; callers check it before validating a change. */
+    public void requireEditable() {
         if (MediaBoardStatus.shown(status).filter(shown -> shown != MediaBoardStatus.DELIVERED).isEmpty()) {
             throw new MediaConflictException("A request that is finished or cancelled cannot be changed.");
         }
+    }
+
+    /** Sets the four board fields as given; a delivered, completed or cancelled request is closed to edits. */
+    public void assign(UUID studioId, String assignee, Instant scheduledAt, String description, Instant now) {
+        requireEditable();
         this.studioId = studioId;
         this.assignee = assignee;
         this.scheduledAt = scheduledAt;

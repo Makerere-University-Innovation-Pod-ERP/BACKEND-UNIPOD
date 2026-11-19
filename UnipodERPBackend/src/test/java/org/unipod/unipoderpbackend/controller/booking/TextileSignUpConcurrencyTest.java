@@ -1,6 +1,7 @@
 package org.unipod.unipoderpbackend.controller.booking;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
@@ -77,7 +78,7 @@ class TextileSignUpConcurrencyTest {
                     return mockMvc.perform(request).andReturn().getResponse().getStatus();
                 }));
             }
-            ready.await(10, TimeUnit.SECONDS);
+            assertTrue(ready.await(10, TimeUnit.SECONDS), "every worker must reach the start line");
             go.countDown();
             List<Integer> statuses = new ArrayList<>();
             for (Future<Integer> result : results) {
@@ -89,6 +90,7 @@ class TextileSignUpConcurrencyTest {
                     "SELECT count(*) FROM booking_attendees WHERE booking_id = ?", Integer.class, booking));
         } finally {
             pool.shutdownNow();
+            pool.awaitTermination(30, TimeUnit.SECONDS);
         }
     }
 }

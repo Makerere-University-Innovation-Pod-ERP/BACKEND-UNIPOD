@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.unipod.unipoderpbackend.controller.operations.OperationsRoles;
 import org.unipod.unipoderpbackend.dto.booking.LabCalendarResponse;
 import org.unipod.unipoderpbackend.service.booking.LabBookingQueryService;
 
@@ -16,10 +17,7 @@ import org.unipod.unipoderpbackend.service.booking.LabBookingQueryService;
 @RequestMapping("/telecoms/lab-bookings")
 @Validated
 public class LabBookingController {
-    // Every role except SUBMITTER may read operations data (D-011); OBSERVER is read-only.
-    static final String READ_ROLES = "hasAnyRole('ADMINISTRATOR', 'DEPARTMENT_COORDINATOR', "
-            + "'INNOVATION_COORDINATOR', 'RECEPTIONIST', 'FACT_FINDING_OFFICER', 'REVIEWER', "
-            + "'SECTOR_OFFICER', 'IP_LIAISON', 'FINANCE_OFFICER', 'OBSERVER')";
+    static final String READ_ROLES = OperationsRoles.READ;
 
     private final LabBookingQueryService labBookings;
 

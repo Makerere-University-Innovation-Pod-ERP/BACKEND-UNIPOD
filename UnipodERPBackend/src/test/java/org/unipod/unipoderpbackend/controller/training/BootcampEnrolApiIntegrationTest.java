@@ -92,6 +92,17 @@ class BootcampEnrolApiIntegrationTest {
     }
 
     @Test
+    void aStudentNumberCannotLookLikeAGeneratedPlaceholder() throws Exception {
+        TrainingSession session = open(25, 0);
+
+        mockMvc.perform(enrol(session,
+                "{\"name\": \"Diana\", \"email\": \"diana@tech.ug\", \"studentNumber\": \"ext-12345678\"}", admin()))
+                .andExpect(status().isUnprocessableContent());
+        assertEquals(0, jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM training_participants WHERE session_id = ?", Integer.class, session.getId()));
+    }
+
+    @Test
     void someoneWithoutAStudentNumberGetsAPlaceholderThatTheScreenNeverSees() throws Exception {
         TrainingSession session = open(25, 0);
 

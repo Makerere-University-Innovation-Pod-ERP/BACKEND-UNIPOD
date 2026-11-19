@@ -25,6 +25,7 @@ import org.unipod.unipoderpbackend.model.booking.DepartmentBookingDetail;
 import org.unipod.unipoderpbackend.model.operations.DepartmentCode;
 import org.unipod.unipoderpbackend.repository.booking.DepartmentBookingDetailRepository;
 import org.unipod.unipoderpbackend.repository.operations.DepartmentLookup;
+import org.unipod.unipoderpbackend.repository.operations.StaffNameQuery;
 import org.unipod.unipoderpbackend.service.audit.AuditService;
 import org.unipod.unipoderpbackend.service.operations.DepartmentAccess;
 
@@ -41,6 +42,7 @@ public class TextileBookingService {
     private final DepartmentTimetable timetable;
     private final DepartmentAccess access;
     private final DepartmentLookup departments;
+    private final StaffNameQuery staffNames;
     private final AuditService audit;
     private final Clock clock;
 
@@ -51,6 +53,7 @@ public class TextileBookingService {
             DepartmentTimetable timetable,
             DepartmentAccess access,
             DepartmentLookup departments,
+            StaffNameQuery staffNames,
             AuditService audit,
             Clock clock) {
         this.bookings = bookings;
@@ -59,6 +62,7 @@ public class TextileBookingService {
         this.timetable = timetable;
         this.access = access;
         this.departments = departments;
+        this.staffNames = staffNames;
         this.audit = audit;
         this.clock = clock;
     }
@@ -90,7 +94,8 @@ public class TextileBookingService {
                 actor.email());
 
         details.saveAndFlush(new DepartmentBookingDetail(
-                created.id(), DepartmentCode.TEXTILE, request.kind().toBookingKind(), actor.email(), null,
+                created.id(), DepartmentCode.TEXTILE, request.kind().toBookingKind(),
+                staffNames.displayName(actor.email()), null,
                 request.machineId(), request.capacity(), clock.instant()));
         audit.log(new AuditEvent(actor, "textile_booking.created", "booking", created.id(), null,
                 Map.of("facilityId", facility.toString(),

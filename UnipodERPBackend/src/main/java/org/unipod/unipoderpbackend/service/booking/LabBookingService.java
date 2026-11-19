@@ -19,6 +19,7 @@ import org.unipod.unipoderpbackend.model.operations.DepartmentCode;
 import org.unipod.unipoderpbackend.model.operations.PaymentStatus;
 import org.unipod.unipoderpbackend.repository.booking.DepartmentBookingDetailRepository;
 import org.unipod.unipoderpbackend.repository.operations.DepartmentLookup;
+import org.unipod.unipoderpbackend.repository.operations.StaffNameQuery;
 import org.unipod.unipoderpbackend.service.audit.AuditService;
 import org.unipod.unipoderpbackend.service.operations.DepartmentAccess;
 
@@ -34,6 +35,7 @@ public class LabBookingService {
     private final DepartmentBookingDetailRepository details;
     private final DepartmentAccess access;
     private final DepartmentLookup departments;
+    private final StaffNameQuery staffNames;
     private final AuditService audit;
     private final Clock clock;
 
@@ -42,12 +44,14 @@ public class LabBookingService {
             DepartmentBookingDetailRepository details,
             DepartmentAccess access,
             DepartmentLookup departments,
+            StaffNameQuery staffNames,
             AuditService audit,
             Clock clock) {
         this.bookings = bookings;
         this.details = details;
         this.access = access;
         this.departments = departments;
+        this.staffNames = staffNames;
         this.audit = audit;
         this.clock = clock;
     }
@@ -64,7 +68,7 @@ public class LabBookingService {
                 null, null, null, null, null), actor.email());
 
         String bookedBy = request.bookedBy() == null || request.bookedBy().isBlank()
-                ? actor.email() : request.bookedBy().strip();
+                ? staffNames.displayName(actor.email()) : request.bookedBy().strip();
         DepartmentBookingDetail detail = details.saveAndFlush(new DepartmentBookingDetail(
                 created.id(), DepartmentCode.TELECOMS, BookingKind.LAB, bookedBy, request.customerType(),
                 null, null, clock.instant()));

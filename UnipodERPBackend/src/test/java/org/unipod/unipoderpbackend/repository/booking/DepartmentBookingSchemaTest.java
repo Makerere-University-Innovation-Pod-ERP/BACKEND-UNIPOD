@@ -105,10 +105,22 @@ class DepartmentBookingSchemaTest {
     }
 
     @Test
-    void requiresACancellationReasonAndTimeTogether() {
+    void aCancellationReasonNeedsACancellationTime() {
         insertDetail(bookingId, "TELECOMS", "LAB", null);
         assertViolates("ck_department_booking_details_cancellation", () -> jdbcTemplate.update(
                 "UPDATE department_booking_details SET cancel_reason = 'Rain' WHERE booking_id = ?", bookingId));
+    }
+
+    @Test
+    void aCancellationTimeNeedsACancellationReason() {
+        insertDetail(bookingId, "TELECOMS", "LAB", null);
+        assertViolates("ck_department_booking_details_cancellation", () -> jdbcTemplate.update(
+                "UPDATE department_booking_details SET cancelled_at = now() WHERE booking_id = ?", bookingId));
+    }
+
+    @Test
+    void aWorkshopWithoutACapacityIsAccepted() {
+        assertDoesNotThrow(() -> insertDetail(bookingId, "TEXTILE", "WORKSHOP", null));
     }
 
     @Test

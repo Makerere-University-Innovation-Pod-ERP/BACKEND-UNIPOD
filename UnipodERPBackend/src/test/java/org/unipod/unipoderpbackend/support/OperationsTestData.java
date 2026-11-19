@@ -19,7 +19,7 @@ public final class OperationsTestData {
     /** The active sector with this name, created when it does not exist yet (names are unique, ignoring case). */
     public static UUID sector(JdbcTemplate jdbcTemplate, String name) {
         List<UUID> existing = jdbcTemplate.query(
-                "SELECT id FROM sectors WHERE lower(name) = lower(?)",
+                "SELECT id FROM sectors WHERE lower(btrim(name)) = lower(btrim(?))",
                 (resultSet, row) -> resultSet.getObject("id", UUID.class), name);
         if (!existing.isEmpty()) {
             jdbcTemplate.update("UPDATE sectors SET active = TRUE WHERE id = ?", existing.get(0));
@@ -55,10 +55,9 @@ public final class OperationsTestData {
      * department's one facility is ours. Only for tests that roll back their changes.
      */
     public static UUID exclusiveFacility(JdbcTemplate jdbcTemplate, String department, int capacity) {
-        String prefix = department.toLowerCase(java.util.Locale.ROOT).substring(0, Math.min(7, department.length()));
         jdbcTemplate.update(
-                "UPDATE facilities SET department = 'moved by test' WHERE lower(btrim(department)) LIKE ?",
-                prefix + "%");
+                "UPDATE facilities SET department = 'moved by test' WHERE lower(btrim(department)) ~ ?",
+                spellings(department));
         return facility(jdbcTemplate, department, capacity);
     }
 
@@ -67,15 +66,25 @@ public final class OperationsTestData {
      * their ids with the department text to put back with {@link #restoreFacilities}.
      */
     public static java.util.Map<UUID, String> moveFacilitiesAside(JdbcTemplate jdbcTemplate, String department) {
-        String prefix = department.toLowerCase(java.util.Locale.ROOT).substring(0, Math.min(7, department.length()));
         java.util.Map<UUID, String> moved = new java.util.LinkedHashMap<>();
-        jdbcTemplate.query("SELECT id, department FROM facilities WHERE lower(btrim(department)) LIKE ?",
+        jdbcTemplate.query("SELECT id, department FROM facilities WHERE lower(btrim(department)) ~ ?",
                 resultSet -> {
                     moved.put(resultSet.getObject("id", UUID.class), resultSet.getString("department"));
-                }, prefix + "%");
+                }, spellings(department));
         moved.keySet().forEach(id -> jdbcTemplate.update(
                 "UPDATE facilities SET department = 'moved by test' WHERE id = ?", id));
         return moved;
+    }
+
+    // The spellings the application treats as this department (see DepartmentLookup), as an anchored pattern.
+    private static String spellings(String department) {
+        String lower = department.toLowerCase(java.util.Locale.ROOT);
+        return switch (lower) {
+            case "telecoms" -> "^(telecoms|telecom|telecommunications)$";
+            case "textile" -> "^(textile|textiles)$";
+            case "multimedia" -> "^(multimedia|media)$";
+            default -> "^" + java.util.regex.Pattern.quote(lower) + "$";
+        };
     }
 
     public static void restoreFacilities(JdbcTemplate jdbcTemplate, java.util.Map<UUID, String> moved) {

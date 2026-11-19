@@ -236,6 +236,14 @@ class LabBookingReadApiIntegrationTest {
     }
 
     @Test
+    void ninetyThreeDatesAreTooMany() throws Exception {
+        mockMvc.perform(get("/telecoms/lab-bookings?from=2026-12-01&to=2027-03-03").with(as("OBSERVER")))
+                .andExpect(status().isUnprocessableContent());
+        mockMvc.perform(get("/telecoms/lab-bookings?from=2026-12-01&to=2027-03-02").with(as("OBSERVER")))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void aMalformedDateIsABadRequest() throws Exception {
         mockMvc.perform(get("/telecoms/lab-bookings?from=next-week").with(as("OBSERVER")))
                 .andExpect(status().isBadRequest())

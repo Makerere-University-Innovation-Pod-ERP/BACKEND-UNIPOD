@@ -264,6 +264,7 @@ class BootcampReadCreateApiIntegrationTest {
             "{\"topic\": \"T\", \"instructor\": \"I\", \"date\": \"2030-11-20\", \"start\": \"09:00\", \"end\": \"16:00\", \"capacity\": 5}",
             "{\"topic\": \"  \", \"instructor\": \"I\", \"date\": \"2030-11-20\", \"start\": \"09:00\", \"end\": \"16:00\", \"capacity\": 5, \"fee\": 0}",
             "{\"topic\": \"T\", \"instructor\": \"I\", \"date\": \"2030-11-20\", \"start\": \"09:00\", \"end\": \"16:00\", \"capacity\": 0, \"fee\": 0}",
+            "{\"topic\": \"T\", \"instructor\": \"I\", \"date\": \"2030-11-20\", \"start\": \"09:00\", \"end\": \"16:00\", \"capacity\": 501, \"fee\": 0}",
             "{\"topic\": \"T\", \"instructor\": \"I\", \"date\": \"2030-11-20\", \"start\": \"09:00\", \"end\": \"16:00\", \"capacity\": 5, \"fee\": -1}"
     })
     void refusesAnInvalidFormWithValidationErrors(String json) throws Exception {

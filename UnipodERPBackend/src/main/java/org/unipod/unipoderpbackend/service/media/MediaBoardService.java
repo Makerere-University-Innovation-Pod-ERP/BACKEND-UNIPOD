@@ -75,6 +75,7 @@ public class MediaBoardService {
     public MediaBoardRequest updateDetails(UUID id, UpdateMediaDetailsRequest change, Actor actor) {
         access.requireManage(actor, DepartmentCode.MULTIMEDIA);
         MediaRequest request = lock(id);
+        request.requireEditable();
         if (change.studioId() != null && !requests.studioExists(change.studioId())) {
             throw new InvalidOperationsRequestException("Choose an existing studio.");
         }

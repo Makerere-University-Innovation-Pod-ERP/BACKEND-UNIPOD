@@ -134,6 +134,9 @@ public class TextileBookingCommandService {
     // Sign-ups close when the session is over, like registration for a training session (D-026).
     private static void requireOpen(Booking booking, Instant now) {
         requireNotCancelled(booking);
+        if (booking.getStatus() != BookingStatus.APPROVED && booking.getStatus() != BookingStatus.CHECKED_IN) {
+            throw new BookingConflictException("This booking is not open for sign-ups.");
+        }
         if (!now.isBefore(booking.getEndsAt())) {
             throw new BookingConflictException("Sign-up is closed for this session.");
         }

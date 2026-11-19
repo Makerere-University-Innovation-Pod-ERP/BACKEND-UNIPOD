@@ -107,7 +107,7 @@ class LabBookingCreateApiIntegrationTest {
                         user(email).roles("ADMINISTRATOR")))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.customerType").value("Public"))
-                .andExpect(jsonPath("$.bookedBy").value(email));
+                .andExpect(jsonPath("$.bookedBy").value("Staff"));
     }
 
     @Test
@@ -170,7 +170,9 @@ class LabBookingCreateApiIntegrationTest {
             "{\"date\": \"2026-12-08\", \"start\": \"09:00\", \"end\": \"10:00\", \"purpose\": \"  \", \"groupSize\": 1}",
             "{\"date\": \"2026-12-08\", \"start\": \"09:00\", \"end\": \"10:00\", \"purpose\": \"x\"}",
             "{\"date\": \"2026-12-08\", \"start\": \"09:00\", \"end\": \"10:00\", \"purpose\": \"x\", \"groupSize\": 0}",
-            "{\"date\": \"2026-12-08\", \"start\": \"09:00\", \"end\": \"10:00\", \"purpose\": \"x\", \"groupSize\": -2}"
+            "{\"date\": \"2026-12-08\", \"start\": \"09:00\", \"end\": \"10:00\", \"purpose\": \"x\", \"groupSize\": -2}",
+            "{\"date\": \"2026-12-08\", \"start\": \"09:00:30\", \"end\": \"10:00\", \"purpose\": \"x\", \"groupSize\": 1}",
+            "{\"date\": \"2026-12-08\", \"start\": \"09:00\", \"end\": \"10:00:15\", \"purpose\": \"x\", \"groupSize\": 1}"
     })
     void refusesAnInvalidFormWithValidationErrors(String json) throws Exception {
         mockMvc.perform(book(json, admin()))

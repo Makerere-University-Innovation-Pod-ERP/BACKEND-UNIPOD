@@ -13,13 +13,14 @@ import org.unipod.unipoderpbackend.exception.operations.InvalidOperationsRequest
  * week, Monday to Sunday; with one date the other end is a week away.
  */
 public record CalendarWindow(LocalDate from, LocalDate to) {
+    // Three months of dates, both ends included.
     private static final long LONGEST_DAYS = 92;
 
     public CalendarWindow {
         if (to.isBefore(from)) {
             throw new InvalidOperationsRequestException("The end date must not be before the start date.");
         }
-        if (ChronoUnit.DAYS.between(from, to) > LONGEST_DAYS) {
+        if (ChronoUnit.DAYS.between(from, to) >= LONGEST_DAYS) {
             throw new InvalidOperationsRequestException("Ask for at most three months at a time.");
         }
     }

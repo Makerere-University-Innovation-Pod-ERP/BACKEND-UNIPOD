@@ -294,6 +294,14 @@ class MediaBoardEditApiIntegrationTest {
     }
 
     @Test
+    void aFinishedRequestIsAConflictEvenWhenTheChangeIsAlsoInvalid() throws Exception {
+        UUID id = MediaBoardTestData.request(jdbcTemplate, "Done", "COMPLETED", NOW);
+
+        mockMvc.perform(details(id, "{\"studioId\": \"" + UUID.randomUUID() + "\"}", admin()))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
     void detailsOfAnUnknownRequestAreNotFoundAndOnlyManagersMayChangeThem() throws Exception {
         mockMvc.perform(details(UUID.randomUUID(), "{}", admin())).andExpect(status().isNotFound());
 

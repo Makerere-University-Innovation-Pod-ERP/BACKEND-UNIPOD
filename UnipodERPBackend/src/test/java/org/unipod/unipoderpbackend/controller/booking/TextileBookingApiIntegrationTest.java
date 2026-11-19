@@ -1,6 +1,7 @@
 package org.unipod.unipoderpbackend.controller.booking;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -198,7 +199,8 @@ class TextileBookingApiIntegrationTest {
         assertEquals("17:00", created.get("end").asString());
         assertEquals("m-sew-1", created.get("machineId").asString());
         assertTrue(created.get("capacity").isNull());
-        assertEquals(email, created.get("bookedBy").asString());
+        assertEquals("Staff", created.get("bookedBy").asString());
+        assertFalse(created.toString().contains(email));
         assertEquals("APPROVED", created.get("status").asString());
         assertEquals(0, created.get("attendees").size());
         assertEquals("APPROVED", jdbcTemplate.queryForObject(

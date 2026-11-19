@@ -5790,7 +5790,7 @@ paths:
       description: |
         Registers the person for the training session, so the seat is taken under the session lock: a full
         session, a repeated student number or a finished session is `409`. A paid bootcamp holds the seat until
-        payment is confirmed. A blank `studentNumber` is allowed. Returns the whole bootcamp.
+        payment is confirmed. A blank `studentNumber` is allowed; one that starts with `EXT-` is refused (422) because that prefix marks generated placeholders. Returns the whole bootcamp.
       parameters:
         - name: id
           in: path
@@ -9743,7 +9743,7 @@ components:
         bookedBy:
           type: string
           maxLength: 200
-          description: Who the lab is booked for; defaults to the signed-in user
+          description: Who the lab is booked for; defaults to the signed-in user's display name ("Staff" when there is no profile)
     TextileAttendee:
       type: object
       required: [id, name, attended]
@@ -9785,6 +9785,7 @@ components:
           description: Places of a TRAINING booking
         bookedBy:
           type: string
+          description: The booker's display name from their profile, or "Staff" when there is none; never an email
         status:
           type: string
           enum: [APPROVED, PENDING, CANCELLED]
@@ -9945,6 +9946,7 @@ components:
         capacity:
           type: integer
           minimum: 1
+          maximum: 500
         fee:
           type: integer
           minimum: 0

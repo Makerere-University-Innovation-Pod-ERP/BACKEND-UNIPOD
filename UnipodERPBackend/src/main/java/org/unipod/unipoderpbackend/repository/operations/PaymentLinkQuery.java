@@ -17,7 +17,7 @@ public class PaymentLinkQuery {
     private static final String SELECT = """
             SELECT i.source_id, i.status,
                    (SELECT p.status FROM invoice_payment_proofs p
-                     WHERE p.invoice_id = i.id ORDER BY p.uploaded_at DESC LIMIT 1) AS latest_proof
+                     WHERE p.invoice_id = i.id ORDER BY p.uploaded_at DESC, p.id DESC LIMIT 1) AS latest_proof
               FROM invoices i
             """;
 
