@@ -95,6 +95,9 @@ class RefinementQueueApiIntegrationTest {
     private ReviewRepository reviews;
 
     @Autowired
+    private org.unipod.unipoderpbackend.repository.improvement.CaseRevisionRepository revisions;
+
+    @Autowired
     private EntityManager entityManager;
 
     @Autowired
@@ -391,7 +394,7 @@ class RefinementQueueApiIntegrationTest {
         JsonNode items = response.get("rows").get("items");
         assertEquals(2, items.size());
         Set<String> rowKeys = Set.of("briefId", "title", "trackingReference", "briefType", "stage", "cycle",
-                "source", "dueDate", "state", "overdue");
+                "source", "dueDate", "state", "overdue", "requestedChanges", "versionsSoFar", "latestRevisionId");
         // Both a WAITING_FOR_SUBMITTER row and a NEEDS_REQUEST row (whose request fields are null) carry every key.
         Set<String> states = new HashSet<>();
         for (JsonNode item : items) {
@@ -399,6 +402,14 @@ class RefinementQueueApiIntegrationTest {
             states.add(item.get("state").asString());
         }
         assertEquals(Set.of("WAITING_FOR_SUBMITTER", "NEEDS_REQUEST"), states);
+        int changeItems = 0;
+        for (JsonNode item : items) {
+            for (JsonNode change : item.get("requestedChanges")) {
+                assertEquals(Set.of("position", "text"), new HashSet<>(change.propertyNames()));
+                changeItems++;
+            }
+        }
+        assertEquals(1, changeItems);
     }
 
     @Test
@@ -421,7 +432,7 @@ class RefinementQueueApiIntegrationTest {
                 Instant.parse("2026-11-11T09:00:00Z")));
         mockMvc.perform(json(post("/cases/{id}/refinement-requests", brief.getId()),
                         ImprovementTestBodies.body("Guidance " + marker, today().plusDays(4),
-                                List.of("Change " + marker), caseVersion(brief)))
+                                List.of("Add a costed budget"), caseVersion(brief)))
                         .with(coordinator()))
                 .andExpect(status().isCreated());
 
@@ -555,6 +566,179 @@ class RefinementQueueApiIntegrationTest {
                 """);
     }
 
+    // ---- requested changes, versions so far, latest revision ---------------------------------
+
+    @Test
+    void aWaitingRowShowsItsChangesInOrderAndVersionOne() throws Exception {
+        askWith(inReview(), "Improve.", today().plusDays(5), List.of("First change", "Second change", "Third change"));
+
+        queue(coordinator())
+                .andExpect(jsonPath("$.rows.items", hasSize(1)))
+                .andExpect(jsonPath("$.rows.items[0].state").value("WAITING_FOR_SUBMITTER"))
+                .andExpect(jsonPath("$.rows.items[0].requestedChanges", hasSize(3)))
+                .andExpect(jsonPath("$.rows.items[0].requestedChanges[0].position").value(1))
+                .andExpect(jsonPath("$.rows.items[0].requestedChanges[0].text").value("First change"))
+                .andExpect(jsonPath("$.rows.items[0].requestedChanges[1].position").value(2))
+                .andExpect(jsonPath("$.rows.items[0].requestedChanges[1].text").value("Second change"))
+                .andExpect(jsonPath("$.rows.items[0].requestedChanges[2].position").value(3))
+                .andExpect(jsonPath("$.rows.items[0].requestedChanges[2].text").value("Third change"))
+                .andExpect(jsonPath("$.rows.items[0].versionsSoFar").value(1))
+                .andExpect(jsonPath("$.rows.items[0].latestRevisionId").value(nullValue()));
+    }
+
+    @Test
+    void anAnsweredRowShowsItsChangesVersionTwoAndTheStoredRevisionId() throws Exception {
+        Submission brief = inReview();
+        askWith(brief, "Improve.", today().plusDays(5), List.of("Add a budget", "Add letters"));
+        answer(brief, "Added both.");
+        long stored = revisions.findTopByBriefIdOrderByVersionNumberDesc(brief.getId()).orElseThrow().getId();
+
+        queue(coordinator())
+                .andExpect(jsonPath("$.rows.items", hasSize(1)))
+                .andExpect(jsonPath("$.rows.items[0].state").value("READY_TO_ACCEPT"))
+                .andExpect(jsonPath("$.rows.items[0].requestedChanges[0].text").value("Add a budget"))
+                .andExpect(jsonPath("$.rows.items[0].requestedChanges[1].text").value("Add letters"))
+                .andExpect(jsonPath("$.rows.items[0].requestedChanges", hasSize(2)))
+                .andExpect(jsonPath("$.rows.items[0].versionsSoFar").value(2))
+                .andExpect(jsonPath("$.rows.items[0].latestRevisionId").value(stored));
+    }
+
+    @Test
+    void theLatestRevisionIdFromTheQueueAcceptsTheBrief() throws Exception {
+        Submission brief = inReview();
+        ask(brief, "Improve.", today().plusDays(5));
+        answer(brief, "Improved.");
+        long revisionId = json(queue(coordinator()).andExpect(status().isOk()).andReturn())
+                .get("rows").get("items").get(0).get("latestRevisionId").asLong();
+
+        mockMvc.perform(json(post("/cases/{id}/revisions/{revisionId}/accept", brief.getId(), revisionId),
+                        Map.of("caseVersion", caseVersion(brief))).with(coordinator()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.revisionId").value(revisionId))
+                .andExpect(jsonPath("$.briefStage").value("IN_REVIEW"));
+        queue(coordinator()).andExpect(jsonPath("$.rows.items").isEmpty());
+    }
+
+    @Test
+    void aSecondCycleShowsOnlyItsOwnChangesAndTheFirstCyclesRevision() throws Exception {
+        Submission brief = inReview();
+        reviewRoundOneFinished(brief);
+        askWith(brief, "Round one.", today().plusDays(5), List.of("Cycle one A", "Cycle one B"));
+        answer(brief, "Answer one.");
+        long firstRevision = revisions.findTopByBriefIdOrderByVersionNumberDesc(brief.getId()).orElseThrow().getId();
+        accept(brief);
+        mockMvc.perform(json(post("/cases/{id}/review-rounds", brief.getId()), Map.of(
+                        "mode", "PARALLEL", "reviewsNeeded", 1, "settingsVersion", settingsVersion(brief)))
+                        .with(coordinator()))
+                .andExpect(status().isCreated());
+        askWith(brief, "Round two.", today().plusDays(9), List.of("Cycle two only"));
+
+        queue(coordinator())
+                .andExpect(jsonPath("$.rows.items", hasSize(1)))
+                .andExpect(jsonPath("$.rows.items[0].cycle").value(2))
+                .andExpect(jsonPath("$.rows.items[0].requestedChanges", hasSize(1)))
+                .andExpect(jsonPath("$.rows.items[0].requestedChanges[0].position").value(1))
+                .andExpect(jsonPath("$.rows.items[0].requestedChanges[0].text").value("Cycle two only"))
+                .andExpect(jsonPath("$.rows.items[0].versionsSoFar").value(2))
+                .andExpect(jsonPath("$.rows.items[0].latestRevisionId").value(firstRevision));
+    }
+
+    @Test
+    void askingAgainFromResubmittedShowsTheNewChangesAndTheEarlierRevision() throws Exception {
+        Submission brief = inReview();
+        askWith(brief, "Round one.", today().plusDays(5), List.of("Old change"));
+        answer(brief, "Answer one.");
+        long firstRevision = revisions.findTopByBriefIdOrderByVersionNumberDesc(brief.getId()).orElseThrow().getId();
+        askWith(brief, "Round two.", today().plusDays(6), List.of("New change A", "New change B"));
+
+        queue(coordinator())
+                .andExpect(jsonPath("$.rows.items", hasSize(1)))
+                .andExpect(jsonPath("$.rows.items[0].state").value("WAITING_FOR_SUBMITTER"))
+                .andExpect(jsonPath("$.rows.items[0].cycle").value(2))
+                .andExpect(jsonPath("$.rows.items[0].requestedChanges", hasSize(2)))
+                .andExpect(jsonPath("$.rows.items[0].requestedChanges[0].text").value("New change A"))
+                .andExpect(jsonPath("$.rows.items[0].requestedChanges[1].text").value("New change B"))
+                .andExpect(jsonPath("$.rows.items[0].versionsSoFar").value(2))
+                .andExpect(jsonPath("$.rows.items[0].latestRevisionId").value(firstRevision));
+    }
+
+    @Test
+    void aLegacyBriefHasNoChangesVersionOneAndNoRevision() throws Exception {
+        submissions.saveAndFlush(
+                ImprovementTestBriefs.ownedBy(OWNER, SubmissionStage.IMPROVEMENT_REQUESTED, "CASE-QY-"));
+
+        queue(coordinator())
+                .andExpect(jsonPath("$.rows.items", hasSize(1)))
+                .andExpect(jsonPath("$.rows.items[0].state").value("NEEDS_REQUEST"))
+                .andExpect(jsonPath("$.rows.items[0].requestedChanges").isArray())
+                .andExpect(jsonPath("$.rows.items[0].requestedChanges").isEmpty())
+                .andExpect(jsonPath("$.rows.items[0].versionsSoFar").value(1))
+                .andExpect(jsonPath("$.rows.items[0].latestRevisionId").value(nullValue()));
+    }
+
+    @Test
+    void twentyChangesAreAllReturnedInPositionOrder() throws Exception {
+        List<String> twenty = new ArrayList<>();
+        for (int i = 1; i <= 20; i++) {
+            twenty.add("Change number " + i);
+        }
+        askWith(inReview(), "Many changes.", today().plusDays(5), twenty);
+
+        JsonNode changes = json(queue(coordinator()).andExpect(status().isOk()).andReturn())
+                .get("rows").get("items").get(0).get("requestedChanges");
+        assertEquals(20, changes.size());
+        for (int i = 0; i < 20; i++) {
+            assertEquals(i + 1, changes.get(i).get("position").asInt());
+            assertEquals("Change number " + (i + 1), changes.get(i).get("text").asString());
+        }
+    }
+
+    @Test
+    void requestedChangeTextIsShownButNoOtherStaffTextOrEmail() throws Exception {
+        String changeMarker = "CHANGE-MARKER-abc";
+        String guidanceMarker = "GUIDANCE-MARKER-def";
+        String answerMarker = "WHATCHANGED-MARKER-ghi";
+        String reviewMarker = "REVIEW-MARKER-jkl";
+        String factFindingMarker = "FACTFINDING-MARKER-mno";
+        String markedOwner = "owner-marker-pqr@example.test";
+        Submission brief = submissions.saveAndFlush(
+                ImprovementTestBriefs.ownedBy(markedOwner, SubmissionStage.IN_REVIEW, "CASE-QM-"));
+        FactFindingCheck check = new FactFindingCheck(brief.getId(), 1, "officer@example.test");
+        check.setTitleNote("Title " + factFindingMarker);
+        check.setEvidenceNote("Evidence " + factFindingMarker);
+        check.complete(FactFindingResult.READY_FOR_REVIEW, Instant.parse("2026-11-10T09:00:00Z"));
+        factFinding.saveAndFlush(check);
+        reviewSettings.saveAndFlush(new ReviewSettings(brief.getId(), 1, ReviewMode.PARALLEL, 1, null, COORDINATOR));
+        ReviewAssignment done = new ReviewAssignment(brief.getId(), 1, "queue-reviewer@example.test", null, 1,
+                COORDINATOR);
+        done.setStatus(ReviewAssignmentStatus.SUBMITTED);
+        done = assignments.saveAndFlush(done);
+        reviews.saveAndFlush(new Review(done.getId(), ReviewDecision.CHANGES_NEEDED, "Reviewer " + reviewMarker,
+                Instant.parse("2026-11-11T09:00:00Z")));
+        mockMvc.perform(json(post("/cases/{id}/refinement-requests", brief.getId()),
+                        ImprovementTestBodies.body("Guidance " + guidanceMarker, today().plusDays(4),
+                                List.of("Change " + changeMarker), caseVersion(brief)))
+                        .with(coordinator()))
+                .andExpect(status().isCreated());
+        mockMvc.perform(json(post("/cases/{id}/improved-version", brief.getId()),
+                        ImprovementTestBodies.answerBody("Answer " + answerMarker, null))
+                        .with(user(markedOwner).roles("SUBMITTER")))
+                .andExpect(status().isCreated());
+
+        String body = queue(coordinator())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rows.items", hasSize(1)))
+                .andExpect(jsonPath("$.rows.items[0].state").value("READY_TO_ACCEPT"))
+                .andExpect(jsonPath("$.rows.items[0].requestedChanges[0].text").value("Change " + changeMarker))
+                .andReturn().getResponse().getContentAsString();
+
+        assertEquals(1, body.split(changeMarker, -1).length - 1, body);
+        for (String hidden : List.of(guidanceMarker, answerMarker, reviewMarker, factFindingMarker, markedOwner,
+                "requestedBy", COORDINATOR, "queue-reviewer@example.test", "officer@example.test", "CHANGES_NEEDED")) {
+            assertFalse(body.contains(hidden), hidden + " must not appear: " + body);
+        }
+    }
+
     // ---- helpers -----------------------------------------------------------------------------
 
     private ResultActions queue(RequestPostProcessor caller) throws Exception {
@@ -582,6 +766,14 @@ class RefinementQueueApiIntegrationTest {
     private void ask(Submission brief, String guidance, LocalDate dueDate) throws Exception {
         mockMvc.perform(json(post("/cases/{id}/refinement-requests", brief.getId()),
                         ImprovementTestBodies.body(guidance, dueDate, List.of("Change one"), caseVersion(brief)))
+                        .with(coordinator()))
+                .andExpect(status().isCreated());
+    }
+
+    /** Main's POST /cases/{id}/refinement-requests as the coordinator, with the given requested changes. */
+    private void askWith(Submission brief, String guidance, LocalDate dueDate, List<String> changes) throws Exception {
+        mockMvc.perform(json(post("/cases/{id}/refinement-requests", brief.getId()),
+                        ImprovementTestBodies.body(guidance, dueDate, changes, caseVersion(brief)))
                         .with(coordinator()))
                 .andExpect(status().isCreated());
     }

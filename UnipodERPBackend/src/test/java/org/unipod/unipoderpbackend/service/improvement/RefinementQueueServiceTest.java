@@ -23,8 +23,10 @@ import org.unipod.unipoderpbackend.model.improvement.RefinementSource;
 import org.unipod.unipoderpbackend.model.improvement.RefinementStatus;
 import org.unipod.unipoderpbackend.model.submission.SubmissionCategory;
 import org.unipod.unipoderpbackend.model.submission.SubmissionStage;
+import org.unipod.unipoderpbackend.repository.improvement.CaseRevisionRepository;
 import org.unipod.unipoderpbackend.repository.improvement.RefinementQueueEntry;
 import org.unipod.unipoderpbackend.repository.improvement.RefinementRequestRepository;
+import org.unipod.unipoderpbackend.repository.improvement.RefinementRequestedChangeRepository;
 
 /** The row mapping and the service's own role check, without a database. */
 class RefinementQueueServiceTest {
@@ -90,7 +92,8 @@ class RefinementQueueServiceTest {
     @Test
     void theServiceRejectsOtherRolesBeforeReadingAnything() {
         RefinementRequestRepository requests = mock(RefinementRequestRepository.class);
-        RefinementQueueService service = new RefinementQueueService(requests, Clock.systemUTC());
+        RefinementQueueService service = new RefinementQueueService(requests,
+                mock(RefinementRequestedChangeRepository.class), mock(CaseRevisionRepository.class), Clock.systemUTC());
 
         for (String role : List.of("ROLE_REVIEWER", "ROLE_SUBMITTER", "ROLE_RECEPTIONIST")) {
             assertThrows(AccessDeniedException.class, () -> service.queue(PageRequest.of(0, 25),
