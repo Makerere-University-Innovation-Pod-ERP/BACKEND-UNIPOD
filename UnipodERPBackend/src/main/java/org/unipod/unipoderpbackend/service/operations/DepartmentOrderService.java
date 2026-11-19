@@ -4,6 +4,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -23,6 +24,8 @@ import org.unipod.unipoderpbackend.model.operations.DepartmentCode;
 import org.unipod.unipoderpbackend.model.operations.DepartmentOrder;
 import org.unipod.unipoderpbackend.model.operations.StockItem;
 import org.unipod.unipoderpbackend.model.operations.StockMovement;
+import org.unipod.unipoderpbackend.model.stock.StockMovementDraft;
+import org.unipod.unipoderpbackend.model.stock.StockMovementType;
 import org.unipod.unipoderpbackend.repository.finance.InvoiceRepository;
 import org.unipod.unipoderpbackend.repository.operations.DepartmentOrderRepository;
 import org.unipod.unipoderpbackend.repository.operations.StockItemRepository;
@@ -143,7 +146,10 @@ public class DepartmentOrderService {
             order.setCompletion(materialsJson, clean(request.machine_time_used()),
                     request.quality_checklist() == null ? null : writeJson(request.quality_checklist()),
                     clean(request.collection_signature()), now);
-            deductStockIfAny(order, request.materials_used(), actor, now);
+            // Re-submitting a completed order must not take its materials out of stock a second time.
+            if (previous == null || !isCompletionStage(previous)) {
+                deductStockIfAny(order, request.materials_used(), actor, now);
+            }
             if (isPaid(order.getInvoiceStatus())) {
                 order.confirmPayment(order.getInvoiceStatus(), now);
             }
@@ -191,8 +197,8 @@ public class DepartmentOrderService {
     private void deductOne(DepartmentOrder order, JsonNode n, String actor, Instant now) {
         String sku = textOr(n, "sku", null);
         String itemId = textOr(n, "itemId", null);
-        int qty = n.path("qty").asInt(n.path("quantity").asInt(0));
-        if ((sku == null && itemId == null) || qty <= 0) return;
+        BigDecimal needed = quantityOf(n);
+        if ((sku == null && itemId == null) || needed.signum() <= 0) return;
 
         StockItem item = null;
         if (itemId != null) {
@@ -204,13 +210,25 @@ public class DepartmentOrderService {
         if (item == null) {
             throw new InvalidOperationsRequestException("Stock item not found for deduction: " + (sku != null ? sku : itemId));
         }
-        if (item.getQuantityOnHand() < qty) {
+        if (item.getQuantityOnHand().compareTo(needed) < 0) {
             throw new OperationsConflictException("STOCK_INSUFFICIENT", "Insufficient stock for " + item.getSku());
         }
-        item.deduct(qty, now);
+        StockMovement movement = item.record(new StockMovementDraft(StockMovementType.USED_ON_ORDER, needed,
+                "Auto-deducted for order " + order.getCode(), order.getId().toString(), order.getCode(), order.getId()),
+                actor, now);
         stockItems.save(item);
-        stockMovements.save(new StockMovement(UUID.randomUUID(), item.getId(), order.getId(), -qty,
-                "Auto-deducted for order " + order.getCode(), actor, now));
+        stockMovements.save(movement);
+    }
+
+    /** `qty` or `quantity`, as a decimal: stock is counted in fractions too (1.5 metres), so nothing is rounded down. */
+    private static BigDecimal quantityOf(JsonNode material) {
+        JsonNode qty = material.get("qty");
+        JsonNode value = qty == null || qty.isNull() ? material.path("quantity") : qty;
+        try {
+            return value.isNumber() ? value.decimalValue() : new BigDecimal(value.asText("0").trim());
+        } catch (NumberFormatException notANumber) {
+            return BigDecimal.ZERO;
+        }
     }
 
     private String appendHistoryJson(String existing, String stage, String actor, String notes, Instant now, Map<String,String> extra) {

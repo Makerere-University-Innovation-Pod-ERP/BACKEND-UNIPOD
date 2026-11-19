@@ -117,6 +117,9 @@ public class BookingService {
                         "status", booking.getStatus().name(),
                         "requestType", booking.getRequestType()
                 ));
+        notifyRequester(booking, NotificationType.BOOKING_REQUESTED,
+                "Booking request received: " + booking.getReference(),
+                "Your request for " + facility.getName() + " has been submitted and is awaiting review.");
         return BookingResponse.from(booking);
     }
 
@@ -322,6 +325,9 @@ public class BookingService {
         auditTrail.record(requesterId, "booking.cancelled", "booking", id,
                 AuditTrail.details("status", previousStatus.name()),
                 AuditTrail.details("status", BookingStatus.CANCELLED.name()));
+        notifyRequester(booking, NotificationType.BOOKING_CANCELLED,
+                "Booking cancelled: " + booking.getReference(),
+                "Your booking for " + booking.getFacility().getName() + " has been cancelled.");
         return BookingResponse.forSubmitter(booking);
     }
 

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,40 +39,52 @@ class DepartmentAccessTest {
     }
 
     @Test
-    void anAdministratorMayManageAnyDepartment() {
+    void anAdministratorMayActInEveryDepartment() {
         Actor admin = new Actor("admin@test.local", ApiUserRole.ADMINISTRATOR, Set.of());
 
-        assertDoesNotThrow(() -> access.requireManage(admin, DepartmentCode.TELECOMS));
-        assertDoesNotThrow(() -> access.requireManage(admin, DepartmentCode.MULTIMEDIA));
+        for (DepartmentCode department : DepartmentCode.values()) {
+            assertDoesNotThrow(() -> access.require(admin, department));
+            assertDoesNotThrow(() -> access.requireManage(admin, department));
+        }
     }
 
     @Test
-    void aCoordinatorMayManageTheDepartmentTheyBelongTo() {
+    void aCoordinatorMayActOnlyInDepartmentsTheyBelongTo() {
         Actor coordinator = new Actor("c@test.local", ApiUserRole.DEPARTMENT_COORDINATOR, Set.of(telecoms));
 
+        assertDoesNotThrow(() -> access.require(coordinator, DepartmentCode.TELECOMS));
         assertDoesNotThrow(() -> access.requireManage(coordinator, DepartmentCode.TELECOMS));
+        assertThrows(AccessDeniedException.class, () -> access.require(coordinator, DepartmentCode.TEXTILE));
+        assertThrows(AccessDeniedException.class, () -> access.requireManage(coordinator, DepartmentCode.TEXTILE));
     }
 
     @Test
-    void aCoordinatorOfAnyOfTheDepartmentsSpellingsMayManageIt() {
+    void aCoordinatorOfDepartmentAliasesMayManageThatDepartment() {
         UUID media = OperationsTestData.sector(jdbcTemplate, "Media");
         OperationsTestData.sector(jdbcTemplate, "Multimedia");
         Actor coordinator = new Actor("c@test.local", ApiUserRole.DEPARTMENT_COORDINATOR, Set.of(media));
 
         assertDoesNotThrow(() -> access.requireManage(coordinator, DepartmentCode.MULTIMEDIA));
+        assertEquals(Set.of(DepartmentCode.MULTIMEDIA), access.departmentsOf(coordinator));
     }
 
     @Test
-    void aCoordinatorIsRefusedAnotherDepartment() {
-        Actor coordinator = new Actor("c@test.local", ApiUserRole.DEPARTMENT_COORDINATOR, Set.of(telecoms));
+    void departmentsOfIncludesEveryMatchingSectorTheCoordinatorBelongsTo() {
+        UUID cnc = OperationsTestData.sector(jdbcTemplate, "CNC");
+        Actor coordinator = new Actor(
+                "c@test.local",
+                ApiUserRole.DEPARTMENT_COORDINATOR,
+                Set.of(telecoms, textile, cnc));
 
-        assertThrows(AccessDeniedException.class, () -> access.requireManage(coordinator, DepartmentCode.TEXTILE));
+        assertEquals(Set.of(DepartmentCode.TELECOMS, DepartmentCode.TEXTILE, DepartmentCode.CNC),
+                access.departmentsOf(coordinator));
     }
 
     @Test
     void aCoordinatorWithNoDepartmentIsRefused() {
         Actor coordinator = new Actor("c@test.local", ApiUserRole.DEPARTMENT_COORDINATOR, Set.of());
 
+        assertThrows(AccessDeniedException.class, () -> access.require(coordinator, DepartmentCode.TELECOMS));
         assertThrows(AccessDeniedException.class, () -> access.requireManage(coordinator, DepartmentCode.TELECOMS));
     }
 
@@ -83,10 +96,21 @@ class DepartmentAccessTest {
     }
 
     @Test
-    void otherRolesNeverManageADepartment() {
+    void otherRolesAreNotTiedToADepartmentButCannotManageOne() {
         Actor observer = new Actor("o@test.local", ApiUserRole.OBSERVER, Set.of(telecoms));
 
+        assertDoesNotThrow(() -> access.require(observer, DepartmentCode.TELECOMS));
         assertThrows(AccessDeniedException.class, () -> access.requireManage(observer, DepartmentCode.TELECOMS));
+    }
+
+    @Test
+    void sectorNamesMatchTheDepartmentAliases() {
+        assertEquals(Optional.of(DepartmentCode.TELECOMS), DepartmentSectorNames.codeOf(" Telecom Lab "));
+        assertEquals(Optional.of(DepartmentCode.MULTIMEDIA), DepartmentSectorNames.codeOf("MEDIA"));
+        assertEquals(Optional.of(DepartmentCode.TELECOMS), DepartmentSectorNames.codeOf("telecom-lab"));
+        assertEquals(Optional.of(DepartmentCode.TELECOMS), DepartmentSectorNames.codeOf("TELECOM_LAB"));
+        assertEquals(Optional.empty(), DepartmentSectorNames.codeOf("Digital Technology"));
+        assertEquals(Optional.empty(), DepartmentSectorNames.codeOf(null));
     }
 
     @Test

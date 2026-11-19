@@ -122,6 +122,22 @@ Submitter-facing events include `submission.submitted`, `submission.reply_receiv
 `submission.forwarded_copy`. Waluube HTTP requests, including denied requests,
 are recorded in `audit_events`.
 
+### Browser Push Notifications
+
+Browser push is opt-in and complements the authenticated in-app notification
+feed. It requires the backend environment variables `VAPID_PUBLIC_KEY`,
+`VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT`; keep the private key in deployment
+secrets and never commit it. Generate a key pair with
+`npx web-push generate-vapid-keys --json`. Use the same key pair for the lifetime
+of the application, and set the subject to a contact URI such as
+`mailto:admin@example.org`. The frontend must be served over HTTPS (localhost is
+also supported by browsers). Without these variables the in-app feed continues
+to work and the push configuration endpoint reports push as disabled.
+
+The browser registers its service worker only after the user enables push.
+Subscriptions are owned by the authenticated account, and the backend removes
+expired endpoints when a push provider returns `404` or `410`.
+
 ### Reception Queue
 
 Reception staff can use:

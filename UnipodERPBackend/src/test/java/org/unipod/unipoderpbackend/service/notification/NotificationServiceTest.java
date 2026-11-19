@@ -9,8 +9,10 @@ import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.unipod.unipoderpbackend.exception.notification.NotificationNotFoundException;
 import org.unipod.unipoderpbackend.model.notification.Notification;
+import org.unipod.unipoderpbackend.model.notification.NotificationCreatedEvent;
 import org.unipod.unipoderpbackend.model.notification.NotificationEvent;
 import org.unipod.unipoderpbackend.model.notification.NotificationType;
 import org.unipod.unipoderpbackend.repository.notification.NotificationRepository;
@@ -19,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -26,8 +29,9 @@ class NotificationServiceTest {
     private static final Instant NOW = Instant.parse("2026-11-12T09:00:00Z");
 
     private final NotificationRepository repository = mock(NotificationRepository.class);
+    private final ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
     private final NotificationService service =
-            new NotificationService(repository, Clock.fixed(NOW, ZoneId.of("Africa/Kampala")));
+            new NotificationService(repository, Clock.fixed(NOW, ZoneId.of("Africa/Kampala")), events);
 
     @Test
     @SuppressWarnings("unchecked")
@@ -52,6 +56,11 @@ class NotificationServiceTest {
         assertTrue(rows.stream().allMatch(row -> row.getCreatedAt().equals(NOW)
                 && row.getEntityId().equals(briefId)
                 && !row.isRead()));
+
+        ArgumentCaptor<NotificationCreatedEvent> created = ArgumentCaptor.forClass(NotificationCreatedEvent.class);
+        verify(events, times(2)).publishEvent(created.capture());
+        assertEquals(Set.of("faith@unipod.ac.ug", "kaddu@unipod.ac.ug"),
+                Set.copyOf(created.getAllValues().stream().map(NotificationCreatedEvent::recipient).toList()));
     }
 
     @Test
