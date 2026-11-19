@@ -3,8 +3,9 @@ package org.unipod.unipoderpbackend.service.operations;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -33,17 +34,18 @@ class DepartmentAccessTest {
 
     @Test
     void aCoordinatorActsOnlyInTheirOwnDepartment() {
-        when(memberships.activeSectorNames(anyCollection())).thenReturn(List.of("Telecoms"));
         Actor coordinator = actor(ApiUserRole.DEPARTMENT_COORDINATOR);
+        when(memberships.activeSectorNames(coordinator.departmentIds())).thenReturn(List.of("Telecoms"));
 
         assertDoesNotThrow(() -> access.require(coordinator, DepartmentCode.TELECOMS));
         assertThrows(AccessDeniedException.class, () -> access.require(coordinator, DepartmentCode.TEXTILE));
+        verify(memberships, atLeastOnce()).activeSectorNames(coordinator.departmentIds());
     }
 
     @Test
     void aCoordinatorWithNoMatchingSectorActsNowhere() {
-        when(memberships.activeSectorNames(anyCollection())).thenReturn(List.of("Agriculture and Food"));
         Actor coordinator = actor(ApiUserRole.DEPARTMENT_COORDINATOR);
+        when(memberships.activeSectorNames(coordinator.departmentIds())).thenReturn(List.of("Agriculture and Food"));
 
         for (DepartmentCode department : DepartmentCode.values()) {
             assertThrows(AccessDeniedException.class, () -> access.require(coordinator, department));
@@ -52,10 +54,10 @@ class DepartmentAccessTest {
 
     @Test
     void aCoordinatorOfSeveralDepartmentsActsInAllOfThem() {
-        when(memberships.activeSectorNames(anyCollection())).thenReturn(List.of("textile", "CNC"));
+        Actor coordinator = actor(ApiUserRole.DEPARTMENT_COORDINATOR);
+        when(memberships.activeSectorNames(coordinator.departmentIds())).thenReturn(List.of("textile", "CNC"));
 
-        assertEquals(Set.of(DepartmentCode.TEXTILE, DepartmentCode.CNC),
-                access.departmentsOf(actor(ApiUserRole.DEPARTMENT_COORDINATOR)));
+        assertEquals(Set.of(DepartmentCode.TEXTILE, DepartmentCode.CNC), access.departmentsOf(coordinator));
     }
 
     @Test
@@ -69,6 +71,8 @@ class DepartmentAccessTest {
     void sectorNamesMatchTheDepartmentAliases() {
         assertEquals(Optional.of(DepartmentCode.TELECOMS), DepartmentSectorNames.codeOf(" Telecom Lab "));
         assertEquals(Optional.of(DepartmentCode.MULTIMEDIA), DepartmentSectorNames.codeOf("MEDIA"));
+        assertEquals(Optional.of(DepartmentCode.TELECOMS), DepartmentSectorNames.codeOf("telecom-lab"));
+        assertEquals(Optional.of(DepartmentCode.TELECOMS), DepartmentSectorNames.codeOf("TELECOM_LAB"));
         assertEquals(Optional.empty(), DepartmentSectorNames.codeOf("Digital Technology"));
         assertEquals(Optional.empty(), DepartmentSectorNames.codeOf(null));
     }

@@ -21,6 +21,8 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import org.unipod.unipoderpbackend.dto.equipment.ApproveLoanRequest;
 import org.unipod.unipoderpbackend.dto.equipment.CreateEquipmentRequest;
 import org.unipod.unipoderpbackend.dto.equipment.CreateMachineRequest;
@@ -157,6 +159,58 @@ class EquipmentOpenApiContractTest {
         assertEquals(components(RecordTelecomsMovementRequest.class), schemaProperties("RecordTelecomsStockMovementRequest"));
         assertEquals(components(RecordTextileMovementRequest.class), schemaProperties("RecordTextileStockMovementRequest"));
         assertEquals(components(UpdateMinimumRequest.class), schemaProperties("UpdateStockMinimumRequest"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void requestSchemasRequireExactlyTheFieldsTheRequestsRequire() {
+        Map<String, Class<? extends Record>> requests = new java.util.LinkedHashMap<>();
+        requests.put("CreateEquipmentRequest", CreateEquipmentRequest.class);
+        requests.put("ReportEquipmentFaultRequest", ReportEquipmentFaultRequest.class);
+        requests.put("RequestLoanRequest", RequestLoanRequest.class);
+        requests.put("ApproveLoanRequest", ApproveLoanRequest.class);
+        requests.put("DeclineLoanRequest", DeclineLoanRequest.class);
+        requests.put("ReturnLoanRequest", ReturnLoanRequest.class);
+        requests.put("CreateMachineRequest", CreateMachineRequest.class);
+        requests.put("ReportMachineRequest", ReportMachineRequest.class);
+        requests.put("MarkMachineWorkingRequest", MarkMachineWorkingRequest.class);
+        requests.put("MarkEquipmentWorkingRequest", MarkEquipmentWorkingRequest.class);
+        requests.put("CreateStockItemRequest", CreateStockItemRequest.class);
+        requests.put("RecordTelecomsStockMovementRequest", RecordTelecomsMovementRequest.class);
+        requests.put("RecordTextileStockMovementRequest", RecordTextileMovementRequest.class);
+        requests.put("UpdateStockMinimumRequest", UpdateMinimumRequest.class);
+
+        requests.forEach((schemaName, type) -> {
+            Set<String> required = Arrays.stream(type.getRecordComponents()).map(RecordComponent::getName)
+                    .filter(name -> isRequired(type, name)).collect(Collectors.toCollection(TreeSet::new));
+            Object documented = schema(schemaName).get("required");
+            Set<String> documentedRequired = documented == null ? new TreeSet<>() : new TreeSet<>((Collection<String>) documented);
+            assertEquals(required, documentedRequired, schemaName);
+        });
+    }
+
+    private static boolean isRequired(Class<? extends Record> type, String field) {
+        try {
+            var declared = type.getDeclaredField(field);
+            return declared.isAnnotationPresent(NotNull.class) || declared.isAnnotationPresent(NotBlank.class);
+        } catch (NoSuchFieldException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void thePhotoOnAMachineReportIsDocumentedAsItIsSent() {
+        Map<String, Object> report = (Map<String, Object>) ((Map<String, Object>) schema("MachineFaultReportResult")
+                .get("properties")).get("report");
+        Map<String, Object> photo = (Map<String, Object>) ((Map<String, Object>) report.get("properties")).get("photo");
+        List<Map<String, Object>> alternatives = (List<Map<String, Object>>) photo.get("oneOf");
+        Map<String, Object> object = alternatives.stream().filter(a -> "object".equals(a.get("type"))).findFirst().orElseThrow();
+
+        assertEquals(components(MachineFaultReportResponse.Photo.class),
+                new TreeSet<>(((Map<String, Object>) object.get("properties")).keySet()));
+        assertEquals(components(MachineFaultReportResponse.Photo.class), new TreeSet<>((Collection<String>) object.get("required")));
+        assertTrue(alternatives.stream().anyMatch(a -> "null".equals(a.get("type"))), "photo may be null");
     }
 
     @Test

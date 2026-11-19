@@ -22,7 +22,7 @@ public class ManagerRecipientQuery {
         return jdbc.queryForList("SELECT email FROM api_users WHERE enabled = TRUE AND role = 'ADMINISTRATOR'", String.class);
     }
 
-    /** {@code sectorNames} must be lower case. */
+    /** {@code sectorNames} must be normalised as {@code DepartmentSectorNames.normalise} does (lower case, single spaces). */
     public List<String> coordinatorEmails(Collection<String> sectorNames) {
         if (sectorNames.isEmpty()) {
             return List.of();
@@ -32,7 +32,7 @@ public class ManagerRecipientQuery {
                         + "JOIN sector_members m ON lower(m.subject) = lower(u.email) "
                         + "JOIN sectors s ON s.id = m.sector_id "
                         + "WHERE u.enabled = TRUE AND u.role = 'DEPARTMENT_COORDINATOR' AND s.active = TRUE "
-                        + "AND lower(s.name) IN (" + placeholders + ")",
+                        + "AND regexp_replace(lower(btrim(s.name)), '[\\s_-]+', ' ', 'g') IN (" + placeholders + ")",
                 String.class, sectorNames.toArray());
     }
 }

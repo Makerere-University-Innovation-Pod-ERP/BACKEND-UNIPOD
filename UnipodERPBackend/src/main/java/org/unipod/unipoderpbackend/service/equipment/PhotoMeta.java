@@ -18,7 +18,8 @@ public record PhotoMeta(String fileName, String contentType) {
             throw new InvalidEquipmentException("The photo must be a JPG or PNG image.");
         }
         String name = fileName == null ? "" : fileName.trim();
-        name = name.substring(Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\')) + 1).trim();
+        name = name.substring(Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\')) + 1)
+                .replaceAll("\\p{Cntrl}", "").trim();
         if (name.isEmpty()) {
             return "photo";
         }

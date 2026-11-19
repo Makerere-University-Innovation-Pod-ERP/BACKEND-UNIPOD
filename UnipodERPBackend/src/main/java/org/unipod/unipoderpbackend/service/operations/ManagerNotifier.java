@@ -53,7 +53,14 @@ public class ManagerNotifier {
     }
 
     private static String shorten(String title) {
-        return title.length() <= TITLE_MAX ? title : title.substring(0, TITLE_MAX);
+        if (title.length() <= TITLE_MAX) {
+            return title;
+        }
+        int end = TITLE_MAX;
+        if (Character.isHighSurrogate(title.charAt(end - 1))) {
+            end--;
+        }
+        return title.substring(0, end);
     }
 
     private static String capitalised(DepartmentCode department) {

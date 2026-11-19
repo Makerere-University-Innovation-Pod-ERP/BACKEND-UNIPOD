@@ -23,11 +23,16 @@ public final class DepartmentSectorNames {
         };
     }
 
+    /** Lower case, with spaces, dashes and underscores all counting as one space ("Telecom-Lab" is "telecom lab"). */
+    public static String normalise(String sectorName) {
+        return sectorName.trim().toLowerCase(Locale.ROOT).replaceAll("[\\s_-]+", " ");
+    }
+
     public static Optional<DepartmentCode> codeOf(String sectorName) {
         if (sectorName == null) {
             return Optional.empty();
         }
-        String normalised = sectorName.trim().toLowerCase(Locale.ROOT);
+        String normalised = normalise(sectorName);
         for (DepartmentCode department : DepartmentCode.values()) {
             if (of(department).contains(normalised)) {
                 return Optional.of(department);

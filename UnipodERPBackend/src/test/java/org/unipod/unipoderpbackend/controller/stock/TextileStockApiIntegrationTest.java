@@ -226,6 +226,17 @@ class TextileStockApiIntegrationTest {
                 jdbc.queryForObject("SELECT sku FROM stock_items WHERE id = ?::uuid", String.class, id).startsWith("TEX-"));
     }
 
+    @Test
+    void anOrderReferenceOnReceivedStockIsNotReportedAsOrderUsage() throws Exception {
+        UUID item = fixtures().stockItem("TEXTILE", "Received cotton", "metres", "5", "0");
+
+        mockMvc.perform(post(PATH + "/movements").with(EquipmentFixtures.as("ADMINISTRATOR"))
+                        .contentType(MediaType.APPLICATION_JSON).content(movement(item, "RECEIVED", "2", null, "TXO-9")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.movement.orderId").value((Object) null))
+                .andExpect(jsonPath("$.movement.orderCode").value((Object) null));
+    }
+
     private long movementsThisWeek() {
         Long count = jdbc.queryForObject("SELECT count(*) FROM stock_movements m JOIN stock_items i ON i.id = m.stock_item_id "
                 + "WHERE i.department = 'TEXTILE' AND m.movement_type IS NOT NULL AND m.created_at >= now() - interval '7 days'",

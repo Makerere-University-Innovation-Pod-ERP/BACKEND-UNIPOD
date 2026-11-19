@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.unipod.unipoderpbackend.exception.equipment.EquipmentConflictException;
 import org.unipod.unipoderpbackend.exception.equipment.InvalidEquipmentException;
 import org.unipod.unipoderpbackend.model.operations.DepartmentCode;
@@ -107,7 +108,17 @@ class EquipmentItemTest {
 
         assertEquals(EquipmentState.FAULTY, item.getState());
         assertEquals("Ballast flickers", item.getNote());
+    }
+
+    @Test
+    void aFaultReportWithoutADescriptionChangesNothing() {
+        EquipmentItem item = item(2);
+
         assertThrows(InvalidEquipmentException.class, () -> item.reportFault(" ", LATER));
+
+        assertEquals(EquipmentState.AVAILABLE, item.getState());
+        assertEquals("", item.getNote());
+        assertEquals(NOW, item.getUpdatedAt());
     }
 
     @Test
@@ -128,7 +139,21 @@ class EquipmentItemTest {
 
     @Test
     void onlyFaultyOrMaintainedEquipmentCanBeMarkedWorking() {
-        assertThrows(EquipmentConflictException.class, () -> item(2).markWorking(null, LATER));
+        EquipmentItem healthy = item(2);
+
+        assertThrows(EquipmentConflictException.class, () -> healthy.markWorking(null, LATER));
+        assertEquals(NOW, healthy.getUpdatedAt());
+    }
+
+    @Test
+    void equipmentUnderMaintenanceCanBeMarkedWorkingToo() {
+        EquipmentItem item = item(2);
+        ReflectionTestUtils.setField(item, "state", EquipmentState.UNDER_MAINTENANCE);
+
+        item.markWorking("Service done", LATER);
+
+        assertEquals(EquipmentState.AVAILABLE, item.getState());
+        assertEquals("Service done", item.getNote());
     }
 
     @Test

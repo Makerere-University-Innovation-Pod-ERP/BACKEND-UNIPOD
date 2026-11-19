@@ -115,6 +115,9 @@ public class StockService {
             throw raced;
         }
         audit.log(AuditEvent.created(actor, "stock.item_registered", ENTITY, item.getId(), StockAuditSnapshot.of(item)));
+        if (item.isLow()) {
+            announceLowStock(department, item);
+        }
         if (opening.signum() > 0) {
             // The opening balance is a normal RECEIVED movement, so the history explains every unit on hand.
             StockMovement movement = item.record(new StockMovementDraft(StockMovementType.RECEIVED, opening,
@@ -142,10 +145,7 @@ public class StockService {
         audit.log(AuditEvent.changed(actor, "stock.movement_recorded", ENTITY, item.getId(), before,
                 StockAuditSnapshot.of(item, movement)));
         if (!wasLow && item.isLow()) {
-            notifier.notifyManagers(department, NotificationType.LOW_STOCK, "Low stock: " + item.getName(),
-                    "Only " + item.getQuantityOnHand().stripTrailingZeros().toPlainString() + " " + item.getUnit() + " of "
-                            + item.getName() + " left; the minimum is "
-                            + item.getMinimum().stripTrailingZeros().toPlainString() + ".", ENTITY, item.getId());
+            announceLowStock(department, item);
         }
         return new Recorded(movement, item, item.getName());
     }
@@ -155,17 +155,30 @@ public class StockService {
         access.require(actor, department);
         StockItem item = lockInDepartment(itemId, department);
         StockAuditSnapshot before = StockAuditSnapshot.of(item);
+        boolean wasLow = item.isLow();
 
         item.changeMinimum(minimum, clock.instant());
         items.save(item);
 
         audit.log(AuditEvent.changed(actor, "stock.minimum_changed", ENTITY, item.getId(), before,
                 StockAuditSnapshot.of(item)));
+        if (!wasLow && item.isLow()) {
+            announceLowStock(department, item);
+        }
         return item;
     }
 
+    private void announceLowStock(DepartmentCode department, StockItem item) {
+        notifier.notifyManagers(department, NotificationType.LOW_STOCK, "Low stock: " + item.getName(),
+                "Only " + item.getQuantityOnHand().stripTrailingZeros().toPlainString() + " " + item.getUnit() + " of "
+                        + item.getName() + " left; the minimum is "
+                        + item.getMinimum().stripTrailingZeros().toPlainString() + ".", ENTITY, item.getId());
+    }
+
     private StockMovementDraft draftFor(DepartmentCode department, MovementCommand command) {
-        String reference = command.reference() == null || command.reference().isBlank() ? null : command.reference().trim();
+        // Only usage names the request or order it was used on; on received stock or a correction a reference is dropped.
+        String reference = !command.type().isUsage() || command.reference() == null || command.reference().isBlank()
+                ? null : command.reference().trim();
         if (reference != null && command.type() == StockMovementType.USED_ON_ORDER) {
             // Textile orders live in the orders code; when the reference is one of this department's orders, keep its
             // code and link. Otherwise it is kept as typed (D-045).

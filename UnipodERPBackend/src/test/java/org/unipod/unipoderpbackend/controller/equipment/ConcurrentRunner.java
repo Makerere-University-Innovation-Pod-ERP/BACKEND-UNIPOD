@@ -27,11 +27,15 @@ public final class ConcurrentRunner {
                     return task.call();
                 }));
             }
-            ready.await(10, TimeUnit.SECONDS);
+            if (!ready.await(10, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Not every task became ready, so the race would not be a real one");
+            }
             go.countDown();
+            // One deadline for the whole batch, so a stalled run cannot block for a minute per task.
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
             List<T> results = new ArrayList<>();
             for (Future<T> future : futures) {
-                results.add(future.get(60, TimeUnit.SECONDS));
+                results.add(future.get(Math.max(1, deadline - System.nanoTime()), TimeUnit.NANOSECONDS));
             }
             return results;
         } finally {

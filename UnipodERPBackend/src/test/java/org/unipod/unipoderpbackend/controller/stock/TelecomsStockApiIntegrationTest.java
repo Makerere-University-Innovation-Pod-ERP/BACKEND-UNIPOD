@@ -356,6 +356,37 @@ class TelecomsStockApiIntegrationTest {
                 .andExpect(status().isUnprocessableContent());
     }
 
+    @Test
+    void changingTheMinimumAboveTheBalanceAndRegisteringALowItemAlsoTellTheManagers() throws Exception {
+        EquipmentFixtures fixtures = fixtures();
+        String admin = fixtures.insertUser("ADMINISTRATOR");
+        UUID item = fixtures.stockItem("TELECOMS", "Raised minimum", "pcs", "10", "5");
+
+        mockMvc.perform(patch(PATH + "/{id}/minimum", item).with(EquipmentFixtures.as("ADMINISTRATOR"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"minimum\": 4}")).andExpect(status().isOk());
+        entityManager.flush();
+        assertEquals(0, fixtures.notificationsFor(admin, "LOW_STOCK"));
+
+        mockMvc.perform(patch(PATH + "/{id}/minimum", item).with(EquipmentFixtures.as("ADMINISTRATOR"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"minimum\": 12}")).andExpect(status().isOk());
+        mockMvc.perform(post(PATH).with(EquipmentFixtures.as("ADMINISTRATOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\": \"Starts low\", \"unit\": \"pcs\", \"quantity\": 1, \"minimum\": 5}")).andExpect(status().isCreated());
+
+        entityManager.flush();
+        assertEquals(2, fixtures.notificationsFor(admin, "LOW_STOCK"));
+    }
+
+    @Test
+    void aReferenceOnReceivedStockIsNotKeptAsAnUsageReference() throws Exception {
+        UUID item = fixtures().stockItem("TELECOMS", "Reference item", "pcs", "10", "0");
+
+        mockMvc.perform(post(PATH + "/movements").with(EquipmentFixtures.as("ADMINISTRATOR"))
+                        .contentType(MediaType.APPLICATION_JSON).content(movement(item, "RECEIVED", "1", null, "REQ-9")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.movement.requestId").value((Object) null));
+    }
+
     private void insertMovement(UUID item, String type, String delta, String balance, String at) {
         jdbc.update("INSERT INTO stock_movements (id, stock_item_id, delta, movement_type, balance_after, created_by, "
                         + "created_at) VALUES (?, ?, ?::numeric, ?, ?::numeric, 'seed@test.local', ?::timestamptz)",

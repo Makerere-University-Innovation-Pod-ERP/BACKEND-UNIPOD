@@ -127,8 +127,9 @@ public class EquipmentItem {
 
     /** A fault flags the whole type, as the screens do; the description becomes the visible note. */
     public void reportFault(String description, Instant now) {
+        String newNote = required(description, "The description");
         this.state = EquipmentState.FAULTY;
-        this.note = required(description, "The description");
+        this.note = newNote;
         this.updatedAt = now;
     }
 
