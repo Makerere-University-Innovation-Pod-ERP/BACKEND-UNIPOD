@@ -133,6 +133,24 @@ tags:
       too long, missing) is `422`. A broken body, an unknown field or a bad enum or date value is
       `400`, and so is a rule the request shape cannot express, such as a renewal date outside the
       years 1900 to 2999.
+  - name: Equipment
+    description: |
+      Equipment registers (equipment and stock module F2). Equipment is counted per type: each row has a total and an
+      available quantity. Reads are open to every role except SUBMITTER. Fault reports and loan requests are open to
+      every role except SUBMITTER and OBSERVER. Registering equipment is for ADMINISTRATOR and DEPARTMENT_COORDINATOR;
+      a coordinator may act only in a department they belong to. A value that fails validation is `422`; a rule the
+      current state forbids (not enough units, a loan already decided) is `409`.
+  - name: Equipment loans
+    description: |
+      Telecoms equipment lending. A loan starts `PENDING_APPROVAL`; approving it puts it on loan (`ACTIVE`) and reserves
+      the units, declining leaves everything as it was, returning gives the units back. `OVERDUE` is shown for an active
+      loan past its return date and is never stored.
+  - name: Machines
+    description: Textile workshop machines, fault and service reports, and marking a machine working again.
+  - name: Stock
+    description: |
+      Department stock lists and their movement history (telecoms and textile). Quantities may be fractional; stock
+      never goes below zero.
   - name: Finance
     description: |
       Invoices, payment evidence, verification and receipts (finance module D4). Submitters see and
@@ -4317,6 +4335,822 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /operations/equipment:
+    get:
+      tags: [Equipment]
+      operationId: listMultimediaEquipment
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER]
+      summary: The multimedia equipment register
+      description: |
+        A plain array (not paged), ordered by name ignoring case. Equipment is counted per type: each row has a
+        total and an available quantity (D-008). Every role except SUBMITTER may read.
+      responses:
+        '200':
+          description: The register
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EquipmentItem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Equipment]
+      operationId: registerMultimediaEquipment
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Add a kind of equipment to the register
+      description: |
+        Asset tags are unique across all departments, ignoring case; a second item with the same tag returns `409`.
+        New items start `AVAILABLE` with every unit available. Recorded in the audit log as `equipment.registered`.
+        A department coordinator may act only in a department they belong to (a sector named like it); an administrator may act in all of them.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEquipmentRequest'
+      responses:
+        '201':
+          description: The new item
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EquipmentItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /operations/equipment/report-fault:
+    post:
+      tags: [Equipment]
+      operationId: reportMultimediaEquipmentFault
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER]
+      summary: Report a fault on multimedia equipment
+      description: |
+        Flags the whole item `FAULTY`, shows the description as its `note`, keeps a fault report and notifies the
+        department's managers. Faulty equipment cannot be lent. The description is stored with the report only and is never
+        written to the audit log (`equipment.fault_reported` holds ids, counts and states). Observers and submitters cannot
+        report. A department coordinator may act only in a department they belong to (a sector named like it); an administrator may act in all of them.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportEquipmentFaultRequest'
+      responses:
+        '200':
+          description: The item after the report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EquipmentItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /telecoms/equipment:
+    get:
+      tags: [Equipment]
+      operationId: listTelecomsEquipment
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER]
+      summary: The telecoms lab equipment register
+      description: |
+        The items are wrapped in `items`, ordered by name ignoring case. The telecoms register has no `category`.
+        Every role except SUBMITTER may read.
+      responses:
+        '200':
+          description: The register
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelecomsEquipmentList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Equipment]
+      operationId: registerTelecomsEquipment
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Add a kind of equipment to the telecoms register
+      description: |
+        Same rules as the multimedia register (`category` is accepted but not shown on this screen). Recorded in
+        the audit log as `equipment.registered`. A department coordinator may act only in a department they belong to (a sector named like it); an administrator may act in all of them.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEquipmentRequest'
+      responses:
+        '201':
+          description: The new item
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelecomsEquipmentItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /operations/equipment/{id}/mark-working:
+    post:
+      tags: [Equipment]
+      operationId: markMultimediaEquipmentWorking
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Put faulty multimedia equipment back in service
+      description: |
+        Clears `FAULTY` or `UNDER_MAINTENANCE` after a person has checked the item: the state becomes `AVAILABLE`, or
+        `LOANED` when every unit is still out on loan. The note is optional (a default is used). Equipment that is not
+        faulty or under maintenance returns `409`. Recorded in the audit log as `equipment.marked_working`. A department
+        coordinator may act only in a department they belong to; an administrator may act in all of them.
+      parameters:
+        - $ref: '#/components/parameters/EquipmentId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MarkEquipmentWorkingRequest'
+      responses:
+        '200':
+          description: The item after the change
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EquipmentItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /telecoms/equipment/{id}/mark-working:
+    post:
+      tags: [Equipment]
+      operationId: markTelecomsEquipmentWorking
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Put faulty telecoms equipment back in service
+      description: |
+        Clears `FAULTY` or `UNDER_MAINTENANCE` after a person has checked the item: the state becomes `AVAILABLE`, or
+        `LOANED` when every unit is still out on loan. The note is optional (a default is used). Equipment that is not
+        faulty or under maintenance returns `409`. Recorded in the audit log as `equipment.marked_working`. A department
+        coordinator may act only in a department they belong to; an administrator may act in all of them.
+      parameters:
+        - $ref: '#/components/parameters/EquipmentId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MarkEquipmentWorkingRequest'
+      responses:
+        '200':
+          description: The item after the change
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelecomsEquipmentItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /telecoms/equipment/report-fault:
+    post:
+      tags: [Equipment]
+      operationId: reportTelecomsEquipmentFault
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER]
+      summary: Report a fault on telecoms equipment
+      description: |
+        Same behaviour as the multimedia fault report. A department coordinator may act only in a department they belong to (a sector named like it); an administrator may act in all of them.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportEquipmentFaultRequest'
+      responses:
+        '200':
+          description: The item after the report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelecomsEquipmentItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /telecoms/equipment/loans:
+    get:
+      tags: [Equipment loans]
+      operationId: listTelecomsLoans
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER]
+      summary: Equipment loans, newest first
+      description: |
+        The latest 500 loans, wrapped in `items`. `status` is `OVERDUE` for an active loan whose `dateBack` is
+        before today in Kampala; that status is worked out on every read and never stored. Every role except SUBMITTER may read.
+      responses:
+        '200':
+          description: The loans
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EquipmentLoanList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Equipment loans]
+      operationId: requestTelecomsLoan
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER]
+      summary: Ask to borrow equipment
+      description: |
+        Starts as `PENDING_APPROVAL` and reserves nothing. The request must look possible when it is made: more units
+        than are available, or faulty equipment, returns `409`. An omitted `quantity` means 1 and `borrowerType` defaults to
+        `Student`. `id` is the loan reference (for example `LOAN-000012`). The department's managers are notified. The audit
+        log (`equipment_loan.requested`) holds ids, dates and counts, never the borrower's name or contact.
+        A department coordinator may act only in a department they belong to (a sector named like it); an administrator may act in all of them.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestLoanRequest'
+      responses:
+        '201':
+          description: The new loan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EquipmentLoan'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /telecoms/equipment/loans/{id}/approve:
+    post:
+      tags: [Equipment loans]
+      operationId: approveTelecomsLoan
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Approve a loan
+      description: |
+        Puts the loan straight on loan (`ACTIVE`) and takes the units out of `availableQuantity`; the last unit marks
+        the item `LOANED`. Availability is checked again under a lock, so of two approvals racing for the last unit one gets
+        `409`. The body is optional. Only a loan waiting for approval can be approved (`409` otherwise). Recorded as
+        `equipment_loan.approved`. A department coordinator may act only in a department they belong to (a sector named like it); an administrator may act in all of them.
+      parameters:
+        - $ref: '#/components/parameters/LoanId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApproveLoanRequest'
+      responses:
+        '200':
+          description: The loan after the decision
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EquipmentLoan'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /telecoms/equipment/loans/{id}/decline:
+    post:
+      tags: [Equipment loans]
+      operationId: declineTelecomsLoan
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Decline a loan
+      description: |
+        Records who declined and why in `managerApproval`; no units are touched. The body is optional. Only a loan
+        waiting for approval can be declined (`409` otherwise). Recorded as `equipment_loan.declined`. A department coordinator may act only in a department they belong to (a sector named like it); an administrator may act in all of them.
+      parameters:
+        - $ref: '#/components/parameters/LoanId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeclineLoanRequest'
+      responses:
+        '200':
+          description: The loan after the decision
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EquipmentLoan'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /telecoms/equipment/loans/{id}/return:
+    post:
+      tags: [Equipment loans]
+      operationId: returnTelecomsLoan
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Record the return of a loan
+      description: |
+        Gives the units back and records the condition they came back in. An overdue loan can be returned. Only a
+        loan that is out can be returned (`409` otherwise). Recorded as `equipment_loan.returned`. A department coordinator may act only in a department they belong to (a sector named like it); an administrator may act in all of them.
+      parameters:
+        - $ref: '#/components/parameters/LoanId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReturnLoanRequest'
+      responses:
+        '200':
+          description: The returned loan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EquipmentLoan'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /textile/machines:
+    get:
+      tags: [Machines]
+      operationId: listTextileMachines
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER]
+      summary: The textile workshop machines
+      description: |
+        The machines are wrapped in `items`, ordered by name ignoring case. A machine that is not `WORKING` is
+        not offered for use. Every role except SUBMITTER may read.
+      responses:
+        '200':
+          description: The machines
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MachineList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Machines]
+      operationId: registerTextileMachine
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Add a machine to the workshop list
+      description: |
+        Names are unique within the department, ignoring case (`409`). The state defaults to `WORKING`. Recorded as
+        `machine.registered`. A department coordinator may act only in a department they belong to (a sector named like it); an administrator may act in all of them.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMachineRequest'
+      responses:
+        '201':
+          description: The new machine
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Machine'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /textile/machines/{id}/reports:
+    post:
+      tags: [Machines]
+      operationId: reportTextileMachine
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER]
+      summary: Report a fault, or a service that is due
+      description: |
+        `multipart/form-data` with a JSON part `report` (`{kind, description}`, `kind` defaults to `FAULT`) and an
+        optional `photo` part (JPG or PNG; anything else is `422`). Only the photo's file name is kept; the picture itself is
+        not stored. A `FAULT` flags the machine `FAULT_REPORTED` (unless it is already `BEING_REPAIRED`); a `SERVICE` only
+        flags a `WORKING` machine `SERVICE_DUE`, so it never hides an earlier fault. `managersNotified` names the groups
+        that were told (never email addresses). The description and photo name are never written to the audit log.
+        A department coordinator may act only in a department they belong to (a sector named like it); an administrator may act in all of them.
+      parameters:
+        - $ref: '#/components/parameters/MachineId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/MachineReportForm'
+            encoding:
+              report:
+                contentType: application/json
+              photo:
+                contentType: image/jpeg, image/png
+      responses:
+        '201':
+          description: The machine, the report and who was notified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MachineFaultReportResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /textile/machines/{id}/mark-working:
+    post:
+      tags: [Machines]
+      operationId: markTextileMachineWorking
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Mark a machine working again
+      description: |
+        Resets the state to `WORKING` and sets the note (a default when none is sent). The body is optional. A
+        machine that is already `WORKING` returns `409`. Recorded as `machine.marked_working`. A department coordinator may act only in a department they belong to (a sector named like it); an administrator may act in all of them.
+      parameters:
+        - $ref: '#/components/parameters/MachineId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MarkMachineWorkingRequest'
+      responses:
+        '200':
+          description: The machine
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Machine'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /telecoms/stock:
+    get:
+      tags: [Stock]
+      operationId: listTelecomsStock
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER]
+      summary: The telecoms stock list
+      description: |
+        Items ordered by name ignoring case. Quantities can be fractional (two decimals). Every role except SUBMITTER may read.
+      responses:
+        '200':
+          description: The stock items
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelecomsStockList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Stock]
+      operationId: registerTelecomsStockItem
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Add an item to the telecoms stock list
+      description: |
+        A missing `sku` is generated. An opening `quantity` is recorded as a `RECEIVED` movement so the history
+        explains every unit. Recorded as `stock.item_registered`. A department coordinator may act only in a department they belong to (a sector named like it); an administrator may act in all of them.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateStockItemRequest'
+      responses:
+        '201':
+          description: The new item
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /telecoms/stock/movements:
+    get:
+      tags: [Stock]
+      operationId: listTelecomsStockMovements
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER]
+      summary: The telecoms stock history, newest first
+      description: |
+        The latest 200 movements, wrapped in `items`. Every role except SUBMITTER may read.
+      responses:
+        '200':
+          description: The movements
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelecomsStockMovementList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Stock]
+      operationId: recordTelecomsStockMovement
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Record stock received, used or corrected
+      description: |
+        Stock can never go below zero: a movement that would do so returns `422` and changes nothing, even when
+        two people record at once (the item is locked while the balance changes). Telecoms records usage as `USED_ON_REQUEST` with the `requestId` of the request. A `CORRECTION` may be negative and
+        needs a `note`; the other types need a positive quantity. A movement that takes an item below its minimum notifies the
+        managers once. Recorded as `stock.movement_recorded` with the balance and type only; notes and references are
+        never copied into the audit log. A department coordinator may act only in a department they belong to (a sector named like it); an administrator may act in all of them.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordTelecomsStockMovementRequest'
+      responses:
+        '201':
+          description: The new movement and the item with its new balance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelecomsStockMovementResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /telecoms/stock/{id}/minimum:
+    patch:
+      tags: [Stock]
+      operationId: updateTelecomsStockMinimum
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Change an item's low-stock minimum
+      description: |
+        Only `minimum` can be changed here. It must be zero or more. Recorded as `stock.minimum_changed`.
+        A department coordinator may act only in a department they belong to (a sector named like it); an administrator may act in all of them.
+      parameters:
+        - $ref: '#/components/parameters/StockItemId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStockMinimumRequest'
+      responses:
+        '200':
+          description: The item
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /textile/stock:
+    get:
+      tags: [Stock]
+      operationId: listTextileStock
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER]
+      summary: The textile stock list
+      description: |
+        Items ordered by name ignoring case. Quantities can be fractional (two decimals). Every role except SUBMITTER may read. `movementsThisWeek` counts the movements recorded in the last seven days.
+      responses:
+        '200':
+          description: The stock items
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextileStockList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Stock]
+      operationId: registerTextileStockItem
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Add an item to the textile stock list
+      description: |
+        A missing `sku` is generated. An opening `quantity` is recorded as a `RECEIVED` movement so the history
+        explains every unit. Recorded as `stock.item_registered`. A department coordinator may act only in a department they belong to (a sector named like it); an administrator may act in all of them.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateStockItemRequest'
+      responses:
+        '201':
+          description: The new item
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /textile/stock/movements:
+    get:
+      tags: [Stock]
+      operationId: listTextileStockMovements
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER]
+      summary: The textile stock history, newest first
+      description: |
+        The latest 200 movements, wrapped in `items`. Every role except SUBMITTER may read.
+      responses:
+        '200':
+          description: The movements
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextileStockMovementList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Stock]
+      operationId: recordTextileStockMovement
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Record stock received, used or corrected
+      description: |
+        Stock can never go below zero: a movement that would do so returns `422` and changes nothing, even when
+        two people record at once (the item is locked while the balance changes). Textile records usage as `USED_ON_ORDER` with the `orderId` of the order; when that is the id of a textile order the response also carries its `orderCode`. A `CORRECTION` may be negative and
+        needs a `note`; the other types need a positive quantity. A movement that takes an item below its minimum notifies the
+        managers once. Recorded as `stock.movement_recorded` with the balance and type only; notes and references are
+        never copied into the audit log. A department coordinator may act only in a department they belong to (a sector named like it); an administrator may act in all of them.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordTextileStockMovementRequest'
+      responses:
+        '201':
+          description: The new movement and the item with its new balance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextileStockMovementResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /textile/stock/{id}:
+    patch:
+      tags: [Stock]
+      operationId: updateTextileStockMinimum
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Change an item's low-stock minimum
+      description: |
+        Only `minimum` can be changed here. It must be zero or more. Recorded as `stock.minimum_changed`.
+        A department coordinator may act only in a department they belong to (a sector named like it); an administrator may act in all of them.
+      parameters:
+        - $ref: '#/components/parameters/StockItemId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStockMinimumRequest'
+      responses:
+        '200':
+          description: The item
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /me/invoices:
     get:
       tags: [Finance]
@@ -5338,6 +6172,37 @@ components:
       in: path
       required: true
       description: The partner's id
+      schema:
+        type: string
+        format: uuid
+    EquipmentId:
+      name: id
+      in: path
+      required: true
+      description: The equipment item's id
+      schema:
+        type: string
+        format: uuid
+    LoanId:
+      name: id
+      in: path
+      required: true
+      description: The loan reference, for example `LOAN-000012`
+      schema:
+        type: string
+    MachineId:
+      name: id
+      in: path
+      required: true
+      description: The machine's id
+      schema:
+        type: string
+        format: uuid
+    StockItemId:
+      name: id
+      in: path
+      required: true
+      description: The stock item's id
       schema:
         type: string
         format: uuid
@@ -8566,6 +9431,565 @@ components:
         `EXPIRED`; 0 to 30 days left is `EXPIRING_SOON`; 31 to 60 days is `RENEWAL_DUE`; anything
         further out, or no date, is `ACTIVE`. The 30 and 60 day limits are configurable.
       enum: [ACTIVE, RENEWAL_DUE, EXPIRING_SOON, EXPIRED]
+    EquipmentState:
+      type: string
+      enum: [AVAILABLE, IN_USE, LOANED, UNDER_MAINTENANCE, FAULTY]
+    EquipmentItem:
+      type: object
+      description: One kind of equipment, counted per type (multimedia register).
+      required: [id, name, category, assetTag, totalQuantity, availableQuantity, state, location, note, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        category:
+          type: string
+        assetTag:
+          type: string
+        totalQuantity:
+          type: integer
+          minimum: 1
+        availableQuantity:
+          type: integer
+          minimum: 0
+        state:
+          $ref: '#/components/schemas/EquipmentState'
+        location:
+          type: string
+        note:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+    TelecomsEquipmentItem:
+      type: object
+      description: One kind of equipment in the telecoms lab; the same as `EquipmentItem` without `category`.
+      required: [id, name, assetTag, totalQuantity, availableQuantity, state, location, note, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        assetTag:
+          type: string
+        totalQuantity:
+          type: integer
+          minimum: 1
+        availableQuantity:
+          type: integer
+          minimum: 0
+        state:
+          $ref: '#/components/schemas/EquipmentState'
+        location:
+          type: string
+        note:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+    TelecomsEquipmentList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TelecomsEquipmentItem'
+    CreateEquipmentRequest:
+      type: object
+      additionalProperties: false
+      required: [name, assetTag, totalQuantity]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        category:
+          type: string
+          maxLength: 100
+        assetTag:
+          type: string
+          minLength: 1
+          maxLength: 64
+        totalQuantity:
+          type: integer
+          minimum: 1
+          maximum: 100000
+        location:
+          type: string
+          maxLength: 255
+        note:
+          type: string
+          maxLength: 2000
+    ReportEquipmentFaultRequest:
+      type: object
+      additionalProperties: false
+      required: [equipmentId, description]
+      properties:
+        equipmentId:
+          type: string
+          format: uuid
+        description:
+          type: string
+          minLength: 1
+          maxLength: 2000
+    MarkEquipmentWorkingRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        note:
+          type: string
+          maxLength: 2000
+    LoanStatus:
+      type: string
+      description: |
+        `APPROVED` is never sent: approving a loan puts it straight on loan (`ACTIVE`). `OVERDUE` is an `ACTIVE` loan
+        whose `dateBack` is before today in Kampala.
+      enum: [PENDING_APPROVAL, DECLINED, ACTIVE, RETURNED, OVERDUE]
+    LoanManagerApproval:
+      type: object
+      description: The manager's decision. Present on approved and on declined loans, `null` while pending.
+      required: [approvedBy, approvedAt, note]
+      properties:
+        approvedBy:
+          type: string
+          description: The deciding manager's account email
+        approvedAt:
+          type: string
+          format: date-time
+        note:
+          type: [string, 'null']
+    EquipmentLoan:
+      type: object
+      required: [id, equipmentId, equipmentName, quantity, borrowerName, borrowerType, borrowerContact, dateOut, dateBack, outgoingCondition, incomingCondition, status, managerApproval, createdAt]
+      properties:
+        id:
+          type: string
+          description: The loan reference, for example `LOAN-000012`
+        equipmentId:
+          type: string
+          format: uuid
+        equipmentName:
+          type: string
+        quantity:
+          type: integer
+          minimum: 1
+        borrowerName:
+          type: string
+        borrowerType:
+          type: string
+        borrowerContact:
+          type: string
+        dateOut:
+          type: string
+          format: date
+        dateBack:
+          type: string
+          format: date
+        outgoingCondition:
+          type: string
+        incomingCondition:
+          type: [string, 'null']
+        status:
+          $ref: '#/components/schemas/LoanStatus'
+        managerApproval:
+          oneOf:
+            - $ref: '#/components/schemas/LoanManagerApproval'
+            - type: 'null'
+        createdAt:
+          type: string
+          format: date-time
+    EquipmentLoanList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/EquipmentLoan'
+    RequestLoanRequest:
+      type: object
+      additionalProperties: false
+      required: [equipmentId, borrowerName, borrowerContact, dateOut, dateBack]
+      properties:
+        equipmentId:
+          type: string
+          format: uuid
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 1
+        borrowerName:
+          type: string
+          minLength: 1
+          maxLength: 200
+        borrowerType:
+          type: string
+          maxLength: 40
+          default: Student
+        borrowerContact:
+          type: string
+          minLength: 1
+          maxLength: 200
+        dateOut:
+          type: string
+          format: date
+        dateBack:
+          type: string
+          format: date
+          description: On or after `dateOut`
+        outgoingCondition:
+          type: string
+          maxLength: 1000
+    ApproveLoanRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        note:
+          type: string
+          maxLength: 1000
+    DeclineLoanRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        reason:
+          type: string
+          maxLength: 1000
+    ReturnLoanRequest:
+      type: object
+      additionalProperties: false
+      required: [condition]
+      properties:
+        condition:
+          type: string
+          minLength: 1
+          maxLength: 2000
+    MachineState:
+      type: string
+      enum: [WORKING, FAULT_REPORTED, SERVICE_DUE, BEING_REPAIRED]
+    Machine:
+      type: object
+      required: [id, name, state, note, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        state:
+          $ref: '#/components/schemas/MachineState'
+        note:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+    MachineList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Machine'
+    CreateMachineRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        state:
+          $ref: '#/components/schemas/MachineState'
+        note:
+          type: string
+          maxLength: 2000
+    FaultKind:
+      type: string
+      enum: [FAULT, SERVICE]
+    ReportMachineRequest:
+      type: object
+      description: The JSON part of a machine report.
+      additionalProperties: false
+      required: [description]
+      properties:
+        kind:
+          $ref: '#/components/schemas/FaultKind'
+        description:
+          type: string
+          minLength: 1
+          maxLength: 2000
+    MachineReportForm:
+      type: object
+      required: [report]
+      properties:
+        report:
+          $ref: '#/components/schemas/ReportMachineRequest'
+        photo:
+          type: string
+          format: binary
+          description: Optional JPG or PNG. Only its file name is kept.
+    MachineFaultReportResult:
+      type: object
+      required: [machine, report, managersNotified]
+      properties:
+        machine:
+          $ref: '#/components/schemas/Machine'
+        report:
+          type: object
+          required: [id, kind, description, photo, by, at]
+          properties:
+            id:
+              type: string
+              format: uuid
+            kind:
+              $ref: '#/components/schemas/FaultKind'
+            description:
+              type: string
+            photo:
+              oneOf:
+                - type: object
+                  required: [name]
+                  properties:
+                    name:
+                      type: string
+                - type: 'null'
+            by:
+              type: string
+              description: The reporter's account email
+            at:
+              type: string
+              format: date-time
+        managersNotified:
+          type: array
+          description: Groups that were told, such as `Administrators`; never email addresses. Empty when the department has no manager yet.
+          items:
+            type: string
+    MarkMachineWorkingRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        note:
+          type: string
+          maxLength: 2000
+    StockMovementType:
+      type: string
+      description: Telecoms uses `USED_ON_REQUEST` and textile uses `USED_ON_ORDER`; either may `RECEIVED` and `CORRECTION`.
+      enum: [RECEIVED, USED_ON_REQUEST, USED_ON_ORDER, CORRECTION]
+    StockItem:
+      type: object
+      required: [id, name, unit, quantity, minimum, location]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        unit:
+          type: string
+        quantity:
+          type: number
+          minimum: 0
+        minimum:
+          type: number
+          minimum: 0
+        location:
+          type: string
+    TelecomsStockList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/StockItem'
+    TextileStockList:
+      type: object
+      required: [items, movementsThisWeek]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/StockItem'
+        movementsThisWeek:
+          type: integer
+          minimum: 0
+    TelecomsStockMovement:
+      type: object
+      required: [id, itemId, itemName, type, quantity, balance, note, requestId, by, at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        itemId:
+          type: string
+          format: uuid
+        itemName:
+          type: string
+        type:
+          $ref: '#/components/schemas/StockMovementType'
+        quantity:
+          type: number
+          description: What was typed. Positive for received and used stock, signed for a correction.
+        balance:
+          type: number
+          description: The balance after this movement
+        note:
+          type: [string, 'null']
+        requestId:
+          type: [string, 'null']
+        by:
+          type: string
+          description: The account email of who recorded it
+        at:
+          type: string
+          format: date-time
+    TelecomsStockMovementList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TelecomsStockMovement'
+    TelecomsStockMovementResult:
+      type: object
+      required: [movement, item]
+      properties:
+        movement:
+          $ref: '#/components/schemas/TelecomsStockMovement'
+        item:
+          $ref: '#/components/schemas/StockItem'
+    TextileStockMovement:
+      type: object
+      required: [id, itemId, itemName, type, quantity, balanceAfter, orderId, orderCode, note, by, at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        itemId:
+          type: string
+          format: uuid
+        itemName:
+          type: string
+        type:
+          $ref: '#/components/schemas/StockMovementType'
+        quantity:
+          type: number
+          description: What was typed. Positive for received and used stock, signed for a correction.
+        balanceAfter:
+          type: number
+        orderId:
+          type: [string, 'null']
+          description: The order the stock was used on, as it was typed
+        orderCode:
+          type: [string, 'null']
+          description: The order's code, when `orderId` is the id of a textile order
+        note:
+          type: string
+          description: Empty when no note was given
+        by:
+          type: string
+          description: The account email of who recorded it
+        at:
+          type: string
+          format: date-time
+    TextileStockMovementList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TextileStockMovement'
+    TextileStockMovementResult:
+      type: object
+      required: [movement, item]
+      properties:
+        movement:
+          $ref: '#/components/schemas/TextileStockMovement'
+        item:
+          $ref: '#/components/schemas/StockItem'
+    RecordTelecomsStockMovementRequest:
+      type: object
+      additionalProperties: false
+      required: [itemId, type, quantity]
+      properties:
+        itemId:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/StockMovementType'
+        quantity:
+          type: number
+          description: Up to two decimals. Never zero; negative only for a `CORRECTION`.
+        note:
+          type: string
+          maxLength: 1000
+        requestId:
+          type: string
+          maxLength: 64
+          description: Required for `USED_ON_REQUEST`
+    RecordTextileStockMovementRequest:
+      type: object
+      additionalProperties: false
+      required: [itemId, type, quantity]
+      properties:
+        itemId:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/StockMovementType'
+        quantity:
+          type: number
+          description: Up to two decimals. Never zero; negative only for a `CORRECTION`.
+        note:
+          type: string
+          maxLength: 1000
+        orderId:
+          type: string
+          maxLength: 64
+          description: Required for `USED_ON_ORDER`
+    UpdateStockMinimumRequest:
+      type: object
+      additionalProperties: false
+      required: [minimum]
+      properties:
+        minimum:
+          type: number
+          minimum: 0
+    CreateStockItemRequest:
+      type: object
+      additionalProperties: false
+      required: [name, unit]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        unit:
+          type: string
+          minLength: 1
+          maxLength: 32
+        quantity:
+          type: number
+          minimum: 0
+          description: Opening balance, recorded as a `RECEIVED` movement
+        minimum:
+          type: number
+          minimum: 0
+        location:
+          type: string
+          maxLength: 255
+        sku:
+          type: string
+          maxLength: 64
+          description: Generated when left out; unique ignoring case
     Partner:
       type: object
       required: [id, name, type, renewalDate, status, contactPerson, contactEmail, notes, version]
