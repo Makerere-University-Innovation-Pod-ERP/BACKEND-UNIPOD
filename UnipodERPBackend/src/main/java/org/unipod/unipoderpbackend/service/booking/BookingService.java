@@ -120,6 +120,39 @@ public class BookingService {
         return BookingResponse.from(booking);
     }
 
+    /**
+     * Creates a booking that is approved straight away, for a department that books its own space.
+     * The same facility lock and clash checks as {@link #create} apply, so a clash is still a conflict;
+     * the requester is not sent an "approved" message for something they just confirmed themselves.
+     */
+    @Transactional
+    public BookingResponse createApproved(CreateBookingRequest request, String actor) {
+        BookingResponse created = create(request, actor);
+        Booking booking = lockBooking(created.id());
+        booking.approve(null, actor, clock.instant());
+        bookings.saveAndFlush(booking);
+        auditTrail.record(actor, "booking.approved", "booking", booking.getId(),
+                AuditTrail.details("status", BookingStatus.PENDING.name()),
+                AuditTrail.details("status", booking.getStatus().name(), "decision", "APPROVED"));
+        return BookingResponse.from(booking);
+    }
+
+    /**
+     * Cancels a booking on behalf of the department that owns it. {@link #cancel} only lets the person who
+     * made a booking cancel it, but a department also cancels bookings its colleagues made.
+     */
+    @Transactional
+    public BookingResponse cancelAsStaff(UUID id, String actor) {
+        Booking booking = lockBooking(id);
+        BookingStatus previousStatus = booking.getStatus();
+        booking.cancel(clock.instant());
+        bookings.saveAndFlush(booking);
+        auditTrail.record(actor, "booking.cancelled", "booking", id,
+                AuditTrail.details("status", previousStatus.name()),
+                AuditTrail.details("status", BookingStatus.CANCELLED.name()));
+        return BookingResponse.from(booking);
+    }
+
     @Transactional(readOnly = true)
     public Page<BookingResponse> forRequester(String requesterId, Pageable pageable) {
         return bookings.findAllByRequesterIdOrderByStartsAtDescIdDesc(requesterId, pageable)
