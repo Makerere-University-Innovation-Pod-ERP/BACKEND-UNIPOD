@@ -21,7 +21,7 @@ import org.unipod.unipoderpbackend.repository.operations.StockMovementRepository
 
 /**
  * The orders code deducts materials from stock with the same draft this test uses (type USED_ON_ORDER, the order's
- * id and code as reference, whole-number quantity). It must produce a row the V50 checks accept.
+ * id and code as reference, whole-number quantity). It must produce a row the V52 checks accept.
  */
 @SpringBootTest
 @Transactional

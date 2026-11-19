@@ -3,73 +3,110 @@ package org.unipod.unipoderpbackend.service.operations;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.Mockito.atLeastOnce;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.transaction.annotation.Transactional;
+import org.unipod.unipoderpbackend.exception.operations.DepartmentNotSetUpException;
 import org.unipod.unipoderpbackend.model.auth.ApiUserRole;
 import org.unipod.unipoderpbackend.model.authorization.Actor;
 import org.unipod.unipoderpbackend.model.operations.DepartmentCode;
-import org.unipod.unipoderpbackend.repository.operations.DepartmentMembershipQuery;
+import org.unipod.unipoderpbackend.support.OperationsTestData;
 
+@SpringBootTest
+@Transactional
 class DepartmentAccessTest {
-    private final DepartmentMembershipQuery memberships = mock(DepartmentMembershipQuery.class);
-    private final DepartmentAccess access = new DepartmentAccess(memberships);
+    @Autowired
+    private DepartmentAccess access;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    private UUID telecoms;
+    private UUID textile;
+
+    @BeforeEach
+    void seed() {
+        telecoms = OperationsTestData.sector(jdbcTemplate, "Telecoms");
+        textile = OperationsTestData.sector(jdbcTemplate, "Textile");
+    }
 
     @Test
-    void administratorsActInEveryDepartment() {
-        Actor admin = actor(ApiUserRole.ADMINISTRATOR);
+    void anAdministratorMayActInEveryDepartment() {
+        Actor admin = new Actor("admin@test.local", ApiUserRole.ADMINISTRATOR, Set.of());
 
         for (DepartmentCode department : DepartmentCode.values()) {
             assertDoesNotThrow(() -> access.require(admin, department));
+            assertDoesNotThrow(() -> access.requireManage(admin, department));
         }
     }
 
     @Test
-    void aCoordinatorActsOnlyInTheirOwnDepartment() {
-        Actor coordinator = actor(ApiUserRole.DEPARTMENT_COORDINATOR);
-        when(memberships.activeSectorNames(coordinator.departmentIds())).thenReturn(List.of("Telecoms"));
+    void aCoordinatorMayActOnlyInDepartmentsTheyBelongTo() {
+        Actor coordinator = new Actor("c@test.local", ApiUserRole.DEPARTMENT_COORDINATOR, Set.of(telecoms));
 
         assertDoesNotThrow(() -> access.require(coordinator, DepartmentCode.TELECOMS));
+        assertDoesNotThrow(() -> access.requireManage(coordinator, DepartmentCode.TELECOMS));
         assertThrows(AccessDeniedException.class, () -> access.require(coordinator, DepartmentCode.TEXTILE));
-        verify(memberships, atLeastOnce()).activeSectorNames(coordinator.departmentIds());
+        assertThrows(AccessDeniedException.class, () -> access.requireManage(coordinator, DepartmentCode.TEXTILE));
     }
 
     @Test
-    void aCoordinatorWithNoMatchingSectorActsNowhere() {
-        Actor coordinator = actor(ApiUserRole.DEPARTMENT_COORDINATOR);
-        when(memberships.activeSectorNames(coordinator.departmentIds())).thenReturn(List.of("Agriculture and Food"));
+    void aCoordinatorOfDepartmentAliasesMayManageThatDepartment() {
+        UUID media = OperationsTestData.sector(jdbcTemplate, "Media");
+        OperationsTestData.sector(jdbcTemplate, "Multimedia");
+        Actor coordinator = new Actor("c@test.local", ApiUserRole.DEPARTMENT_COORDINATOR, Set.of(media));
 
-        for (DepartmentCode department : DepartmentCode.values()) {
-            assertThrows(AccessDeniedException.class, () -> access.require(coordinator, department));
-        }
+        assertDoesNotThrow(() -> access.requireManage(coordinator, DepartmentCode.MULTIMEDIA));
+        assertEquals(Set.of(DepartmentCode.MULTIMEDIA), access.departmentsOf(coordinator));
     }
 
     @Test
-    void aCoordinatorOfSeveralDepartmentsActsInAllOfThem() {
-        Actor coordinator = actor(ApiUserRole.DEPARTMENT_COORDINATOR);
-        when(memberships.activeSectorNames(coordinator.departmentIds())).thenReturn(List.of("textile", "CNC"));
+    void departmentsOfIncludesEveryMatchingSectorTheCoordinatorBelongsTo() {
+        UUID cnc = OperationsTestData.sector(jdbcTemplate, "CNC");
+        Actor coordinator = new Actor(
+                "c@test.local",
+                ApiUserRole.DEPARTMENT_COORDINATOR,
+                Set.of(telecoms, textile, cnc));
 
-        assertEquals(Set.of(DepartmentCode.TEXTILE, DepartmentCode.CNC), access.departmentsOf(coordinator));
+        assertEquals(Set.of(DepartmentCode.TELECOMS, DepartmentCode.TEXTILE, DepartmentCode.CNC),
+                access.departmentsOf(coordinator));
     }
 
     @Test
-    void otherRolesAreNotTiedToADepartmentHere() {
-        Actor reviewer = actor(ApiUserRole.REVIEWER);
+    void aCoordinatorWithNoDepartmentIsRefused() {
+        Actor coordinator = new Actor("c@test.local", ApiUserRole.DEPARTMENT_COORDINATOR, Set.of());
 
-        assertDoesNotThrow(() -> access.require(reviewer, DepartmentCode.CNC));
+        assertThrows(AccessDeniedException.class, () -> access.require(coordinator, DepartmentCode.TELECOMS));
+        assertThrows(AccessDeniedException.class, () -> access.requireManage(coordinator, DepartmentCode.TELECOMS));
+    }
+
+    @Test
+    void aCoordinatorIsRefusedWhenTheDepartmentHasNoSectorYet() {
+        Actor coordinator = new Actor("c@test.local", ApiUserRole.DEPARTMENT_COORDINATOR, Set.of(textile));
+
+        assertThrows(AccessDeniedException.class, () -> access.requireManage(coordinator, DepartmentCode.CNC));
+    }
+
+    @Test
+    void otherRolesAreNotTiedToADepartmentButCannotManageOne() {
+        Actor observer = new Actor("o@test.local", ApiUserRole.OBSERVER, Set.of(telecoms));
+
+        assertDoesNotThrow(() -> access.require(observer, DepartmentCode.TELECOMS));
+        assertThrows(AccessDeniedException.class, () -> access.requireManage(observer, DepartmentCode.TELECOMS));
     }
 
     @Test
     void sectorNamesMatchTheDepartmentAliases() {
         assertEquals(Optional.of(DepartmentCode.TELECOMS), DepartmentSectorNames.codeOf(" Telecom Lab "));
+        assertEquals(Optional.of(DepartmentCode.TELECOMS), DepartmentSectorNames.codeOf("Telecommunications"));
         assertEquals(Optional.of(DepartmentCode.MULTIMEDIA), DepartmentSectorNames.codeOf("MEDIA"));
         assertEquals(Optional.of(DepartmentCode.TELECOMS), DepartmentSectorNames.codeOf("telecom-lab"));
         assertEquals(Optional.of(DepartmentCode.TELECOMS), DepartmentSectorNames.codeOf("TELECOM_LAB"));
@@ -77,7 +114,29 @@ class DepartmentAccessTest {
         assertEquals(Optional.empty(), DepartmentSectorNames.codeOf(null));
     }
 
-    private static Actor actor(ApiUserRole role) {
-        return new Actor("person-" + UUID.randomUUID() + "@test.local", role, Set.of(UUID.randomUUID()));
+    @Test
+    void aTelecommunicationsSectorStillMapsToTelecoms() {
+        UUID telecommunications = OperationsTestData.sector(jdbcTemplate, "Telecommunications");
+        Actor coordinator = new Actor("c@test.local", ApiUserRole.DEPARTMENT_COORDINATOR, Set.of(telecommunications));
+
+        assertDoesNotThrow(() -> access.requireManage(coordinator, DepartmentCode.TELECOMS));
+        assertEquals(Set.of(DepartmentCode.TELECOMS), access.departmentsOf(coordinator));
+    }
+
+    @Test
+    void findsTheSectorAndFacilityOfADepartment() {
+        UUID facility = OperationsTestData.exclusiveFacility(jdbcTemplate, "Telecoms", 12);
+
+        assertEquals(telecoms, access.requireSector(DepartmentCode.TELECOMS));
+        assertEquals(facility, access.requireFacility(DepartmentCode.TELECOMS));
+    }
+
+    @Test
+    void anInactiveSectorOrMissingFacilityIsReportedAsNotSetUp() {
+        jdbcTemplate.update("UPDATE sectors SET active = FALSE WHERE id = ?", textile);
+        jdbcTemplate.update("UPDATE facilities SET department = 'moved by test' WHERE lower(btrim(department)) = 'cnc'");
+
+        assertThrows(DepartmentNotSetUpException.class, () -> access.requireSector(DepartmentCode.TEXTILE));
+        assertThrows(DepartmentNotSetUpException.class, () -> access.requireFacility(DepartmentCode.CNC));
     }
 }

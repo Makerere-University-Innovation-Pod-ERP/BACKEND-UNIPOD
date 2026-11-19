@@ -19,7 +19,7 @@ public final class DepartmentSectorNames {
             case MULTIMEDIA -> Set.of("multimedia", "media");
             case TEXTILE -> Set.of("textile", "textiles");
             case CNC -> Set.of("cnc");
-            case TELECOMS -> Set.of("telecoms", "telecom", "telecom lab");
+            case TELECOMS -> Set.of("telecoms", "telecom", "telecommunications", "telecom lab");
         };
     }
 

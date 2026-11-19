@@ -84,7 +84,7 @@ class TelecomsStockApiIntegrationTest {
         insertMovement(mine, "RECEIVED", "5", "15", "2026-11-18T09:00:00Z");
         insertMovement(mine, "USED_ON_REQUEST", "-2", "13", "2026-11-19T09:00:00Z");
         insertMovement(other, "RECEIVED", "1", "11", "2026-11-19T10:00:00Z");
-        // A row written before V50 has no type or balance. The check that now forbids that is dropped inside this
+        // A row written before V52 has no type or balance. The check that now forbids that is dropped inside this
         // test's transaction only (DDL is transactional in Postgres), so the row can stand in for an old one.
         jdbc.execute("ALTER TABLE stock_movements DROP CONSTRAINT ck_stock_movements_recorded");
         jdbc.update("INSERT INTO stock_movements (id, stock_item_id, delta, created_by, created_at) "

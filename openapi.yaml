@@ -166,6 +166,20 @@ tags:
       booking at a facility in `MAINTENANCE`.
   - name: Service Catalogue
     description: Public service catalogue and administrator/coordinator-managed catalogue items.
+  - name: Media
+    description: |
+      The media board (operations module F4). Reads are open to every role except SUBMITTER; moving a card or
+      editing its details needs ADMINISTRATOR or a DEPARTMENT_COORDINATOR of the Multimedia department.
+      A card moves one step forward only. Dates are ISO-8601 with offset.
+  - name: Telecoms
+    description: |
+      The Telecoms lab calendar and bootcamps (operations module F4). Reads are open to every role except
+      SUBMITTER; writes need ADMINISTRATOR or a DEPARTMENT_COORDINATOR of the Telecoms department. Dates are
+      `YYYY-MM-DD` and times `HH:mm` in Kampala time. A clash is `409`.
+  - name: Textile
+    description: |
+      The textile workshop calendar, sign-ups and attendance (operations module F4). Same rules as Telecoms,
+      for the Textile department.
 x-cors:
   allowedOrigins:
     - http://localhost:5173
@@ -6193,6 +6207,556 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+  /operations/media/overview:
+    get:
+      tags: [Media]
+      operationId: getMediaBoardOverview
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER]
+      summary: Media board data
+      description: |
+        The media screen's four counts and the cards they count. The counts are computed from the same list, so a
+        column's count always equals its cards. A request closed after delivery (stored `COMPLETED`) is counted and
+        listed as `DELIVERED`; a cancelled request is left out.
+      responses:
+        '200':
+          description: Media board
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaBoardOverview'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /operations/media/requests:
+    get:
+      tags: [Media]
+      operationId: listMediaBoardRequests
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER]
+      summary: Media board cards
+      description: |
+        Every open media request, newest activity first, in the shape of the frontend's `mediaRequestSchema`.
+        `studio` is the studio facility's name or `null`. `assignee` is an empty string when nobody is assigned.
+        `date` and `description` are left out of the card when they are not set.
+        This is separate from the submitter-facing `/media/requests`.
+      responses:
+        '200':
+          description: Media board cards
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MediaBoardRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /operations/media/requests/{id}/status:
+    patch:
+      tags: [Media]
+      operationId: changeMediaRequestStatus
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Move a media request forward
+      description: |
+        Moves the card one step: REQUESTED to SCHEDULED to IN_PRODUCTION to DELIVERED. A skip, a repeat, a move
+        back, a move out of DELIVERED or a move of a cancelled request is `409`. `COMPLETED` and `CANCELLED` are
+        not accepted values (`400`). Delivering stamps the delivery time and tells the submitter. A coordinator
+        must belong to the Multimedia department.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The media request id
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMediaStatusRequest'
+      responses:
+        '200':
+          description: The moved card
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaBoardRequest'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /operations/media/requests/{id}/details:
+    patch:
+      tags: [Media]
+      operationId: updateMediaRequestDetails
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Set a media request studio, assignee, date and description
+      description: |
+        Omitted or null fields are left as they are; a blank `assignee` or `description` clears it. The studio and
+        the date can be replaced but not cleared. A delivered, closed or cancelled request cannot be changed (`409`).
+        An update that changes nothing writes nothing.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The media request id
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMediaDetailsRequest'
+      responses:
+        '200':
+          description: The updated card
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaBoardRequest'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /telecoms/lab-bookings:
+    get:
+      tags: [Telecoms]
+      operationId: getLabCalendar
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER]
+      summary: Telecoms lab calendar
+      description: |
+        Confirmed lab bookings that overlap the dates, soonest first, and the lab's weekly classes derived from
+        its timetable blocks (`weekday` 1 = Monday, local `start` and `end`, repeated blocks merged). Without
+        dates it is the current Kampala week; with one date the other end is a week away. At most three months.
+        Cancelled, pending and rejected bookings are not listed. `paymentStatus` comes from the linked invoice,
+        or `NOT_REQUESTED`.
+      parameters:
+        - name: from
+          in: query
+          required: false
+          description: First day, YYYY-MM-DD (Kampala)
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: false
+          description: Last day, YYYY-MM-DD (Kampala)
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Lab calendar
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LabCalendar'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    post:
+      tags: [Telecoms]
+      operationId: createLabBooking
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Book the Telecoms lab
+      description: |
+        Books the Telecoms department's facility and confirms it at once. The clash rules of `/bookings` apply:
+        another booking or a timetable block at that time, or a facility under maintenance, is `409`; a group
+        larger than the facility or an end time that is not after the start is `422`. A department with no
+        facility is `409`. A coordinator must belong to the Telecoms department.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLabBookingRequest'
+      responses:
+        '201':
+          description: The confirmed booking
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LabBooking'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /textile/bookings:
+    get:
+      tags: [Textile]
+      operationId: getTextileCalendar
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER]
+      summary: Textile workshop calendar
+      description: |
+        Workshop and training bookings that overlap the dates, soonest first, with their sign-ups, and the
+        workshop's weekly classes. Dates behave as for the lab calendar. Stored APPROVED, CHECKED_IN and COMPLETED
+        show as `APPROVED`; `PENDING` and `CANCELLED` show as they are; rejected bookings are not listed.
+      parameters:
+        - name: from
+          in: query
+          required: false
+          description: First day, YYYY-MM-DD (Kampala)
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: false
+          description: Last day, YYYY-MM-DD (Kampala)
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Workshop calendar
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextileCalendar'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    post:
+      tags: [Textile]
+      operationId: createTextileBooking
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Book the textile workshop
+      description: |
+        Books the Textile department's facility and approves it at once; clash rules are those of the lab (`409`).
+        `capacity` (the number of places) belongs to TRAINING bookings only. `machineId` is kept as given.
+        A coordinator must belong to the Textile department.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTextileBookingRequest'
+      responses:
+        '201':
+          description: The approved booking
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextileBooking'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /textile/bookings/{id}/cancel:
+    post:
+      tags: [Textile]
+      operationId: cancelTextileBooking
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Cancel a workshop booking
+      description: |
+        A reason is required. The slot is free again. Cancelling a booking that is already cancelled, or one that
+        cannot be cancelled any more, is `409`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The booking id
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelTextileBookingRequest'
+      responses:
+        '200':
+          description: The cancelled booking
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextileBooking'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /textile/bookings/{id}/attendees:
+    post:
+      tags: [Textile]
+      operationId: addTextileAttendee
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Sign someone up for a training session
+      description: |
+        Only TRAINING bookings take sign-ups. Sign-up is `409` when the session is full, cancelled or already over,
+        and the places are counted under a lock, so two people cannot take the last one.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The booking id
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddAttendeeRequest'
+      responses:
+        '201':
+          description: The booking with the new sign-up
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextileBooking'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /textile/bookings/{id}/attendees/{attendeeId}:
+    put:
+      tags: [Textile]
+      operationId: setTextileAttendance
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Record whether a sign-up attended
+      description: |
+        Sets `attended` for one sign-up and returns the whole booking. A cancelled booking is `409`; someone who is
+        not signed up for this booking is `404`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The booking id
+          schema:
+            type: string
+            format: uuid
+        - name: attendeeId
+          in: path
+          required: true
+          description: The sign-up id
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetAttendanceRequest'
+      responses:
+        '200':
+          description: The booking
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextileBooking'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /telecoms/bootcamps:
+    get:
+      tags: [Telecoms]
+      operationId: listBootcamps
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER]
+      summary: Telecoms bootcamps
+      description: |
+        The sessions of the Telecoms department, newest first, as `{ items }`, each with who is enrolled and the
+        attendance roster. `paymentStatus` comes from the linked invoice (a registration id as the invoice source);
+        with no invoice a paid session's confirmed seat shows `CONFIRMED` and anything else `NOT_REQUESTED`.
+        `studentNumber` is `null` for someone enrolled without one. Attendance lists PRESENT and ABSENT only.
+      responses:
+        '200':
+          description: Bootcamps
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BootcampList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Telecoms]
+      operationId: createBootcamp
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Create a bootcamp
+      description: |
+        A bootcamp is a published training session of the Telecoms department held at the Telecoms Lab. If the
+        department has not been set up the answer is `409`; an end time that is not after the start is `400`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBootcampRequest'
+      responses:
+        '201':
+          description: The bootcamp
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bootcamp'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /telecoms/bootcamps/{id}/enroll:
+    post:
+      tags: [Telecoms]
+      operationId: enrollInBootcamp
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Enrol someone in a bootcamp
+      description: |
+        Registers the person for the training session, so the seat is taken under the session lock: a full
+        session, a repeated student number or a finished session is `409`. A paid bootcamp holds the seat until
+        payment is confirmed. A blank `studentNumber` is allowed; one that starts with `EXT-` is refused (422) because that prefix marks generated placeholders. Returns the whole bootcamp.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The bootcamp (session) id
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrollBootcampRequest'
+      responses:
+        '200':
+          description: The bootcamp
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bootcamp'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /telecoms/bootcamps/{id}/attendance:
+    post:
+      tags: [Telecoms]
+      operationId: saveBootcampAttendance
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Save a bootcamp attendance roster
+      description: |
+        Applies the whole roster or none of it. Someone who has not paid cannot be marked PRESENT (`409`); an ABSENT
+        entry for them is skipped. Someone who is not enrolled in this bootcamp is `404`. Returns the whole bootcamp.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The bootcamp (session) id
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveBootcampAttendanceRequest'
+      responses:
+        '200':
+          description: The bootcamp
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bootcamp'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
 components:
   securitySchemes:
     bearerAuth:
@@ -10516,6 +11080,416 @@ components:
           $ref: '#/components/schemas/SubmissionStage'
         canSubmit:
           type: boolean
+    PaymentStatus:
+      type: string
+      description: Derived from the finance invoice linked to the booking or registration; never stored
+      enum: [NOT_REQUESTED, AWAITING_PROOF, PROOF_SUBMITTED, CONFIRMED, REJECTED]
+    MediaBoardStatus:
+      type: string
+      enum: [REQUESTED, SCHEDULED, IN_PRODUCTION, DELIVERED]
+    MediaBoardRequest:
+      type: object
+      required: [id, title, studio, assignee, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        studio:
+          type: string
+          nullable: true
+          description: The studio facility's name
+        assignee:
+          type: string
+          description: Empty when nobody is assigned
+        status:
+          $ref: '#/components/schemas/MediaBoardStatus'
+        date:
+          type: string
+          format: date-time
+          description: The scheduled time; left out when not set
+        description:
+          type: string
+          description: Left out when not set
+    MediaBoardOverview:
+      type: object
+      required: [requestedCount, scheduledCount, inProductionCount, deliveredCount, requests]
+      properties:
+        requestedCount:
+          type: integer
+          format: int64
+        scheduledCount:
+          type: integer
+          format: int64
+        inProductionCount:
+          type: integer
+          format: int64
+        deliveredCount:
+          type: integer
+          format: int64
+          description: Includes requests closed after delivery
+        requests:
+          type: array
+          items:
+            $ref: '#/components/schemas/MediaBoardRequest'
+    UpdateMediaStatusRequest:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          $ref: '#/components/schemas/MediaBoardStatus'
+    UpdateMediaDetailsRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        studioId:
+          type: string
+          format: uuid
+        assignee:
+          type: string
+          maxLength: 200
+        date:
+          type: string
+          format: date-time
+        description:
+          type: string
+          maxLength: 2000
+    TimetableEntry:
+      type: object
+      required: [id, weekday, start, end, label]
+      properties:
+        id:
+          type: string
+          format: uuid
+        weekday:
+          type: integer
+          minimum: 1
+          maximum: 7
+          description: ISO weekday, 1 = Monday
+        start:
+          type: string
+          example: '09:00'
+        end:
+          type: string
+          example: '11:00'
+        label:
+          type: string
+    LabBooking:
+      type: object
+      required: [id, purpose, date, start, end, groupSize, bookedBy, customerType, status, paymentStatus, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        purpose:
+          type: string
+        date:
+          type: string
+          format: date
+        start:
+          type: string
+          example: '09:00'
+        end:
+          type: string
+          example: '11:30'
+        groupSize:
+          type: integer
+        bookedBy:
+          type: string
+        customerType:
+          type: string
+          description: '`Public` when none was given'
+        status:
+          type: string
+          enum: [CONFIRMED, CANCELLED]
+        paymentStatus:
+          $ref: '#/components/schemas/PaymentStatus'
+        createdAt:
+          type: string
+          format: date-time
+    LabCalendar:
+      type: object
+      required: [bookings, timetable]
+      properties:
+        bookings:
+          type: array
+          items:
+            $ref: '#/components/schemas/LabBooking'
+        timetable:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimetableEntry'
+    CreateLabBookingRequest:
+      type: object
+      additionalProperties: false
+      required: [date, start, end, purpose, groupSize]
+      properties:
+        date:
+          type: string
+          format: date
+        start:
+          type: string
+          example: '09:00'
+        end:
+          type: string
+          example: '12:00'
+        purpose:
+          type: string
+          maxLength: 1000
+        groupSize:
+          type: integer
+          minimum: 1
+        customerType:
+          type: string
+          maxLength: 64
+        bookedBy:
+          type: string
+          maxLength: 200
+          description: Who the lab is booked for; defaults to the signed-in user's display name ("Staff" when there is no profile)
+    TextileAttendee:
+      type: object
+      required: [id, name, attended]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        attended:
+          type: boolean
+    TextileBooking:
+      type: object
+      required: [id, kind, date, start, end, purpose, machineId, capacity, bookedBy, status, attendees]
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum: [WORKSHOP, TRAINING]
+        date:
+          type: string
+          format: date
+        start:
+          type: string
+          example: '14:00'
+        end:
+          type: string
+          example: '17:00'
+        purpose:
+          type: string
+        machineId:
+          type: string
+          nullable: true
+        capacity:
+          type: integer
+          nullable: true
+          description: Places of a TRAINING booking
+        bookedBy:
+          type: string
+          description: The booker's display name from their profile, or "Staff" when there is none; never an email
+        status:
+          type: string
+          enum: [APPROVED, PENDING, CANCELLED]
+        attendees:
+          type: array
+          items:
+            $ref: '#/components/schemas/TextileAttendee'
+    TextileCalendar:
+      type: object
+      required: [bookings, timetable]
+      properties:
+        bookings:
+          type: array
+          items:
+            $ref: '#/components/schemas/TextileBooking'
+        timetable:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimetableEntry'
+    CreateTextileBookingRequest:
+      type: object
+      additionalProperties: false
+      required: [kind, date, start, end, purpose]
+      properties:
+        kind:
+          type: string
+          enum: [WORKSHOP, TRAINING]
+        date:
+          type: string
+          format: date
+        start:
+          type: string
+          example: '14:00'
+        end:
+          type: string
+          example: '17:00'
+        purpose:
+          type: string
+          maxLength: 1000
+        machineId:
+          type: string
+          maxLength: 64
+          nullable: true
+        capacity:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: TRAINING only
+    CancelTextileBookingRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          maxLength: 500
+    AddAttendeeRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          maxLength: 200
+    SetAttendanceRequest:
+      type: object
+      additionalProperties: false
+      required: [attended]
+      properties:
+        attended:
+          type: boolean
+    Bootcamp:
+      type: object
+      required: [id, topic, instructor, date, start, end, capacity, fee, enrolled, attendance]
+      properties:
+        id:
+          type: string
+          format: uuid
+        topic:
+          type: string
+        instructor:
+          type: string
+        date:
+          type: string
+          format: date
+        start:
+          type: string
+          example: '09:00'
+        end:
+          type: string
+          example: '16:00'
+        capacity:
+          type: integer
+        fee:
+          type: integer
+          description: Whole UGX
+        enrolled:
+          type: array
+          items:
+            type: object
+            required: [id, name, email, studentNumber, paymentStatus, enrolledAt]
+            properties:
+              id:
+                type: string
+                format: uuid
+              name:
+                type: string
+              email:
+                type: string
+              studentNumber:
+                type: string
+                nullable: true
+              paymentStatus:
+                $ref: '#/components/schemas/PaymentStatus'
+              enrolledAt:
+                type: string
+                format: date-time
+        attendance:
+          type: array
+          items:
+            type: object
+            required: [participantId, status]
+            properties:
+              participantId:
+                type: string
+                format: uuid
+              status:
+                type: string
+                enum: [PRESENT, ABSENT]
+    BootcampList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Bootcamp'
+    CreateBootcampRequest:
+      type: object
+      additionalProperties: false
+      required: [topic, instructor, date, start, end, capacity, fee]
+      properties:
+        topic:
+          type: string
+          maxLength: 200
+        instructor:
+          type: string
+          maxLength: 200
+        date:
+          type: string
+          format: date
+        start:
+          type: string
+          example: '09:00'
+        end:
+          type: string
+          example: '16:00'
+        capacity:
+          type: integer
+          minimum: 1
+          maximum: 500
+        fee:
+          type: integer
+          minimum: 0
+          description: Whole UGX
+    EnrollBootcampRequest:
+      type: object
+      additionalProperties: false
+      required: [name, email]
+      properties:
+        name:
+          type: string
+          maxLength: 200
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        studentNumber:
+          type: string
+          maxLength: 50
+          description: May be blank for someone outside the university
+    SaveBootcampAttendanceRequest:
+      type: object
+      additionalProperties: false
+      required: [attendance]
+      properties:
+        attendance:
+          type: array
+          maxItems: 500
+          items:
+            type: object
+            additionalProperties: false
+            required: [participantId, status]
+            properties:
+              participantId:
+                type: string
+                format: uuid
+              status:
+                type: string
+                enum: [PRESENT, ABSENT]
   responses:
     ValidationFailed:
       description: One or more request values are invalid. The body lists each field in `errors`.

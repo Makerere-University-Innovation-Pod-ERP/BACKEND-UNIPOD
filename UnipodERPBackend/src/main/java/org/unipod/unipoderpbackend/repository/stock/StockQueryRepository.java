@@ -20,7 +20,7 @@ public interface StockQueryRepository extends Repository<StockItem, UUID> {
 
     /**
      * Newest first, with the item name in the same query (matches ix_stock_movements_created). Movements written
-     * before V50 have no type or balance and are left out.
+     * before V52 have no type or balance and are left out.
      */
     @Query("select new org.unipod.unipoderpbackend.repository.stock.StockMovementView(m, i.name) "
             + "from StockMovement m, StockItem i where i.id = m.stockItemId and i.department = :department "
