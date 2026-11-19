@@ -32,7 +32,7 @@ public class ManagerRecipientQuery {
                         + "JOIN sector_members m ON lower(m.subject) = lower(u.email) "
                         + "JOIN sectors s ON s.id = m.sector_id "
                         + "WHERE u.enabled = TRUE AND u.role = 'DEPARTMENT_COORDINATOR' AND s.active = TRUE "
-                        + "AND regexp_replace(lower(btrim(s.name)), '[\\s_-]+', ' ', 'g') IN (" + placeholders + ")",
+                        + "AND btrim(regexp_replace(lower(s.name), '[\\s_-]+', ' ', 'g')) IN (" + placeholders + ")",
                 String.class, sectorNames.toArray());
     }
 }

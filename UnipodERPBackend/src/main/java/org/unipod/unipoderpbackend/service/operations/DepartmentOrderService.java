@@ -222,7 +222,8 @@ public class DepartmentOrderService {
 
     /** `qty` or `quantity`, as a decimal: stock is counted in fractions too (1.5 metres), so nothing is rounded down. */
     private static BigDecimal quantityOf(JsonNode material) {
-        JsonNode value = material.has("qty") ? material.get("qty") : material.path("quantity");
+        JsonNode qty = material.get("qty");
+        JsonNode value = qty == null || qty.isNull() ? material.path("quantity") : qty;
         try {
             return value.isNumber() ? value.decimalValue() : new BigDecimal(value.asText("0").trim());
         } catch (NumberFormatException notANumber) {

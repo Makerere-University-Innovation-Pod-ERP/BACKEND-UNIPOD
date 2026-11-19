@@ -72,6 +72,18 @@ class DepartmentOrderStockDeductionTest {
     }
 
     @Test
+    void nullQtyFallsBackToQuantity() throws Exception {
+        String sku = "FALLBACK-" + UUID.randomUUID().toString().substring(0, 8);
+        UUID item = stockItem(sku, "10");
+        UUID order = paidOrder("CNC-" + UUID.randomUUID().toString().substring(0, 8));
+
+        orders.changeStage("cnc", order,
+                stage("[{\"sku\": \"" + sku + "\", \"qty\": null, \"quantity\": 3}]"), "staff@test.local");
+
+        assertEquals(0, new BigDecimal("7").compareTo(balance(item)));
+    }
+
+    @Test
     void completingTheSameOrderAgainDoesNotDeductItsMaterialsAgain() throws Exception {
         String sku = "TWICE-" + UUID.randomUUID().toString().substring(0, 8);
         UUID item = stockItem(sku, "10");
