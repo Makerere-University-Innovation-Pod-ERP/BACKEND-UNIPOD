@@ -3,10 +3,12 @@ package org.unipod.unipoderpbackend.exception;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.server.ResponseStatusException;
 import org.unipod.unipoderpbackend.exception.authorization.AccessDeniedWithReasonException;
@@ -107,6 +109,19 @@ class ApiExceptionHandlerTest {
                 "Save stays disabled until the configured reviewer quorum is met",
                 response.getBody().getDetail()
         );
+    }
+
+    @Test
+    void unsupportedMediaTypeNamesTheMediaTypesTheEndpointAccepts() {
+        HttpMediaTypeNotSupportedException exception = new HttpMediaTypeNotSupportedException(
+                MediaType.APPLICATION_JSON, List.of(MediaType.MULTIPART_FORM_DATA));
+
+        ResponseEntity<ProblemDetail> response = handler.handleMediaTypeNotSupported(exception);
+
+        assertEquals(HttpStatus.UNSUPPORTED_MEDIA_TYPE, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertTrue(response.getBody().getDetail().contains("multipart/form-data"));
+        assertFalse(response.getBody().getDetail().contains("Use application/json"));
     }
 
     @Test

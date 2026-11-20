@@ -7,6 +7,7 @@ import jakarta.validation.Path;
 import java.util.List;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.Ordered;
@@ -269,11 +270,17 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
     ResponseEntity<ProblemDetail> handleMediaTypeNotSupported(HttpMediaTypeNotSupportedException exception) {
-        return problem(
-                HttpStatus.UNSUPPORTED_MEDIA_TYPE,
-                "Unsupported media type",
-                "The request Content-Type is not supported. Use application/json."
-        );
+        String detail = "The request Content-Type is not supported.";
+        List<MediaType> supported = exception.getSupportedMediaTypes();
+        if (supported != null && !supported.isEmpty()) {
+            String expected = supported.stream()
+                    .map(MediaType::toString)
+                    .distinct()
+                    .limit(3)
+                    .collect(Collectors.joining(", "));
+            detail += " Use " + expected + ".";
+        }
+        return problem(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Unsupported media type", detail);
     }
 
     @ExceptionHandler(HttpMediaTypeNotAcceptableException.class)

@@ -641,7 +641,8 @@ paths:
         Partial update used by the draft editor's autosave. Only the supplied
         fields change; omitted fields are left untouched. Returns 409 once the
         brief has left the `DRAFT` stage, so a stale editor cannot overwrite a
-        submitted brief.
+        submitted brief. Only the submitter who owns the draft or the staff member
+        who registered it may edit it; other callers receive 403.
       security:
         - bearerAuth: []
       parameters:
@@ -2028,7 +2029,8 @@ paths:
         item supplies the file's document type, an information item defaults it
         to `OTHER`, and the named item is the only item the file resolves. The
         brief returns from `AWAITING_INFORMATION` to `SUBMITTED` and reception
-        is notified. Sent as `multipart/form-data`.
+        is notified. Sent as `multipart/form-data` with at least one of `note`,
+        `files` or `file`; a request with none of them is rejected.
       security:
         - bearerAuth: []
       parameters:
@@ -2059,6 +2061,10 @@ paths:
                 file:
                   type: string
                   format: binary
+              anyOf:
+                - required: [note]
+                - required: [files]
+                - required: [file]
       responses:
         '200':
           description: Brief returned to the reception queue
@@ -2068,6 +2074,8 @@ paths:
                 $ref: '#/components/schemas/Submission'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
         '422':
           $ref: '#/components/responses/ValidationFailed'
         '401':
@@ -2358,9 +2366,9 @@ paths:
       x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, SUBMITTER]
       summary: Update an owned draft
       description: |
-        Only the submitter who owns the draft may change its content. Intake staff
-        cannot edit submitter content and must use comments or information requests
-        instead; staff attempts return 403. Updating a draft clears its outstanding
+        Only the submitter who owns the draft or the staff member who registered it
+        may change its content. Other intake staff must use comments or information
+        requests instead and receive 403. Updating a draft clears its outstanding
         information request. The tracking reference, submitter ownership, and a
         previously accepted rules version remain unchanged.
       security:
@@ -4193,6 +4201,11 @@ paths:
       operationId: registerBrowserPushSubscription
       x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, FINANCE_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, OBSERVER]
       summary: Register the signed-in user's browser push subscription
+      description: |
+        Stores the caller's Web Push subscription for browser notifications. When the deployment has no VAPID
+        keys configured (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT`), this operation returns
+        `503` and `GET /notifications/push/config` reports push as unavailable; configure all three together
+        to enable it.
       requestBody:
         required: true
         content:
@@ -4209,7 +4222,9 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '503':
-          description: Browser push is not configured on the server
+          description: >-
+            Browser push is not configured on the server (VAPID keys are absent); this is expected in
+            deployments that do not enable browser notifications.
     delete:
       tags: [Notifications]
       operationId: deleteBrowserPushSubscription
@@ -6307,7 +6322,8 @@ paths:
       description: |
         Omitted or null fields are left as they are; a blank `assignee` or `description` clears it. The studio and
         the date can be replaced but not cleared. A delivered, closed or cancelled request cannot be changed (`409`).
-        An update that changes nothing writes nothing.
+        An update that changes nothing writes nothing. A department coordinator may act only in a department they
+        belong to; an administrator may act in all of them.
       parameters:
         - name: id
           in: path
@@ -6496,7 +6512,8 @@ paths:
       summary: Cancel a workshop booking
       description: |
         A reason is required. The slot is free again. Cancelling a booking that is already cancelled, or one that
-        cannot be cancelled any more, is `409`.
+        cannot be cancelled any more, is `409`. A department coordinator may act only in the Textile department;
+        an administrator may act in all departments.
       parameters:
         - name: id
           in: path
@@ -6538,7 +6555,8 @@ paths:
       summary: Sign someone up for a training session
       description: |
         Only TRAINING bookings take sign-ups. Sign-up is `409` when the session is full, cancelled or already over,
-        and the places are counted under a lock, so two people cannot take the last one.
+        and the places are counted under a lock, so two people cannot take the last one. A department coordinator
+        may act only in the Textile department; an administrator may act in all departments.
       parameters:
         - name: id
           in: path
@@ -6580,7 +6598,8 @@ paths:
       summary: Record whether a sign-up attended
       description: |
         Sets `attended` for one sign-up and returns the whole booking. A cancelled booking is `409`; someone who is
-        not signed up for this booking is `404`.
+        not signed up for this booking is `404`. A department coordinator may act only in the Textile department;
+        an administrator may act in all departments.
       parameters:
         - name: id
           in: path
@@ -6651,6 +6670,7 @@ paths:
       description: |
         A bootcamp is a published training session of the Telecoms department held at the Telecoms Lab. If the
         department has not been set up the answer is `409`; an end time that is not after the start is `400`.
+        A department coordinator may act only in the Telecoms department; an administrator may act in all departments.
       requestBody:
         required: true
         content:
@@ -6684,6 +6704,7 @@ paths:
         Registers the person for the training session, so the seat is taken under the session lock: a full
         session, a repeated student number or a finished session is `409`. A paid bootcamp holds the seat until
         payment is confirmed. A blank `studentNumber` is allowed; one that starts with `EXT-` is refused (422) because that prefix marks generated placeholders. Returns the whole bootcamp.
+        A department coordinator may act only in the Telecoms department; an administrator may act in all departments.
       parameters:
         - name: id
           in: path
@@ -6726,6 +6747,7 @@ paths:
       description: |
         Applies the whole roster or none of it. Someone who has not paid cannot be marked PRESENT (`409`); an ABSENT
         entry for them is skipped. Someone who is not enrolled in this bootcamp is `404`. Returns the whole bootcamp.
+        A department coordinator may act only in the Telecoms department; an administrator may act in all departments.
       parameters:
         - name: id
           in: path
@@ -12767,6 +12789,12 @@ components:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
+    UnsupportedMediaType:
+      description: The request Content-Type does not match the media type this operation consumes.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
     Unauthorized:
       description: A valid bearer token is required
       content:
@@ -12774,7 +12802,9 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
     Forbidden:
-      description: Authenticated user lacks a role allowed by this operation
+      description: >-
+        The authenticated user lacks permission for this operation: their role is not allowed,
+        they are not a member of the required department, or they do not own the resource.
       content:
         application/problem+json:
           schema:
