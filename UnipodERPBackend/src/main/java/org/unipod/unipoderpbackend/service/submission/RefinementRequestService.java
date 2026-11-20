@@ -120,9 +120,14 @@ public class RefinementRequestService {
         }
         request.respond(submittedAt);
         requests.save(request);
+        // Improved versions are numbered per brief: the original brief is version 1, so the first improved
+        // version is 2. briefVersion is not used, because information replies also raise it.
+        int versionNumber = revisions.findTopByBriefIdOrderByVersionNumberDesc(submission.getId())
+                .map(CaseRevision::getVersionNumber)
+                .orElse(1) + 1;
         revisions.save(new CaseRevision(
                 submission.getId(),
-                submission.getBriefVersion(),
+                versionNumber,
                 request.getId(),
                 changeSummary,
                 actor,
