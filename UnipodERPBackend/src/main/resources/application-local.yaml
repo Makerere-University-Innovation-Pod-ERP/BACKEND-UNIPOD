@@ -1,0 +1,3 @@
+webauthn:
+  rp-id: ${WEBAUTHN_RP_ID:localhost}
+  origins: ${WEBAUTHN_ORIGINS:http://localhost:5173,http://localhost:3000}
