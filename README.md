@@ -637,6 +637,8 @@ Configure the following environment variables in the deployment environment.
 | `BOOTSTRAP_ADMIN_EMAIL` | Email for the first Administrator account. |
 | `BOOTSTRAP_ADMIN_PASSWORD` | Initial Administrator password (minimum 12 characters). |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated list of exact browser origins allowed to call the API. |
+| `WEBAUTHN_RP_ID` | Passkey relying-party ID (the frontend hostname, without scheme or port). Defaults to `localhost`. |
+| `WEBAUTHN_ORIGINS` | Comma-separated exact frontend origins accepted for passkey ceremonies. Defaults to local Vite origins. |
 | `APP_PUBLIC_BASE_URL` | Frontend base URL used in password-setup links; defaults to `http://localhost:5173` until a public frontend is deployed. |
 | `JWT_ROLES_CLAIM` | JWT claim containing role names. Defaults to `roles`. |
 | `JWT_SUBJECT_CLAIM` | JWT claim used as the authenticated user identifier. Defaults to `sub`. |
@@ -697,10 +699,21 @@ both bootstrap variables together as deployment secrets; later restarts will not
 replace existing credentials. If either value is missing, no administrator is
 created and the API remains protected.
 
-The API signs tokens with HS256, validates issuer and audience, and protects
-all endpoints except login and the health check. A fresh random signing key is
-used only for local runs when `JWT_SECRET` is omitted; tokens from such runs
-are not valid after restart.
+The API signs tokens with HS256 and validates issuer and audience. Public
+routes are limited to health checks and the documented authentication flows,
+including passkey assertion. A fresh random signing key is used only for local
+runs when `JWT_SECRET` is omitted; tokens from such runs are not valid after
+restart.
+
+Passkey sign-in uses WebAuthn. The browser/device performs local user
+verification (such as fingerprint, face recognition, or screen lock); the
+backend stores only the passkey public key and never receives biometric data.
+Keep email/password sign-in available as a fallback. Configure
+`WEBAUTHN_RP_ID` and `WEBAUTHN_ORIGINS` for the hostname and exact origin of
+the browser frontend, not the backend API host. When the frontend runs at
+`http://localhost:5173` and the API is hosted on Render, use `localhost` and
+`http://localhost:5173` respectively. Passkeys require HTTPS on a public
+frontend; localhost is allowed for development.
 
 ## Render Deployment
 
@@ -737,8 +750,10 @@ connection details (do not use the external database URL):
 | `JWT_AUDIENCE` | `unipod-erp-api` |
 | `BOOTSTRAP_ADMIN_EMAIL` | Initial Administrator email |
 | `BOOTSTRAP_ADMIN_PASSWORD` | Initial password, at least 12 characters |
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:3000` for localhost development |
-| `APP_PUBLIC_BASE_URL` | `http://localhost:5173` while the frontend is local; password-setup links only work for users running the frontend at that address. |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` (add `http://localhost:3000` only if you use that origin too) |
+| `WEBAUTHN_RP_ID` | `localhost` |
+| `WEBAUTHN_ORIGINS` | `http://localhost:5173` (add `http://localhost:3000` only if you use that origin too) |
+| `APP_PUBLIC_BASE_URL` | `http://localhost:5173` |
 
 The database connection above uses the private Render hostname, port `5432`,
 and database `unipod_erp`. Keep the database inbound rule private for

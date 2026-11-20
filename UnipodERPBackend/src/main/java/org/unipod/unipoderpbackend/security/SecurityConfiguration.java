@@ -63,7 +63,9 @@ public class SecurityConfiguration {
                                 "/auth/signup",
                                 "/auth/forgot-password",
                                 "/auth/refresh",
-                                "/auth/logout"
+                                "/auth/logout",
+                                "/auth/passkeys/authentication/options",
+                                "/auth/passkeys/authentication/verify"
                         ).permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(exceptions -> exceptions

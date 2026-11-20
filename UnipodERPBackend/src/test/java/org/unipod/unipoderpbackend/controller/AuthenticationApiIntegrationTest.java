@@ -78,6 +78,37 @@ class AuthenticationApiIntegrationTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    @Test
+    void passkeyAuthenticationOptionsArePublicAndRegistrationRequiresLogin() throws Exception {
+        mockMvc.perform(post("/auth/passkeys/authentication/options")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.challengeId").exists())
+                .andExpect(jsonPath("$.options.publicKey.challenge").exists())
+                .andExpect(jsonPath("$.options.publicKey.userVerification").value("required"));
+
+        mockMvc.perform(post("/auth/passkeys/registration/options")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isUnauthorized());
+
+        authentication.createUser(new CreateApiUserRequest(
+                REVIEWER_EMAIL,
+                REVIEWER_PASSWORD,
+                ApiUserRole.REVIEWER
+        ));
+        String reviewerToken = login(REVIEWER_EMAIL, REVIEWER_PASSWORD);
+        mockMvc.perform(post("/auth/passkeys/registration/options")
+                        .header("Authorization", "Bearer " + reviewerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.challengeId").exists())
+                .andExpect(jsonPath("$.options.publicKey.user.id").exists())
+                .andExpect(jsonPath("$.options.publicKey.authenticatorSelection.residentKey").value("required"));
+    }
+
     private String login(String email, String password) throws Exception {
         String response = mockMvc.perform(post("/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
