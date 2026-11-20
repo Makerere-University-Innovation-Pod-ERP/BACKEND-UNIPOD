@@ -27,8 +27,6 @@ import java.nio.ByteBuffer;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -50,8 +48,7 @@ import tools.jackson.databind.ObjectMapper;
 public class PasskeyService {
     private static final Duration CHALLENGE_TTL = Duration.ofMinutes(5);
     private static final Duration AUTHENTICATION_RATE_LIMIT_WINDOW = Duration.ofMinutes(1);
-    private static final int MAX_AUTHENTICATION_CHALLENGES_PER_CLIENT = 10;
-    private static final int MAX_TRACKED_CLIENTS = 10_000;
+    private static final int MAX_AUTHENTICATION_CHALLENGES_PER_WINDOW = 120;
     private static final String REGISTRATION = "REGISTRATION";
     private static final String AUTHENTICATION = "AUTHENTICATION";
 
@@ -63,7 +60,8 @@ public class PasskeyService {
     private final Clock clock;
     private final ObjectMapper objectMapper;
     private final PasswordEncoder passwordEncoder;
-    private final Map<String, RateLimitWindow> authenticationChallengeRateLimits = new HashMap<>();
+    private Instant authenticationRateLimitWindowExpiresAt = Instant.MIN;
+    private int authenticationChallengesInCurrentWindow;
 
     public PasskeyService(
             RelyingParty relyingParty,
@@ -149,8 +147,8 @@ public class PasskeyService {
     }
 
     @Transactional
-    public PasskeyChallengeResponse startAuthentication(String clientAddress) {
-        enforceAuthenticationChallengeRateLimit(clientAddress);
+    public PasskeyChallengeResponse startAuthentication() {
+        enforceAuthenticationChallengeRateLimit();
         Instant now = clock.instant();
         challenges.deleteExpired(now);
         AssertionRequest request = relyingParty.startAssertion(StartAssertionOptions.builder()
@@ -200,35 +198,20 @@ public class PasskeyService {
 
     private void requireCurrentPassword(ApiUser user, String password) {
         if (password == null || !passwordEncoder.matches(password, user.getPasswordHash())) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Current password is incorrect.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Current password is incorrect.");
         }
     }
 
-    private synchronized void enforceAuthenticationChallengeRateLimit(String clientAddress) {
+    private synchronized void enforceAuthenticationChallengeRateLimit() {
         Instant now = clock.instant();
-        authenticationChallengeRateLimits.entrySet()
-                .removeIf(entry -> !entry.getValue().expiresAt().isAfter(now));
-        String client = clientAddress == null || clientAddress.isBlank()
-                ? "unknown"
-                : clientAddress.trim();
-        RateLimitWindow window = authenticationChallengeRateLimits.get(client);
-        if (window == null) {
-            if (authenticationChallengeRateLimits.size() >= MAX_TRACKED_CLIENTS) {
-                throw rateLimited();
-            }
-            authenticationChallengeRateLimits.put(
-                    client,
-                    new RateLimitWindow(now.plus(AUTHENTICATION_RATE_LIMIT_WINDOW), 1)
-            );
-            return;
+        if (!authenticationRateLimitWindowExpiresAt.isAfter(now)) {
+            authenticationRateLimitWindowExpiresAt = now.plus(AUTHENTICATION_RATE_LIMIT_WINDOW);
+            authenticationChallengesInCurrentWindow = 0;
         }
-        if (window.requestCount() >= MAX_AUTHENTICATION_CHALLENGES_PER_CLIENT) {
+        if (authenticationChallengesInCurrentWindow >= MAX_AUTHENTICATION_CHALLENGES_PER_WINDOW) {
             throw rateLimited();
         }
-        authenticationChallengeRateLimits.put(
-                client,
-                new RateLimitWindow(window.expiresAt(), window.requestCount() + 1)
-        );
+        authenticationChallengesInCurrentWindow++;
     }
 
     private PasskeyChallengeResponse storeChallenge(
@@ -290,8 +273,5 @@ public class PasskeyService {
                 HttpStatus.TOO_MANY_REQUESTS,
                 "Too many passkey sign-in attempts. Wait a minute and try again."
         );
-    }
-
-    private record RateLimitWindow(Instant expiresAt, int requestCount) {
     }
 }

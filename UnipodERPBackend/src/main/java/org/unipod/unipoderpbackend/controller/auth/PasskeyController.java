@@ -1,7 +1,6 @@
 package org.unipod.unipoderpbackend.controller.auth;
 
 import jakarta.validation.Valid;
-import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -50,8 +49,8 @@ public class PasskeyController {
     }
 
     @PostMapping("/authentication/options")
-    public PasskeyChallengeResponse authenticationOptions(HttpServletRequest request) {
-        return passkeys.startAuthentication(request.getRemoteAddr());
+    public PasskeyChallengeResponse authenticationOptions() {
+        return passkeys.startAuthentication();
     }
 
     @PostMapping("/authentication/verify")

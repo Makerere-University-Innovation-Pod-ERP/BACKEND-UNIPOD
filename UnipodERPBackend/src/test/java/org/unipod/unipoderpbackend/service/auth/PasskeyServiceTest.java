@@ -43,7 +43,7 @@ class PasskeyServiceTest {
         PasskeyChallengeRepository challenges = mock(PasskeyChallengeRepository.class);
         PasskeyService service = service(challenges);
 
-        var response = service.startAuthentication("192.0.2.1");
+        var response = service.startAuthentication();
 
         ArgumentCaptor<PasskeyChallenge> saved = ArgumentCaptor.forClass(PasskeyChallenge.class);
         verify(challenges).save(saved.capture());
@@ -58,20 +58,20 @@ class PasskeyServiceTest {
     }
 
     @Test
-    void rateLimitsPublicAuthenticationChallengesPerClient() {
+    void boundsPublicAuthenticationChallengeIssuancePerWindow() {
         PasskeyChallengeRepository challenges = mock(PasskeyChallengeRepository.class);
         PasskeyService service = service(challenges);
 
-        for (int attempt = 0; attempt < 10; attempt++) {
-            service.startAuthentication("192.0.2.2");
+        for (int attempt = 0; attempt < 120; attempt++) {
+            service.startAuthentication();
         }
 
         ResponseStatusException exception = assertThrows(
                 ResponseStatusException.class,
-                () -> service.startAuthentication("192.0.2.2")
+                service::startAuthentication
         );
         assertEquals(HttpStatus.TOO_MANY_REQUESTS, exception.getStatusCode());
-        verify(challenges, times(10)).save(org.mockito.ArgumentMatchers.any(PasskeyChallenge.class));
+        verify(challenges, times(120)).save(org.mockito.ArgumentMatchers.any(PasskeyChallenge.class));
     }
 
     @Test
@@ -92,7 +92,7 @@ class PasskeyServiceTest {
                 ResponseStatusException.class,
                 () -> service.startRegistration(user, "wrong-password")
         );
-        assertEquals(HttpStatus.UNAUTHORIZED, exception.getStatusCode());
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
         verify(challenges, org.mockito.Mockito.never()).save(org.mockito.ArgumentMatchers.any());
     }
 
@@ -119,7 +119,7 @@ class PasskeyServiceTest {
                 ResponseStatusException.class,
                 () -> service.finishRegistration(user, request)
         );
-        assertEquals(HttpStatus.UNAUTHORIZED, exception.getStatusCode());
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
         verify(challenges, org.mockito.Mockito.never()).findByIdForUpdate(
                 org.mockito.ArgumentMatchers.any()
         );

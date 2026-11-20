@@ -18,6 +18,11 @@ class WebAuthnConfigurationTest {
                 "localhost",
                 "http://localhost:5173,http://localhost:3000"
         ));
+        assertDoesNotThrow(() -> configuration.relyingParty(
+                credentials,
+                "example.test",
+                "https://example.test,https://portal.example.test"
+        ));
     }
 
     @Test
@@ -50,5 +55,14 @@ class WebAuthnConfigurationTest {
                     "https://frontend.example.test"
             ));
         }
+    }
+
+    @Test
+    void rejectsOriginsOutsideTheRpIdDomain() {
+        assertThrows(IllegalArgumentException.class, () -> configuration.relyingParty(
+                credentials,
+                "example.test",
+                "https://notexample.test"
+        ));
     }
 }

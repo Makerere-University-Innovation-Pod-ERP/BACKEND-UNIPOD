@@ -25,7 +25,7 @@ public class WebAuthnConfiguration {
             @Value("${webauthn.origins}") String configuredOrigins
     ) {
         String validatedRpId = validateRpId(rpId);
-        Set<String> origins = parseOrigins(configuredOrigins);
+        Set<String> origins = parseOrigins(configuredOrigins, validatedRpId);
         return RelyingParty.builder()
                 .identity(RelyingPartyIdentity.builder()
                         .id(validatedRpId)
@@ -64,13 +64,13 @@ public class WebAuthnConfiguration {
         return ascii;
     }
 
-    private static Set<String> parseOrigins(String configuredOrigins) {
+    private static Set<String> parseOrigins(String configuredOrigins, String rpId) {
         if (configuredOrigins == null || configuredOrigins.isBlank()) {
             throw new IllegalArgumentException("WEBAUTHN_ORIGINS must contain at least one valid origin.");
         }
         Set<String> origins = Arrays.stream(configuredOrigins.split(",", -1))
                 .map(String::trim)
-                .map(WebAuthnConfiguration::normalizeOrigin)
+                .map(origin -> normalizeOrigin(origin, rpId))
                 .collect(Collectors.toUnmodifiableSet());
         if (origins.isEmpty()) {
             throw new IllegalArgumentException("WEBAUTHN_ORIGINS must contain at least one valid origin.");
@@ -78,7 +78,7 @@ public class WebAuthnConfiguration {
         return origins;
     }
 
-    private static String normalizeOrigin(String origin) {
+    private static String normalizeOrigin(String origin, String rpId) {
         URI uri;
         try {
             uri = new URI(origin);
@@ -97,6 +97,9 @@ public class WebAuthnConfiguration {
         }
         String normalizedScheme = scheme.toLowerCase(Locale.ROOT);
         String normalizedHost = host.toLowerCase(Locale.ROOT);
+        if (!normalizedHost.equals(rpId) && !normalizedHost.endsWith("." + rpId)) {
+            throw invalidOrigin(origin, null);
+        }
         boolean defaultPort = port == 80 && normalizedScheme.equals("http")
                 || port == 443 && normalizedScheme.equals("https");
         return normalizedScheme + "://" + normalizedHost
