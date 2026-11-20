@@ -637,8 +637,8 @@ Configure the following environment variables in the deployment environment.
 | `BOOTSTRAP_ADMIN_EMAIL` | Email for the first Administrator account. |
 | `BOOTSTRAP_ADMIN_PASSWORD` | Initial Administrator password (minimum 12 characters). |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated list of exact browser origins allowed to call the API. |
-| `WEBAUTHN_RP_ID` | Passkey relying-party ID (the frontend hostname, without scheme or port). Defaults to `localhost`. |
-| `WEBAUTHN_ORIGINS` | Comma-separated exact frontend origins accepted for passkey ceremonies. Defaults to local Vite origins. |
+| `WEBAUTHN_RP_ID` | Required on deployments: passkey relying-party ID (the frontend hostname, without scheme or port). The `local` profile defaults to `localhost`. |
+| `WEBAUTHN_ORIGINS` | Required on deployments: comma-separated exact frontend origins accepted for passkey ceremonies. The `local` profile defaults to `http://localhost:5173` and `http://localhost:3000`. |
 | `APP_PUBLIC_BASE_URL` | Frontend base URL used in password-setup links; defaults to `http://localhost:5173` until a public frontend is deployed. |
 | `JWT_ROLES_CLAIM` | JWT claim containing role names. Defaults to `roles`. |
 | `JWT_SUBJECT_CLAIM` | JWT claim used as the authenticated user identifier. Defaults to `sub`. |
@@ -700,15 +700,18 @@ replace existing credentials. If either value is missing, no administrator is
 created and the API remains protected.
 
 The API signs tokens with HS256 and validates issuer and audience. Public
-routes are limited to health checks and the documented authentication flows,
-including passkey assertion. A fresh random signing key is used only for local
+routes include health checks, the documented authentication flows (including
+passkey assertion), and `GET /services/catalogue`; other application routes
+require authentication. A fresh random signing key is used only for local
 runs when `JWT_SECRET` is omitted; tokens from such runs are not valid after
 restart.
 
 Passkey sign-in uses WebAuthn. The browser/device performs local user
 verification (such as fingerprint, face recognition, or screen lock); the
-backend stores only the passkey public key and never receives biometric data.
-Keep email/password sign-in available as a fallback. Configure
+backend stores the public key, credential ID, owning user, signature counter,
+and creation time, as well as short-lived registration and authentication
+challenge data. It never receives biometric data. Keep email/password sign-in
+available as a fallback. Configure
 `WEBAUTHN_RP_ID` and `WEBAUTHN_ORIGINS` for the hostname and exact origin of
 the browser frontend, not the backend API host. When the frontend runs at
 `http://localhost:5173` and the API is hosted on Render, use `localhost` and
@@ -754,6 +757,11 @@ connection details (do not use the external database URL):
 | `WEBAUTHN_RP_ID` | `localhost` |
 | `WEBAUTHN_ORIGINS` | `http://localhost:5173` (add `http://localhost:3000` only if you use that origin too) |
 | `APP_PUBLIC_BASE_URL` | `http://localhost:5173` |
+
+Password-setup links point to `APP_PUBLIC_BASE_URL` and only work for users
+whose browser can reach the frontend at that address. Keep the localhost value
+for local testing; set it to the deployed frontend URL before sending setup
+links to other users.
 
 The database connection above uses the private Render hostname, port `5432`,
 and database `unipod_erp`. Keep the database inbound rule private for
@@ -911,13 +919,14 @@ $env:BOOTSTRAP_ADMIN_PASSWORD="use-a-unique-password-of-at-least-12-characters"
 From the `UnipodERPBackend` directory, start the backend using Windows PowerShell:
 
 ```powershell
+$env:SPRING_PROFILES_ACTIVE="local"
 .\mvnw.cmd spring-boot:run
 ```
 
 On Linux/macOS:
 
 ```bash
-./mvnw spring-boot:run
+SPRING_PROFILES_ACTIVE=local ./mvnw spring-boot:run
 ```
 
 ### 2. Obtain a Bearer Access Token

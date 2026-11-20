@@ -8,4 +8,9 @@ public record PasskeyFinishRequest(
         @NotNull UUID challengeId,
         @NotNull JsonNode credential
 ) {
+    public PasskeyFinishRequest {
+        if (credential != null && credential.isNull()) {
+            credential = null;
+        }
+    }
 }

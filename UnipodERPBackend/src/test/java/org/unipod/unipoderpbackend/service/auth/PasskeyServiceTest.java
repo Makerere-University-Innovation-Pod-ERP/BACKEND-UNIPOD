@@ -1,11 +1,13 @@
 package org.unipod.unipoderpbackend.service.auth;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.yubico.webauthn.CredentialRepository;
 import com.yubico.webauthn.RelyingParty;
@@ -15,15 +17,19 @@ import com.yubico.webauthn.data.PublicKeyCredentialParameters;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.Optional;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.server.ResponseStatusException;
 import org.unipod.unipoderpbackend.model.auth.ApiUser;
 import org.unipod.unipoderpbackend.model.auth.ApiUserRole;
 import org.unipod.unipoderpbackend.model.auth.PasskeyChallenge;
+import org.unipod.unipoderpbackend.dto.auth.PasskeyRegistrationFinishRequest;
 import org.unipod.unipoderpbackend.repository.auth.ApiUserRepository;
 import org.unipod.unipoderpbackend.repository.auth.PasskeyChallengeRepository;
 import org.unipod.unipoderpbackend.repository.auth.PasskeyCredentialRepository;
@@ -37,7 +43,7 @@ class PasskeyServiceTest {
         PasskeyChallengeRepository challenges = mock(PasskeyChallengeRepository.class);
         PasskeyService service = service(challenges);
 
-        var response = service.startAuthentication();
+        var response = service.startAuthentication("192.0.2.1");
 
         ArgumentCaptor<PasskeyChallenge> saved = ArgumentCaptor.forClass(PasskeyChallenge.class);
         verify(challenges).save(saved.capture());
@@ -45,14 +51,35 @@ class PasskeyServiceTest {
         assertEquals("AUTHENTICATION", saved.getValue().getCeremony());
         assertEquals(NOW.plusSeconds(300), saved.getValue().getExpiresAt());
         assertEquals("required", response.options().path("publicKey").path("userVerification").asText());
-        assertNotNull(response.options().path("publicKey").path("challenge").asText());
+        var challenge = response.options().path("publicKey").path("challenge");
+        assertTrue(challenge.isTextual());
+        assertFalse(challenge.asText().isBlank());
         assertTrue(response.options().path("publicKey").path("allowCredentials").isEmpty());
     }
 
     @Test
-    void createsPlatformDiscoverableRegistrationOptionsForTheSignedInUser() {
+    void rateLimitsPublicAuthenticationChallengesPerClient() {
         PasskeyChallengeRepository challenges = mock(PasskeyChallengeRepository.class);
         PasskeyService service = service(challenges);
+
+        for (int attempt = 0; attempt < 10; attempt++) {
+            service.startAuthentication("192.0.2.2");
+        }
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> service.startAuthentication("192.0.2.2")
+        );
+        assertEquals(HttpStatus.TOO_MANY_REQUESTS, exception.getStatusCode());
+        verify(challenges, times(10)).save(org.mockito.ArgumentMatchers.any(PasskeyChallenge.class));
+    }
+
+    @Test
+    void requiresCurrentPasswordBeforeStartingRegistration() {
+        PasskeyChallengeRepository challenges = mock(PasskeyChallengeRepository.class);
+        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
+        when(passwordEncoder.matches("wrong-password", "password-hash")).thenReturn(false);
+        PasskeyService service = service(challenges, passwordEncoder);
         ApiUser user = new ApiUser(
                 UUID.randomUUID(),
                 "person@example.test",
@@ -61,7 +88,58 @@ class PasskeyServiceTest {
                 NOW
         );
 
-        var response = service.startRegistration(user);
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> service.startRegistration(user, "wrong-password")
+        );
+        assertEquals(HttpStatus.UNAUTHORIZED, exception.getStatusCode());
+        verify(challenges, org.mockito.Mockito.never()).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void requiresCurrentPasswordBeforeCompletingRegistration() throws Exception {
+        PasskeyChallengeRepository challenges = mock(PasskeyChallengeRepository.class);
+        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
+        when(passwordEncoder.matches("wrong-password", "password-hash")).thenReturn(false);
+        PasskeyService service = service(challenges, passwordEncoder);
+        ApiUser user = new ApiUser(
+                UUID.randomUUID(),
+                "person@example.test",
+                "password-hash",
+                ApiUserRole.SUBMITTER,
+                NOW
+        );
+        PasskeyRegistrationFinishRequest request = new PasskeyRegistrationFinishRequest(
+                UUID.randomUUID(),
+                JsonMapper.builder().build().readTree("{}"),
+                "wrong-password"
+        );
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> service.finishRegistration(user, request)
+        );
+        assertEquals(HttpStatus.UNAUTHORIZED, exception.getStatusCode());
+        verify(challenges, org.mockito.Mockito.never()).findByIdForUpdate(
+                org.mockito.ArgumentMatchers.any()
+        );
+    }
+
+    @Test
+    void createsPlatformDiscoverableRegistrationOptionsForTheSignedInUser() {
+        PasskeyChallengeRepository challenges = mock(PasskeyChallengeRepository.class);
+        ApiUser user = new ApiUser(
+                UUID.randomUUID(),
+                "person@example.test",
+                "password-hash",
+                ApiUserRole.SUBMITTER,
+                NOW
+        );
+
+        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
+        when(passwordEncoder.matches("current-password", "password-hash")).thenReturn(true);
+        PasskeyService service = service(challenges, passwordEncoder);
+        var response = service.startRegistration(user, "current-password");
 
         ArgumentCaptor<PasskeyChallenge> saved = ArgumentCaptor.forClass(PasskeyChallenge.class);
         verify(challenges).save(saved.capture());
@@ -76,6 +154,13 @@ class PasskeyServiceTest {
     }
 
     private static PasskeyService service(PasskeyChallengeRepository challenges) {
+        return service(challenges, mock(PasswordEncoder.class));
+    }
+
+    private static PasskeyService service(
+            PasskeyChallengeRepository challenges,
+            PasswordEncoder passwordEncoder
+    ) {
         RelyingParty relyingParty = RelyingParty.builder()
                 .identity(com.yubico.webauthn.data.RelyingPartyIdentity.builder()
                         .id("localhost")
@@ -95,7 +180,8 @@ class PasskeyServiceTest {
                 challenges,
                 mock(SessionService.class),
                 Clock.fixed(NOW, ZoneOffset.UTC),
-                JsonMapper.builder().build()
+                JsonMapper.builder().build(),
+                passwordEncoder
         );
     }
 

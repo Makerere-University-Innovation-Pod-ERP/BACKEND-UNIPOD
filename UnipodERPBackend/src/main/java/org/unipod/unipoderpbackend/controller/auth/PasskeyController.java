@@ -1,6 +1,7 @@
 package org.unipod.unipoderpbackend.controller.auth;
 
 import jakarta.validation.Valid;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -12,6 +13,8 @@ import org.springframework.web.bind.annotation.RestController;
 import org.unipod.unipoderpbackend.dto.auth.LoginResponse;
 import org.unipod.unipoderpbackend.dto.auth.PasskeyChallengeResponse;
 import org.unipod.unipoderpbackend.dto.auth.PasskeyFinishRequest;
+import org.unipod.unipoderpbackend.dto.auth.PasskeyRegistrationFinishRequest;
+import org.unipod.unipoderpbackend.dto.auth.PasskeyRegistrationOptionsRequest;
 import org.unipod.unipoderpbackend.model.auth.ApiUser;
 import org.unipod.unipoderpbackend.repository.auth.ApiUserRepository;
 import org.unipod.unipoderpbackend.service.auth.PasskeyService;
@@ -29,23 +32,26 @@ public class PasskeyController {
 
     @PostMapping("/registration/options")
     @PreAuthorize("isAuthenticated()")
-    public PasskeyChallengeResponse registrationOptions(Authentication authentication) {
-        return passkeys.startRegistration(requireUser(authentication));
+    public PasskeyChallengeResponse registrationOptions(
+            @Valid @RequestBody PasskeyRegistrationOptionsRequest request,
+            Authentication authentication
+    ) {
+        return passkeys.startRegistration(requireUser(authentication), request.password());
     }
 
     @PostMapping("/registration/verify")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("isAuthenticated()")
     public void verifyRegistration(
-            @Valid @RequestBody PasskeyFinishRequest request,
+            @Valid @RequestBody PasskeyRegistrationFinishRequest request,
             Authentication authentication
     ) {
         passkeys.finishRegistration(requireUser(authentication), request);
     }
 
     @PostMapping("/authentication/options")
-    public PasskeyChallengeResponse authenticationOptions() {
-        return passkeys.startAuthentication();
+    public PasskeyChallengeResponse authenticationOptions(HttpServletRequest request) {
+        return passkeys.startAuthentication(request.getRemoteAddr());
     }
 
     @PostMapping("/authentication/verify")

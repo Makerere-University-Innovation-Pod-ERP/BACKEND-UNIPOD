@@ -11,7 +11,7 @@ import java.util.UUID;
 @Table(name = "passkey_credentials")
 public class PasskeyCredential {
     @Id
-    @Column(name = "credential_id", nullable = false, length = 1024)
+    @Column(name = "credential_id", nullable = false, length = 1364)
     private String credentialId;
 
     @Column(name = "user_id", nullable = false)

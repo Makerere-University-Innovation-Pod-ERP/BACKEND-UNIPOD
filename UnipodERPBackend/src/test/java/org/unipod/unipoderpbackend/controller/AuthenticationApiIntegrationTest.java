@@ -102,7 +102,9 @@ class AuthenticationApiIntegrationTest {
         mockMvc.perform(post("/auth/passkeys/registration/options")
                         .header("Authorization", "Bearer " + reviewerToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{}"))
+                        .content(objectMapper.writeValueAsString(
+                                java.util.Map.of("password", REVIEWER_PASSWORD)
+                        )))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.challengeId").exists())
                 .andExpect(jsonPath("$.options.publicKey.user.id").exists())
