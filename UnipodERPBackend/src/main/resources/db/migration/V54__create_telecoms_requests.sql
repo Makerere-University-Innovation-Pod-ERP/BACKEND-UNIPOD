@@ -54,6 +54,8 @@ CREATE INDEX ix_telecoms_requests_updated
     ON telecoms_requests (updated_at DESC, id ASC);
 CREATE INDEX ix_telecoms_requests_status_updated
     ON telecoms_requests (status, updated_at DESC, id ASC);
+CREATE INDEX ix_telecoms_requests_created_updated
+    ON telecoms_requests (created_by, updated_at DESC, id ASC);
 
 CREATE TABLE telecoms_request_history (
     id          UUID          NOT NULL,

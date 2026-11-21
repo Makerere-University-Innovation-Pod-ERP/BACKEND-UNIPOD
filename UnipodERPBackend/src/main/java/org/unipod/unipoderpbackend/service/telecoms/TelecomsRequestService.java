@@ -38,6 +38,7 @@ import org.unipod.unipoderpbackend.model.finance.PriceItemStatus;
 import org.unipod.unipoderpbackend.model.finance.PriceListItem;
 import org.unipod.unipoderpbackend.model.operations.DepartmentCode;
 import org.unipod.unipoderpbackend.model.operations.StockItem;
+import org.unipod.unipoderpbackend.model.telecoms.TelecomsPaymentStatus;
 import org.unipod.unipoderpbackend.model.telecoms.TelecomsRequest;
 import org.unipod.unipoderpbackend.model.telecoms.TelecomsRequestHistory;
 import org.unipod.unipoderpbackend.model.telecoms.TelecomsRequestStatus;
@@ -141,7 +142,7 @@ public class TelecomsRequestService {
     public TelecomsRequestResponse updateDraft(UUID id, TelecomsRequestPayload payload, Actor actor) {
         TelecomsRequest request = lock(id);
         checkCanEditDraft(request, actor);
-        validatePayload(payload, false);
+        validatePayload(payload, request.getStatus() != TelecomsRequestStatus.DRAFT);
         TelecomsRequestStatus beforeStatus = request.getStatus();
         request.updateDraft(payload, serializeEstimate(payload.estimate()), clock.instant());
         requests.saveAndFlush(request);
@@ -205,12 +206,13 @@ public class TelecomsRequestService {
     ) {
         requireFinance(actor);
         TelecomsRequest request = lock(id);
+        TelecomsPaymentStatus beforePaymentStatus = request.getPaymentStatus();
         Instant now = clock.instant();
         request.confirmPayment(payload.paymentReference(), now);
         requests.saveAndFlush(request);
         addHistory(request, actor.email(), "Payment confirmed by Finance.", now);
         auditTrail.record(actor.email(), "telecoms_request.payment_confirmed", ENTITY, request.getId(),
-                AuditTrail.details("paymentStatus", request.getPaymentStatus()),
+                AuditTrail.details("paymentStatus", beforePaymentStatus),
                 AuditTrail.details("paymentStatus", request.getPaymentStatus(),
                         "reference", request.getPaymentReference()));
         return getAfterMutation(request);
