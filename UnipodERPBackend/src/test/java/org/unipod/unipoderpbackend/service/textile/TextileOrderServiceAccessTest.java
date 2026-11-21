@@ -1,6 +1,7 @@
 package org.unipod.unipoderpbackend.service.textile;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -17,15 +18,21 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.unipod.unipoderpbackend.dto.textile.TextileOrderRequest;
 import org.unipod.unipoderpbackend.dto.textile.TextileMaterialLine;
+import org.unipod.unipoderpbackend.dto.textile.TextileQualityRequest;
 import org.unipod.unipoderpbackend.dto.textile.TextileQuoteRequest;
 import org.unipod.unipoderpbackend.dto.textile.TextileTransitionRequest;
+import org.unipod.unipoderpbackend.exception.operations.InvalidOperationsRequestException;
 import org.unipod.unipoderpbackend.model.auth.ApiUserRole;
 import org.unipod.unipoderpbackend.model.authorization.Actor;
 import org.unipod.unipoderpbackend.model.finance.PriceItemStatus;
@@ -58,6 +65,7 @@ class TextileOrderServiceAccessTest {
     private StockItemRepository stockItems;
     private PriceListService priceList;
     private SectorService sectors;
+    private DocumentStorage storage;
     private TextileOrderService service;
 
     @BeforeEach
@@ -67,6 +75,7 @@ class TextileOrderServiceAccessTest {
         stockItems = mock(StockItemRepository.class);
         priceList = mock(PriceListService.class);
         sectors = mock(SectorService.class);
+        storage = mock(DocumentStorage.class);
         service = new TextileOrderService(
                 orders,
                 stockItems,
@@ -77,20 +86,24 @@ class TextileOrderServiceAccessTest {
                 sectors,
                 mock(DepartmentAccess.class),
                 stock,
-                mock(DocumentStorage.class),
+                storage,
                 mock(AuditTrail.class),
                 new ObjectMapper(),
                 CLOCK);
     }
 
     @Test
-    void submitterCannotReadAnotherUsersOrder() {
-        UUID id = UUID.randomUUID();
-        when(orders.findByIdAndDepartment(id, DepartmentCode.TEXTILE))
-                .thenReturn(java.util.Optional.of(order(id, "DRAFT", STAFF, "{}")));
-
-        assertThrows(AccessDeniedException.class, () -> service.get(id,
+    void submitterCannotReadTextileOrders() {
+        assertThrows(AccessDeniedException.class, () -> service.get(UUID.randomUUID(),
                 new Actor("other@example.test", ApiUserRole.SUBMITTER, Set.of())));
+        verify(orders, never()).findByIdAndDepartment(any(), eq(DepartmentCode.TEXTILE));
+    }
+
+    @Test
+    void submitterCannotReadTheTextilePriceList() {
+        assertThrows(AccessDeniedException.class, () -> service.priceList(
+                new Actor("submitter@example.test", ApiUserRole.SUBMITTER, Set.of())));
+        verify(sectors, never()).activeSectorByName("Textile");
     }
 
     @Test
@@ -197,6 +210,85 @@ class TextileOrderServiceAccessTest {
                         new TextileMaterialLine(stockId, new BigDecimal("2")))), manager()));
         verify(stockItems, times(1)).findByIdForUpdate(stockId);
         verify(priceList, never()).invoiceFor(any(), any(), any(), anyInt(), any(), any(), any());
+    }
+
+    @Test
+    void qualityRejectsUnknownChecklistIds() {
+        UUID id = UUID.randomUUID();
+        when(orders.findByIdAndDepartmentForUpdate(id, DepartmentCode.TEXTILE))
+                .thenReturn(java.util.Optional.of(order(id, "BEING_MADE", STAFF, "{}")));
+
+        assertThrows(InvalidOperationsRequestException.class, () -> service.saveQuality(id,
+                new TextileQualityRequest(List.of(
+                        new TextileQualityRequest.QualityItem("unknown", true, "Unknown"))), manager()));
+        verify(orders, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void orderResponseDoesNotExposeCollectionRecorderEmail() {
+        UUID id = UUID.randomUUID();
+        String specs = """
+                {"collection":{"collectedBy":"Customer","collectedAt":"2026-11-21T12:00:00Z",
+                  "recordedBy":"staff@example.test"}}
+                """;
+        when(orders.findByIdAndDepartment(id, DepartmentCode.TEXTILE))
+                .thenReturn(java.util.Optional.of(order(id, "COLLECTED", STAFF, specs)));
+
+        Map<?, ?> collection = (Map<?, ?>) service.get(id, manager()).get("collection");
+
+        assertEquals("Customer", collection.get("collectedBy"));
+        assertFalse(collection.containsKey("recordedBy"));
+    }
+
+    @Test
+    void createRollbackRemovesUploadedPhoto() throws Exception {
+        MockMultipartFile photo = new MockMultipartFile("photo", "reference.png", "image/png", new byte[]{1});
+        when(storage.upload(photo)).thenReturn("uploaded-ref");
+        when(orders.saveAndFlush(any())).thenThrow(new IllegalStateException("database write failed"));
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            assertThrows(IllegalStateException.class, () -> service.create(
+                    new TextileOrderRequest("Customer", "Public", "Curtains", "2 panels",
+                            "Blue cotton", null, false, false),
+                    photo, new Actor(STAFF, ApiUserRole.RECEPTIONIST, Set.of())));
+        } finally {
+            finishSynchronization(TransactionSynchronization.STATUS_ROLLED_BACK);
+        }
+
+        verify(storage).delete("uploaded-ref");
+    }
+
+    @Test
+    void photoReplacementDeletesTheOldReferenceOnlyAfterCommit() throws Exception {
+        UUID id = UUID.randomUUID();
+        MockMultipartFile photo = new MockMultipartFile("photo", "new.png", "image/png", new byte[]{1});
+        DepartmentOrder draft = order(id, "DRAFT", STAFF,
+                "{\"photo\":{\"name\":\"old.png\",\"reference\":\"old-ref\",\"contentType\":\"image/png\"}}");
+        when(storage.upload(photo)).thenReturn("new-ref");
+        when(orders.findByIdAndDepartmentForUpdate(id, DepartmentCode.TEXTILE))
+                .thenReturn(java.util.Optional.of(draft));
+        when(orders.saveAndFlush(any(DepartmentOrder.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.update(id,
+                    new TextileOrderRequest("Customer", "Public", "Curtains", "2 panels",
+                            "Blue cotton", null, false, false),
+                    photo, new Actor(STAFF, ApiUserRole.RECEPTIONIST, Set.of()));
+        } finally {
+            finishSynchronization(TransactionSynchronization.STATUS_COMMITTED);
+        }
+
+        verify(storage).delete("old-ref");
+        verify(storage, never()).delete("new-ref");
+    }
+
+    private void finishSynchronization(int status) {
+        try {
+            TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(synchronization -> synchronization.afterCompletion(status));
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     private TextileQuoteRequest quoteRequest(UUID priceId, List<TextileMaterialLine> materials) {

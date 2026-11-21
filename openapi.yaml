@@ -4975,9 +4975,9 @@ paths:
     get:
       tags: [Textile]
       operationId: listTextileOrders
-      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, DEPARTMENT_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER, SUBMITTER]
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, DEPARTMENT_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER]
       summary: List Textile orders
-      description: Returns all Textile orders to authorized staff and only the caller's own orders to submitters.
+      description: Returns Textile orders to authorized staff.
       responses:
         '200':
           description: The Textile orders
@@ -5027,9 +5027,9 @@ paths:
     get:
       tags: [Textile]
       operationId: getTextileOrder
-      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, DEPARTMENT_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER, SUBMITTER]
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, DEPARTMENT_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER]
       summary: Get a Textile order
-      description: Staff may read orders according to their role and department; submitters may read only their own order, with internal fields redacted.
+      description: Authorized staff may read orders according to their role and department.
       parameters:
         - name: id
           in: path
@@ -5053,9 +5053,9 @@ paths:
     put:
       tags: [Textile]
       operationId: updateTextileDraft
-      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, RECEPTIONIST, SUBMITTER]
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, RECEPTIONIST]
       summary: Update and optionally submit an order
-      description: Only the draft owner or an authorized Textile manager may update draft, returned, or details-requested orders.
+      description: Only the creating receptionist or an authorized Textile manager may update draft, returned, or details-requested orders.
       parameters:
         - name: id
           in: path
@@ -5097,7 +5097,7 @@ paths:
     get:
       tags: [Textile]
       operationId: getTextileOrderPhoto
-      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, DEPARTMENT_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER, SUBMITTER]
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, DEPARTMENT_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER]
       summary: Download an order's reference photo
       description: Uses the same order-read policy; the photo is stored privately and is not exposed as a public URL.
       parameters:
@@ -13523,9 +13523,6 @@ components:
             collectedAt:
               type: string
               format: date-time
-            recordedBy:
-              type: string
-              format: email
         history:
           type: array
           items:
@@ -13631,6 +13628,7 @@ components:
         priceQuantity:
           type: integer
           minimum: 1
+          maximum: 2147483647
           description: Integer quantity; fractional price quantities are rejected.
         expectedCompletion:
           type: string
@@ -13684,7 +13682,9 @@ components:
       properties:
         id:
           type: string
+          minLength: 1
           maxLength: 80
+          description: ID of an existing quality checklist item.
         checked:
           type: boolean
         label:
@@ -13696,6 +13696,7 @@ components:
       properties:
         checklist:
           type: array
+          minItems: 1
           items:
             $ref: '#/components/schemas/TextileQualityItem'
     TextileCollectionRequest:

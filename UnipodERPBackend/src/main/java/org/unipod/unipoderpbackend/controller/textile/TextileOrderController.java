@@ -84,7 +84,7 @@ public class TextileOrderController {
     }
 
     @PutMapping(value = "/orders/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasAnyRole('ADMINISTRATOR','DEPARTMENT_COORDINATOR','RECEPTIONIST','SUBMITTER')")
+    @PreAuthorize("hasAnyRole('ADMINISTRATOR','DEPARTMENT_COORDINATOR','RECEPTIONIST')")
     public Map<String, Object> update(@PathVariable UUID id,
                                       @Valid @RequestPart("order") TextileOrderRequest request,
                                       @RequestPart(value = "photo", required = false) MultipartFile photo,

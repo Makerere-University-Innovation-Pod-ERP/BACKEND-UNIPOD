@@ -36,9 +36,13 @@ class TextileRequestValidationTest {
             var fractionalPrice = new TextileQuoteRequest(List.of(
                     new TextileMaterialLine(UUID.randomUUID(), BigDecimal.ONE)),
                     UUID.randomUUID(), new BigDecimal("1.5"), java.time.LocalDate.now());
+            var outOfRangePrice = new TextileQuoteRequest(List.of(
+                    new TextileMaterialLine(UUID.randomUUID(), BigDecimal.ONE)),
+                    UUID.randomUUID(), new BigDecimal("2147483648"), java.time.LocalDate.now());
 
             assertFalse(validator.validate(nullMaterial).isEmpty());
             assertFalse(validator.validate(fractionalPrice).isEmpty());
+            assertFalse(validator.validate(outOfRangePrice).isEmpty());
         }
     }
 
@@ -48,8 +52,13 @@ class TextileRequestValidationTest {
             Validator validator = factory.getValidator();
             var invalid = new TextileQualityRequest(Arrays.asList(
                     null, new TextileQualityRequest.QualityItem(null, false, "Dimensions")));
+            var blankId = new TextileQualityRequest(List.of(
+                    new TextileQualityRequest.QualityItem(" ", false, "Dimensions")));
+            var emptyChecklist = new TextileQualityRequest(List.of());
 
             assertFalse(validator.validate(invalid).isEmpty());
+            assertFalse(validator.validate(blankId).isEmpty());
+            assertFalse(validator.validate(emptyChecklist).isEmpty());
         }
     }
 

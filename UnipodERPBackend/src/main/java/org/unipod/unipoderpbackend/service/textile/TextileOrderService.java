@@ -1,9 +1,5 @@
 package org.unipod.unipoderpbackend.service.textile;
 
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.node.ArrayNode;
-import tools.jackson.databind.node.ObjectNode;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
@@ -12,15 +8,20 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 import org.unipod.unipoderpbackend.dto.textile.TextileMaterialLine;
 import org.unipod.unipoderpbackend.dto.textile.TextileMessageRequest;
@@ -55,9 +56,14 @@ import org.unipod.unipoderpbackend.service.operations.DepartmentAccess;
 import org.unipod.unipoderpbackend.service.sector.SectorService;
 import org.unipod.unipoderpbackend.service.stock.StockService;
 import org.unipod.unipoderpbackend.service.storage.DocumentStorage;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 
 @Service
 public class TextileOrderService {
+    private static final Logger log = LoggerFactory.getLogger(TextileOrderService.class);
     private static final DepartmentCode DEPARTMENT = DepartmentCode.TEXTILE;
     private static final ZoneId KAMPALA = ZoneId.of("Africa/Kampala");
     private static final long MAX_PHOTO_BYTES = 15L * 1024 * 1024;
@@ -109,9 +115,7 @@ public class TextileOrderService {
     public Map<String, Object> list(Actor actor) {
         requireOrderReader(actor);
         List<Map<String, Object>> items = orders.findAllByDepartmentOrderByUpdatedAtDescCreatedAtDesc(DEPARTMENT).stream()
-                .filter(order -> actor.role() != ApiUserRole.SUBMITTER || isOwner(order, actor))
-                .map(order -> actor.role() == ApiUserRole.SUBMITTER
-                        ? toOwnerResponse(order) : toResponse(order)).toList();
+                .map(this::toResponse).toList();
         return Map.of("items", items);
     }
 
@@ -120,7 +124,7 @@ public class TextileOrderService {
         requireOrderReader(actor);
         DepartmentOrder order = require(id);
         requireOrderAccess(order, actor);
-        return actor.role() == ApiUserRole.SUBMITTER ? toOwnerResponse(order) : toResponse(order);
+        return toResponse(order);
     }
 
     @Transactional(readOnly = true)
@@ -167,9 +171,12 @@ public class TextileOrderService {
         }
         validateSubmission(request);
         validatePhoto(photo);
-        PhotoInfo photoInfo = photo == null || photo.isEmpty()
-                ? photoInfo(readJson(order.getSpecs()).path("photo")) : storePhoto(photo);
-        JsonNode existingEstimate = readJson(order.getSpecs()).path("estimate");
+        JsonNode existingSpecs = readJson(order.getSpecs());
+        JsonNode existingPhoto = existingSpecs.path("photo");
+        String oldPhotoReference = existingPhoto.path("reference").asText(null);
+        boolean replacingPhoto = photo != null && !photo.isEmpty();
+        PhotoInfo photoInfo = replacingPhoto ? storePhoto(photo) : photoInfo(existingPhoto);
+        JsonNode existingEstimate = existingSpecs.path("estimate");
         String specs = buildSpecs(request, photoInfo, existingEstimate);
         Instant now = clock.instant();
         String target = request.submit() ? "NEW" : order.getStage();
@@ -184,6 +191,9 @@ public class TextileOrderService {
             }
         }
         orders.saveAndFlush(order);
+        if (replacingPhoto) {
+            deletePhotoAfterCommit(oldPhotoReference, photoInfo.reference());
+        }
         audit.record(actor.email(), "textile_order.updated", "textile_order", order.getId(), null,
                 AuditTrail.details("status", order.getStage()));
         return toResponse(order);
@@ -366,8 +376,19 @@ public class TextileOrderService {
         JsonNode existing = readJson(order.getQualityChecklist());
         if (!existing.isArray()) existing = defaultQuality();
         Map<String, Boolean> incoming = new LinkedHashMap<>();
+        Set<String> validIds = new HashSet<>();
+        if (existing.isArray()) {
+            existing.forEach(item -> validIds.add(item.path("id").asText()));
+        }
         if (request.checklist() != null) {
-            request.checklist().forEach(item -> incoming.put(item.id().toString(), item.checked()));
+            request.checklist().forEach(item -> {
+                if (!validIds.contains(item.id())) {
+                    throw new InvalidOperationsRequestException("The quality checklist contains an unknown item.");
+                }
+                if (incoming.putIfAbsent(item.id(), item.checked()) != null) {
+                    throw new InvalidOperationsRequestException("The quality checklist contains a duplicate item.");
+                }
+            });
         }
         ArrayNode checklist = mapper.createArrayNode();
         if (existing.isArray()) {
@@ -459,9 +480,44 @@ public class TextileOrderService {
         if (photo == null || photo.isEmpty()) return null;
         try {
             String reference = storage.upload(photo);
+            if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+                deleteStoredPhoto(reference);
+                throw new IllegalStateException("Textile photo uploads require an active transaction.");
+            }
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCompletion(int status) {
+                    if (status != TransactionSynchronization.STATUS_COMMITTED) {
+                        deleteStoredPhoto(reference);
+                    }
+                }
+            });
             return new PhotoInfo(clean(photo.getOriginalFilename()), reference, photo.getContentType());
         } catch (IOException exception) {
             throw new DocumentStorageException(exception);
+        }
+    }
+
+    private void deletePhotoAfterCommit(String reference, String replacement) {
+        if (reference == null || reference.isBlank() || reference.equals(replacement)) return;
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            throw new IllegalStateException("Textile photo replacement requires an active transaction.");
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status == TransactionSynchronization.STATUS_COMMITTED) {
+                    deleteStoredPhoto(reference);
+                }
+            }
+        });
+    }
+
+    private void deleteStoredPhoto(String reference) {
+        try {
+            storage.delete(reference);
+        } catch (RuntimeException exception) {
+            log.warn("Unable to clean up Textile photo object {}", reference, exception);
         }
     }
 
@@ -584,7 +640,6 @@ public class TextileOrderService {
     }
 
     private void requireOrderReader(Actor actor) {
-        if (actor.role() == ApiUserRole.SUBMITTER) return;
         if (!READ_ROLES.contains(actor.role())) {
             throw new AccessDeniedException("You cannot read Textile orders.");
         }
@@ -610,18 +665,11 @@ public class TextileOrderService {
             access.requireManage(actor, DEPARTMENT);
             return;
         }
-        if ((actor.role() == ApiUserRole.RECEPTIONIST || actor.role() == ApiUserRole.SUBMITTER)
-                && isOwner(order, actor)) return;
+        if (actor.role() == ApiUserRole.RECEPTIONIST && isOwner(order, actor)) return;
         throw new AccessDeniedException("Only the order owner or a Textile manager may edit this order.");
     }
 
     private void requireOrderAccess(DepartmentOrder order, Actor actor) {
-        if (actor.role() == ApiUserRole.SUBMITTER) {
-            if (!isOwner(order, actor)) {
-                throw new AccessDeniedException("You can only view your own Textile orders.");
-            }
-            return;
-        }
         if (actor.role() == ApiUserRole.DEPARTMENT_COORDINATOR) {
             access.require(actor, DEPARTMENT);
         }
@@ -723,39 +771,9 @@ public class TextileOrderService {
         out.put("qualityChecklist", quality);
         out.put("collection", collection.isMissingNode() || collection.isNull() ? null
                 : Map.of("collectedBy", collection.path("collectedBy").asText(),
-                        "collectedAt", collection.path("collectedAt").asText(),
-                        "recordedBy", collection.path("recordedBy").asText()));
+                        "collectedAt", collection.path("collectedAt").asText()));
         out.put("history", readHistory(order.getStageHistory()));
         return out;
-    }
-
-    private Map<String, Object> toOwnerResponse(DepartmentOrder order) {
-        Map<String, Object> response = new LinkedHashMap<>(toResponse(order));
-        response.remove("estimate");
-        response.remove("production");
-        response.remove("qualityChecklist");
-        response.remove("history");
-        Object quoteValue = response.get("quote");
-        if (quoteValue instanceof Map<?, ?> quoteValues) {
-            Map<String, Object> quote = new LinkedHashMap<>();
-            quoteValues.forEach((key, value) -> {
-                if (key instanceof String field) quote.put(field, value);
-            });
-            quote.remove("priceListItemId");
-            quote.remove("sentBy");
-            quote.remove("sentAt");
-            response.put("quote", quote);
-        }
-        Object paymentValue = response.get("payment");
-        if (paymentValue instanceof Map<?, ?> paymentValues) {
-            Map<String, Object> payment = new LinkedHashMap<>();
-            paymentValues.forEach((key, value) -> {
-                if (key instanceof String field) payment.put(field, value);
-            });
-            payment.remove("reference");
-            response.put("payment", payment);
-        }
-        return response;
     }
 
     private Map<String, Object> readEstimate(JsonNode estimate) {
