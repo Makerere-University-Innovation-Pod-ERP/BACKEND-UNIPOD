@@ -97,6 +97,36 @@ class NotificationApiIntegrationTest {
     }
 
     @Test
+    void nonSubmittersDoNotSeeBookingNotifications() throws Exception {
+        createUser(ALICE, ApiUserRole.SUBMITTER);
+        createUser(BOB, ApiUserRole.REVIEWER);
+        UUID bookingId = UUID.randomUUID();
+        UUID briefId = UUID.randomUUID();
+        notifications.publish(new NotificationEvent(NotificationType.BOOKING_REQUESTED, Set.of(ALICE, BOB),
+                "Booking request received", null, "booking", bookingId));
+        notifications.publish(new NotificationEvent(NotificationType.DOCUMENT_REQUESTED, Set.of(BOB),
+                "Document requested", null, "submission", briefId));
+        String alice = login(ALICE);
+        String bob = login(BOB);
+
+        mockMvc.perform(get("/notifications").header("Authorization", "Bearer " + bob))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.items[0].entityType").value("submission"));
+        mockMvc.perform(get("/notifications/unread-count").header("Authorization", "Bearer " + bob))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.unread").value(1));
+        mockMvc.perform(post("/notifications/read-all").header("Authorization", "Bearer " + bob))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.marked").value(1));
+
+        mockMvc.perform(get("/notifications").header("Authorization", "Bearer " + alice))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.items[0].entityType").value("booking"));
+    }
+
+    @Test
     void theBellNeedsALogin() throws Exception {
         mockMvc.perform(get("/notifications")).andExpect(status().isUnauthorized());
         mockMvc.perform(post("/notifications/read-all")).andExpect(status().isUnauthorized());
