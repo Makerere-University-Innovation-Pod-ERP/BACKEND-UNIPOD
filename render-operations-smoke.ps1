@@ -13,6 +13,8 @@ $HttpClient = [System.Net.Http.HttpClient]::new()
 $HttpClient.Timeout = [TimeSpan]::FromSeconds($TimeoutSeconds)
 $Results = [System.Collections.Generic.List[object]]::new()
 $script:ServiceUnavailable = $false
+$SmokeAccountCreated = $false
+$SmokeAccountDeactivated = $false
 
 $EndpointInventory = @(
     @{ Method = "GET"; Path = "/services/catalogue"; Access = "Public"; Request = "None"; Success = "200 grouped catalogue object" },
@@ -95,7 +97,7 @@ function Invoke-ApiRequest {
         }
     }
     catch [System.Management.Automation.MethodInvocationException] {
-        if ($_.Exception.InnerException -is [System.Threading.Tasks.TaskCanceledException]) {
+        if ($_.Exception.InnerException -is [System.Threading.Tasks.TaskCanceledException] -or $_.Exception.InnerException -is [System.Net.Http.HttpRequestException]) {
             return [pscustomobject]@{ StatusCode = 0; ContentType = ""; Raw = "" }
         }
         throw
@@ -186,6 +188,9 @@ elseif ($adminEmail -and $adminPassword) {
         email = $adminEmail
         password = $adminPassword
     }
+    if ($login.StatusCode -eq 0 -or $login.StatusCode -eq 503) {
+        $ServiceUnavailable = $true
+    }
     $loginJson = $null
     if ($login.Raw) {
         try { $loginJson = ConvertFrom-Json -InputObject $login.Raw } catch { $loginJson = $null }
@@ -206,7 +211,7 @@ elseif ($adminEmail -and $adminPassword) {
         Invoke-JsonSmoke -Name "GET /operations/training/overview" -Path "/operations/training/overview" -Token $adminToken
     }
     else {
-        Add-Result -Name "POST /auth/login" -ExpectedStatus 200 -ActualStatus $login.StatusCode -ExpectedShape "none" -Raw ""
+        Add-Result -Name "POST /auth/login" -ExpectedStatus 200 -ActualStatus $login.StatusCode -ExpectedShape "none" -Raw "" -ContentCheck $false
         Write-Host "Authenticated endpoint checks skipped because admin login did not return an access token."
     }
 }
@@ -271,8 +276,12 @@ if ($RunReversibleWriteChecks -and $adminToken -and -not $ServiceUnavailable) {
     }
 }
 
-if ($CreateSubmitter -and -not $ServiceUnavailable) {
-    Write-Host "Creating one persistent PUBLIC smoke-test account; signup has no matching public delete endpoint."
+if ($CreateSubmitter -and -not $ServiceUnavailable -and -not $adminToken) {
+    Add-Result -Name "CreateSubmitter cleanup prerequisite" -ExpectedStatus 200 -ActualStatus 0 -ExpectedShape "none" -Raw "" -ContentCheck $false
+    Write-Host "SKIP -CreateSubmitter: admin credentials are required so the temporary account can be deactivated."
+}
+elseif ($CreateSubmitter -and -not $ServiceUnavailable) {
+    Write-Host "Creating one PUBLIC smoke-test account; it is deactivated after the submitter checks."
     $signupEmail = "render-smoke-{0}@example.com" -f ([guid]::NewGuid().ToString("N"))
     $signupPassword = ([guid]::NewGuid().ToString("N") + "A1!")
     $signup = Invoke-ApiRequest -Method "POST" -Path "/auth/signup" -Body @{
@@ -284,6 +293,9 @@ if ($CreateSubmitter -and -not $ServiceUnavailable) {
         rulesAccepted = $true
         rulesVersion = "smoke-test"
     }
+    if ($signup.StatusCode -eq 201) {
+        $SmokeAccountCreated = $true
+    }
     $signupJson = $null
     if ($signup.Raw) {
         try { $signupJson = ConvertFrom-Json -InputObject $signup.Raw } catch { $signupJson = $null }
@@ -292,11 +304,42 @@ if ($CreateSubmitter -and -not $ServiceUnavailable) {
         Add-Result -Name "POST /auth/signup" -ExpectedStatus 201 -ActualStatus $signup.StatusCode -ExpectedShape "none" -Raw ""
         Write-Host "PASS POST /auth/signup: HTTP 201 (temporary account and token omitted)"
         $submitterToken = [string] $signupJson.accessToken
-        Invoke-JsonSmoke -Name "GET /me (signup identity)" -Path "/me" -Token $submitterToken
-        Invoke-JsonSmoke -Name "GET /me/bookings" -Path "/me/bookings" -Token $submitterToken
+        $submitterId = $null
+        try {
+            $identity = Invoke-ApiRequest -Method "GET" -Path "/me" -Token $submitterToken
+            if ($identity.StatusCode -eq 0 -or $identity.StatusCode -eq 503) {
+                $ServiceUnavailable = $true
+            }
+            $identityJson = $null
+            if ($identity.Raw) {
+                try { $identityJson = ConvertFrom-Json -InputObject $identity.Raw } catch { $identityJson = $null }
+            }
+            Add-Result -Name "GET /me (signup identity)" -ExpectedStatus 200 -ActualStatus $identity.StatusCode -ExpectedShape "object" -Raw $identity.Raw
+            if ($identityJson -and $identityJson.id) {
+                $submitterId = [string] $identityJson.id
+            }
+            Invoke-JsonSmoke -Name "GET /me/bookings" -Path "/me/bookings" -Token $submitterToken
+        }
+        finally {
+            if (-not $submitterId) {
+                Add-Result -Name "POST /users/{id}/deactivate (cleanup)" -ExpectedStatus 200 -ActualStatus 0 -ExpectedShape "none" -Raw "" -ContentCheck $false
+                Write-Host "WARNING: temporary smoke-test account could not be identified for cleanup."
+            }
+            else {
+                $deactivated = Invoke-ApiRequest -Method "POST" -Path ("/users/{0}/deactivate" -f $submitterId) -Token $adminToken
+                Add-Result -Name "POST /users/{id}/deactivate (cleanup)" -ExpectedStatus 200 -ActualStatus $deactivated.StatusCode -ExpectedShape "none" -Raw "" -ContentCheck ($deactivated.StatusCode -eq 200)
+                if ($deactivated.StatusCode -eq 200) {
+                    $SmokeAccountDeactivated = $true
+                    Write-Host "Deactivated the temporary smoke-test account."
+                }
+                else {
+                    Write-Host ("WARNING: temporary smoke-test account deactivation returned HTTP {0}; account id {1}" -f $deactivated.StatusCode, $submitterId)
+                }
+            }
+        }
     }
     else {
-        Add-Result -Name "POST /auth/signup" -ExpectedStatus 201 -ActualStatus $signup.StatusCode -ExpectedShape "none" -Raw ""
+        Add-Result -Name "POST /auth/signup" -ExpectedStatus 201 -ActualStatus $signup.StatusCode -ExpectedShape "none" -Raw "" -ContentCheck $false
         Write-Host "Submitter-only checks skipped because signup did not return an access token."
     }
 }
@@ -305,7 +348,12 @@ $HttpClient.Dispose()
 $passedCount = @($Results | Where-Object { $_.Passed }).Count
 $failedCount = @($Results | Where-Object { -not $_.Passed }).Count
 Write-Host ("`nSummary: {0} passed, {1} failed, {2} executed." -f $passedCount, $failedCount, $Results.Count)
-Write-Host ("Only the opt-in timetable create/read/delete test writes data; other mutation routes are not exercised. {0} routes are listed above." -f $EndpointInventory.Count)
+$writeSummary = if ($RunReversibleWriteChecks) { "The opt-in timetable create/read/delete test writes a temporary block" } else { "No timetable write test was run" }
+if ($SmokeAccountCreated) {
+    $accountSummary = if ($SmokeAccountDeactivated) { "the signup test account was deactivated" } else { "the signup test account was not deactivated and may remain active" }
+    $writeSummary += "; " + $accountSummary
+}
+Write-Host ("{0}; other mutation routes are not exercised. {1} routes are listed above." -f $writeSummary, $EndpointInventory.Count)
 
 if ($failedCount -gt 0) {
     exit 1

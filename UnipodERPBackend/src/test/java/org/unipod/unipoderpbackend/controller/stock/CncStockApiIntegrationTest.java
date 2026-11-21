@@ -206,6 +206,11 @@ class CncStockApiIntegrationTest {
         mockMvc.perform(patch(PATH + "/{id}", item).with(fixtures.coordinatorOf("Telecoms"))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"minimum\": 1}"))
                 .andExpect(status().isForbidden());
+        for (String role : EquipmentFixtures.ROLES_THAT_CANNOT_MANAGE) {
+            mockMvc.perform(patch(PATH + "/{id}", item).with(EquipmentFixtures.as(role))
+                            .contentType(MediaType.APPLICATION_JSON).content("{\"minimum\": 1}"))
+                    .andExpect(status().isForbidden());
+        }
     }
 
     @Test

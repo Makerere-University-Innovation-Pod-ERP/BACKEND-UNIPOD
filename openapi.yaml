@@ -6655,7 +6655,7 @@ paths:
     post:
       tags: [Telecoms]
       operationId: createTelecomsRequest
-      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, FINANCE_OFFICER, OBSERVER, TELECOMS_DOMAIN_OWNER]
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, FINANCE_OFFICER, TELECOMS_DOMAIN_OWNER]
       summary: Create or submit a Telecoms request
       description: Set draft to true to save a partial draft; otherwise all required customer, service, equipment and safety fields must be supplied.
       requestBody:
@@ -6710,7 +6710,7 @@ paths:
     put:
       tags: [Telecoms]
       operationId: updateTelecomsRequestDraft
-      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, FINANCE_OFFICER, OBSERVER, TELECOMS_DOMAIN_OWNER]
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, FINANCE_OFFICER, TELECOMS_DOMAIN_OWNER]
       summary: Update a Telecoms request draft
       description: The owner or a Telecoms manager can edit a DRAFT, RETURNED, or AWAITING_DETAILS request.
       parameters:
@@ -6749,7 +6749,7 @@ paths:
     post:
       tags: [Telecoms]
       operationId: submitTelecomsRequestDraft
-      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, FINANCE_OFFICER, OBSERVER, TELECOMS_DOMAIN_OWNER]
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, FINANCE_OFFICER, TELECOMS_DOMAIN_OWNER]
       summary: Submit a Telecoms request draft
       description: The owner or a Telecoms manager can submit a DRAFT, RETURNED, or AWAITING_DETAILS request after completing required fields and accepting the lab rules.
       parameters:
@@ -9042,6 +9042,7 @@ components:
         - SUBMITTER
         - FINANCE_OFFICER
         - OBSERVER
+        - TELECOMS_DOMAIN_OWNER
     CreateSubmissionRequest:
       type: object
       additionalProperties: false

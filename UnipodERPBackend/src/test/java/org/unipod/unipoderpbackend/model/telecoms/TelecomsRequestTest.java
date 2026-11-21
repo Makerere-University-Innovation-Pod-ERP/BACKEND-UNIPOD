@@ -31,6 +31,12 @@ class TelecomsRequestTest {
         TelecomsRequest request = new TelecomsRequest(
                 UUID.randomUUID(), "TL-2026-000002", payload(false), "owner@example.test",
                 TelecomsRequestStatus.NEW, null, NOW);
+        OperationsConflictException beforeQuoteException = assertThrows(
+                OperationsConflictException.class,
+                () -> request.moveTo(TelecomsRequestStatus.SCHEDULED, NOW.plusSeconds(30)));
+
+        assertEquals("INVALID_REQUEST_TRANSITION", beforeQuoteException.getCode());
+        assertEquals(TelecomsRequestStatus.NEW, request.getStatus());
         request.sendQuote(null, "{\"amount\":1000}", NOW.plusSeconds(60));
 
         assertEquals(TelecomsPaymentStatus.AWAITING_PROOF, request.getPaymentStatus());

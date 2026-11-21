@@ -235,6 +235,7 @@ class FrontendContractTest {
         assertShape(recorded, "$.movement", CNC_MOVEMENT, false);
         assertShape(recorded, "$.item", STOCK_ITEM, false);
         String history = body(MockMvcRequestBuilders.get("/cnc/stock/movements").with(admin), 200);
+        assertEquals(Set.of("items"), keys(history, "$"));
         assertShape(history, "$.items[?(@.itemId == '" + item + "')]", CNC_MOVEMENT, true);
         assertShape(body(MockMvcRequestBuilders.patch("/cnc/stock/{id}", item).with(admin)
                 .contentType(MediaType.APPLICATION_JSON).content("{\"minimum\": 4}"), 200), "$", STOCK_ITEM, false);
