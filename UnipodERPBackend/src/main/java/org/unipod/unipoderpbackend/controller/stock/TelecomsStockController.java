@@ -32,6 +32,8 @@ import org.unipod.unipoderpbackend.service.stock.StockService;
 @Validated
 public class TelecomsStockController {
     private static final DepartmentCode DEPARTMENT = DepartmentCode.TELECOMS;
+    private static final String READ_ROLES = "hasRole('TELECOMS_DOMAIN_OWNER') or " + EquipmentRoles.READ;
+    private static final String MANAGE_ROLES = "hasRole('TELECOMS_DOMAIN_OWNER') or " + EquipmentRoles.MANAGE;
 
     private final StockService stock;
     private final CurrentActor currentActor;
@@ -42,20 +44,20 @@ public class TelecomsStockController {
     }
 
     @GetMapping
-    @PreAuthorize(EquipmentRoles.READ)
+    @PreAuthorize(READ_ROLES)
     public ItemsResponse<StockItemResponse> list() {
         return new ItemsResponse<>(stock.list(DEPARTMENT).stream().map(StockItemResponse::from).toList());
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize(EquipmentRoles.MANAGE)
+    @PreAuthorize(MANAGE_ROLES)
     public StockItemResponse register(@Valid @RequestBody CreateStockItemRequest request, Authentication authentication) {
         return StockItemResponse.from(stock.register(currentActor.from(authentication), DEPARTMENT, request));
     }
 
     @GetMapping("/movements")
-    @PreAuthorize(EquipmentRoles.READ)
+    @PreAuthorize(READ_ROLES)
     public ItemsResponse<TelecomsStockMovementResponse> movements() {
         return new ItemsResponse<>(stock.history(DEPARTMENT).stream()
                 .map(view -> TelecomsStockMovementResponse.from(view.movement(), view.itemName())).toList());
@@ -63,7 +65,7 @@ public class TelecomsStockController {
 
     @PostMapping("/movements")
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize(EquipmentRoles.MANAGE)
+    @PreAuthorize(MANAGE_ROLES)
     public MovementResult<TelecomsStockMovementResponse> record(@Valid @RequestBody RecordTelecomsMovementRequest request,
                                                                 Authentication authentication) {
         StockService.Recorded recorded = stock.record(currentActor.from(authentication), DEPARTMENT,
@@ -74,7 +76,7 @@ public class TelecomsStockController {
     }
 
     @PatchMapping("/{id}/minimum")
-    @PreAuthorize(EquipmentRoles.MANAGE)
+    @PreAuthorize(MANAGE_ROLES)
     public StockItemResponse updateMinimum(@PathVariable UUID id, @Valid @RequestBody UpdateMinimumRequest request,
                                            Authentication authentication) {
         return StockItemResponse.from(stock.changeMinimum(currentActor.from(authentication), DEPARTMENT, id,
