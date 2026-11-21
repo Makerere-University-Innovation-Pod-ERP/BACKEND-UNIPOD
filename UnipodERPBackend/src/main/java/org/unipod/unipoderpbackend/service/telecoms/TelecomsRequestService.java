@@ -1,7 +1,6 @@
 package org.unipod.unipoderpbackend.service.telecoms;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -12,10 +11,14 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.unipod.unipoderpbackend.dto.telecoms.TelecomsPaymentConfirmationRequest;
 import org.unipod.unipoderpbackend.dto.telecoms.TelecomsPriceListItemResponse;
 import org.unipod.unipoderpbackend.dto.telecoms.TelecomsQuoteRequest;
 import org.unipod.unipoderpbackend.dto.telecoms.TelecomsRequestListResponse;
@@ -35,6 +38,7 @@ import org.unipod.unipoderpbackend.model.finance.PriceItemStatus;
 import org.unipod.unipoderpbackend.model.finance.PriceListItem;
 import org.unipod.unipoderpbackend.model.operations.DepartmentCode;
 import org.unipod.unipoderpbackend.model.operations.StockItem;
+import org.unipod.unipoderpbackend.model.telecoms.TelecomsPaymentStatus;
 import org.unipod.unipoderpbackend.model.telecoms.TelecomsRequest;
 import org.unipod.unipoderpbackend.model.telecoms.TelecomsRequestHistory;
 import org.unipod.unipoderpbackend.model.telecoms.TelecomsRequestStatus;
@@ -87,13 +91,22 @@ public class TelecomsRequestService {
     }
 
     @Transactional(readOnly = true)
-    public TelecomsRequestListResponse list(Actor actor) {
+    public TelecomsRequestListResponse list(Actor actor, int page, int size) {
         checkDepartmentReadAccess(actor);
-        List<TelecomsRequest> all = requests.findAll(REQUEST_ORDER);
-        List<TelecomsRequest> visible = canViewAll(actor)
-                ? all
-                : all.stream().filter(request -> actor.email().equals(request.getCreatedBy())).toList();
-        return new TelecomsRequestListResponse(toResponses(visible));
+        Pageable pageable = PageRequest.of(page, size, REQUEST_ORDER);
+        Page<TelecomsRequest> found = canViewAll(actor)
+                ? requests.findAll(pageable)
+                : requests.findAllByCreatedBy(actor.email(), pageable);
+        List<TelecomsRequestResponse> items = found.getContent().stream()
+                .map(request -> toResponse(request, List.of()))
+                .toList();
+        return new TelecomsRequestListResponse(
+                items,
+                found.getNumber(),
+                found.getSize(),
+                found.getTotalElements(),
+                found.getTotalPages()
+        );
     }
 
     @Transactional(readOnly = true)
@@ -129,7 +142,7 @@ public class TelecomsRequestService {
     public TelecomsRequestResponse updateDraft(UUID id, TelecomsRequestPayload payload, Actor actor) {
         TelecomsRequest request = lock(id);
         checkCanEditDraft(request, actor);
-        validatePayload(payload, false);
+        validatePayload(payload, request.getStatus() != TelecomsRequestStatus.DRAFT);
         TelecomsRequestStatus beforeStatus = request.getStatus();
         request.updateDraft(payload, serializeEstimate(payload.estimate()), clock.instant());
         requests.saveAndFlush(request);
@@ -177,11 +190,31 @@ public class TelecomsRequestService {
         request.sendQuote(estimate, quoteJson, now);
         requests.saveAndFlush(request);
         addHistory(request, actor.email(),
-                "Quote of UGX " + payload.amount().setScale(0, RoundingMode.HALF_UP).toPlainString()
+                "Quote of UGX " + payload.amount().toPlainString()
                         + " sent to customer.", now);
         auditTrail.record(actor.email(), "telecoms_request.quoted", ENTITY, request.getId(),
                 AuditTrail.details("status", beforeStatus),
                 AuditTrail.details("status", request.getStatus(), "amount", payload.amount()));
+        return getAfterMutation(request);
+    }
+
+    @Transactional
+    public TelecomsRequestResponse confirmPayment(
+            UUID id,
+            TelecomsPaymentConfirmationRequest payload,
+            Actor actor
+    ) {
+        requireFinance(actor);
+        TelecomsRequest request = lock(id);
+        TelecomsPaymentStatus beforePaymentStatus = request.getPaymentStatus();
+        Instant now = clock.instant();
+        request.confirmPayment(payload.paymentReference(), now);
+        requests.saveAndFlush(request);
+        addHistory(request, actor.email(), "Payment confirmed by Finance.", now);
+        auditTrail.record(actor.email(), "telecoms_request.payment_confirmed", ENTITY, request.getId(),
+                AuditTrail.details("paymentStatus", beforePaymentStatus),
+                AuditTrail.details("paymentStatus", request.getPaymentStatus(),
+                        "reference", request.getPaymentReference()));
         return getAfterMutation(request);
     }
 
@@ -283,22 +316,6 @@ public class TelecomsRequestService {
         return List.copyOf(items.values());
     }
 
-    private List<TelecomsRequestResponse> toResponses(List<TelecomsRequest> items) {
-        if (items.isEmpty()) {
-            return List.of();
-        }
-        List<UUID> ids = items.stream().map(TelecomsRequest::getId).toList();
-        Map<UUID, List<TelecomsRequestHistory>> historyByRequest =
-                history.findAllByRequestIdInOrderByCreatedAtAscIdAsc(ids).stream()
-                        .collect(Collectors.groupingBy(
-                                TelecomsRequestHistory::getRequestId,
-                                LinkedHashMap::new,
-                                Collectors.toList()));
-        return items.stream()
-                .map(request -> toResponse(request, historyByRequest.getOrDefault(request.getId(), List.of())))
-                .toList();
-    }
-
     private TelecomsRequestResponse toResponse(TelecomsRequest request, List<TelecomsRequestHistory> historyEntries) {
         return new TelecomsRequestResponse(
                 request.getId(),
@@ -377,6 +394,12 @@ public class TelecomsRequestService {
         requireTelecomsManager(actor);
     }
 
+    private void requireFinance(Actor actor) {
+        if (actor.role() != ApiUserRole.FINANCE_OFFICER && actor.role() != ApiUserRole.ADMINISTRATOR) {
+            throw new AccessDeniedException("Only Finance Officers can confirm payment.");
+        }
+    }
+
     private void requireTelecomsManager(Actor actor) {
         if (actor.role() == ApiUserRole.TELECOMS_DOMAIN_OWNER) {
             return;
@@ -415,10 +438,15 @@ public class TelecomsRequestService {
         if (payload.estimate().parts() == null) {
             throw new InvalidOperationsRequestException("Parts estimate must be an array.");
         }
+        if (!payload.priceListItemId().equals(payload.estimate().priceListItemId())
+                || payload.estimate().priceQuantity() == null
+                || payload.priceQuantity().compareTo(payload.estimate().priceQuantity()) != 0) {
+            throw new InvalidOperationsRequestException(
+                    "The estimate price item and quantity must match the selected quote.");
+        }
         BigDecimal expectedAmount = BigDecimal.valueOf(price.getPriceUgx())
-                .multiply(payload.priceQuantity())
-                .setScale(0, RoundingMode.HALF_UP);
-        if (expectedAmount.compareTo(payload.amount().setScale(0, RoundingMode.HALF_UP)) != 0) {
+                .multiply(payload.priceQuantity());
+        if (expectedAmount.compareTo(payload.amount()) != 0) {
             throw new InvalidOperationsRequestException(
                     "The quote amount must match the selected Telecoms price and quantity.");
         }
@@ -433,6 +461,9 @@ public class TelecomsRequestService {
     private void validateEstimatedParts(TelecomsRequestPayload.Estimate estimate) {
         Map<UUID, BigDecimal> requested = new LinkedHashMap<>();
         for (TelecomsRequestPayload.Estimate.PartEstimate part : estimate.parts()) {
+            if (part == null) {
+                throw new InvalidOperationsRequestException("A part estimate cannot be empty.");
+            }
             UUID itemId = parseUuid(part.itemId(), "A part estimate contains an invalid stock item ID.");
             requested.merge(itemId, part.quantity(), BigDecimal::add);
         }

@@ -21,7 +21,7 @@ public record TelecomsRequestPayload(
         Boolean draft
 ) {
     public record Estimate(
-            @NotNull @Size(max = 100) List<@Valid PartEstimate> parts,
+            @NotNull @Size(max = 100) List<@NotNull @Valid PartEstimate> parts,
             @NotNull @Size(max = 64) String priceListItemId,
             @NotNull @Positive BigDecimal priceQuantity
     ) {

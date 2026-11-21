@@ -39,6 +39,14 @@ CREATE TABLE telecoms_requests (
     ),
     CONSTRAINT ck_telecoms_requests_done_notes CHECK (
         status <> 'DONE' OR length(btrim(work_notes)) > 0
+    ),
+    CONSTRAINT ck_telecoms_requests_submitted_fields CHECK (
+        status = 'DRAFT' OR (
+            length(btrim(customer_name)) > 0
+            AND length(btrim(service_wanted)) > 0
+            AND length(btrim(equipment_involved)) > 0
+            AND rules_accepted
+        )
     )
 );
 
@@ -46,6 +54,8 @@ CREATE INDEX ix_telecoms_requests_updated
     ON telecoms_requests (updated_at DESC, id ASC);
 CREATE INDEX ix_telecoms_requests_status_updated
     ON telecoms_requests (status, updated_at DESC, id ASC);
+CREATE INDEX ix_telecoms_requests_created_updated
+    ON telecoms_requests (created_by, updated_at DESC, id ASC);
 
 CREATE TABLE telecoms_request_history (
     id          UUID          NOT NULL,

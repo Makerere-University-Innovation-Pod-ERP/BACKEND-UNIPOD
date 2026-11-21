@@ -20,4 +20,6 @@ public interface TelecomsRequestRepository extends JpaRepository<TelecomsRequest
     Optional<TelecomsRequest> findByIdForUpdate(@Param("id") UUID id);
 
     Page<TelecomsRequest> findAll(Pageable pageable);
+
+    Page<TelecomsRequest> findAllByCreatedBy(String createdBy, Pageable pageable);
 }

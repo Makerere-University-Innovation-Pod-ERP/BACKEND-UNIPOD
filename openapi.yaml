@@ -6637,10 +6637,13 @@ paths:
       operationId: listTelecomsRequests
       x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, FINANCE_OFFICER, OBSERVER, TELECOMS_DOMAIN_OWNER]
       summary: List Telecoms service requests
-      description: Telecoms managers, administrators and Finance Officers see all requests. Department coordinators must belong to Telecoms; other users see only requests they submitted.
+      description: Telecoms managers, administrators and Finance Officers see all requests. Department coordinators must belong to Telecoms; other users see only requests they submitted. List items have an empty history array; fetch a request by ID for its full history.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
       responses:
         '200':
-          description: Telecoms requests, newest activity first
+          description: A page of Telecoms requests, newest activity first
           content:
             application/json:
               schema:
@@ -6709,7 +6712,7 @@ paths:
       operationId: updateTelecomsRequestDraft
       x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, FINANCE_OFFICER, OBSERVER, TELECOMS_DOMAIN_OWNER]
       summary: Update a Telecoms request draft
-      description: Only the draft owner or a Telecoms manager can edit a request that is still in DRAFT.
+      description: The owner or a Telecoms manager can edit a DRAFT, RETURNED, or AWAITING_DETAILS request.
       parameters:
         - name: id
           in: path
@@ -6748,7 +6751,7 @@ paths:
       operationId: submitTelecomsRequestDraft
       x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, FINANCE_OFFICER, OBSERVER, TELECOMS_DOMAIN_OWNER]
       summary: Submit a Telecoms request draft
-      description: The owner or a Telecoms manager can submit a draft after completing required fields and accepting the lab rules.
+      description: The owner or a Telecoms manager can submit a DRAFT, RETURNED, or AWAITING_DETAILS request after completing required fields and accepting the lab rules.
       parameters:
         - name: id
           in: path
@@ -6779,7 +6782,7 @@ paths:
       operationId: quoteTelecomsRequest
       x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, TELECOMS_DOMAIN_OWNER]
       summary: Send a Telecoms service quote
-      description: Only active Telecoms price-list items and available Telecoms stock can be quoted. The amount must match the selected price and quantity.
+      description: Only active Telecoms price-list items and available Telecoms stock can be quoted. The amount must exactly match the selected price and quantity, and the nested estimate must use the same price item and quantity.
       parameters:
         - name: id
           in: path
@@ -6796,6 +6799,50 @@ paths:
       responses:
         '200':
           description: The request with its quote and payment status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelecomsRequest'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /telecoms/requests/{id}/confirm-payment:
+    post:
+      tags: [Telecoms]
+      operationId: confirmTelecomsRequestPayment
+      x-required-roles: [ADMINISTRATOR, FINANCE_OFFICER]
+      summary: Confirm payment for a quoted Telecoms request
+      description: Finance confirms payment after a quote is sent. The request stays QUOTED, its payment status becomes CONFIRMED, and scheduling is then allowed.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                paymentReference:
+                  type: [string, 'null']
+                  maxLength: 100
+      responses:
+        '200':
+          description: The request with Finance-confirmed payment
           content:
             application/json:
               schema:
@@ -6908,7 +6955,7 @@ paths:
       operationId: updateTelecomsRequestStatus
       x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, TELECOMS_DOMAIN_OWNER]
       summary: Advance a Telecoms request
-      description: Only QUOTED to SCHEDULED and SCHEDULED to IN_PROGRESS transitions are allowed. Scheduling requires Finance-confirmed payment.
+      description: Only QUOTED to SCHEDULED and SCHEDULED to IN_PROGRESS transitions are allowed. Scheduling requires Finance-confirmed payment via /telecoms/requests/{id}/confirm-payment.
       parameters:
         - name: id
           in: path
@@ -13141,12 +13188,21 @@ components:
                 type: [string, 'null']
     TelecomsRequestList:
       type: object
-      required: [items]
+      required: [items, page, size, totalElements, totalPages]
       properties:
         items:
           type: array
           items:
             $ref: '#/components/schemas/TelecomsRequest'
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
     TelecomsRequestPayload:
       type: object
       additionalProperties: false
