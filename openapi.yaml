@@ -4589,7 +4589,7 @@ paths:
       description: |
         Asset tags are unique across all departments, ignoring case; a second item with the same tag returns `409`.
         New items start `AVAILABLE` with every unit available. Recorded in the audit log as `equipment.registered`.
-        A department coordinator may act only in a department they belong to (a sector named like it); an administrator may act in all of them.
+        A department coordinator may act only in a department they belong to (a sector named like it); an administrator may act in all of them, and a Telecoms domain owner may act in Telecoms.
       requestBody:
         required: true
         content:
@@ -5105,7 +5105,7 @@ paths:
     get:
       tags: [Stock]
       operationId: listTelecomsStock
-      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER]
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER, TELECOMS_DOMAIN_OWNER]
       summary: The telecoms stock list
       description: |
         Items ordered by name ignoring case. Quantities can be fractional (two decimals). Every role except SUBMITTER may read.
@@ -5123,11 +5123,11 @@ paths:
     post:
       tags: [Stock]
       operationId: registerTelecomsStockItem
-      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, TELECOMS_DOMAIN_OWNER]
       summary: Add an item to the telecoms stock list
       description: |
         A missing `sku` is generated. An opening `quantity` is recorded as a `RECEIVED` movement so the history
-        explains every unit. Recorded as `stock.item_registered`. A department coordinator may act only in a department they belong to (a sector named like it); an administrator may act in all of them.
+        explains every unit. Recorded as `stock.item_registered`. A department coordinator may act only in a department they belong to (a sector named like it); an administrator may act in all of them, and a Telecoms domain owner may act in Telecoms.
       requestBody:
         required: true
         content:
@@ -5155,7 +5155,7 @@ paths:
     get:
       tags: [Stock]
       operationId: listTelecomsStockMovements
-      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER]
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER, TELECOMS_DOMAIN_OWNER]
       summary: The telecoms stock history, newest first
       description: |
         The latest 200 movements, wrapped in `items`. Every role except SUBMITTER may read.
@@ -5173,14 +5173,14 @@ paths:
     post:
       tags: [Stock]
       operationId: recordTelecomsStockMovement
-      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, TELECOMS_DOMAIN_OWNER]
       summary: Record stock received, used or corrected
       description: |
         Stock can never go below zero: a movement that would do so returns `422` and changes nothing, even when
         two people record at once (the item is locked while the balance changes). Telecoms records usage as `USED_ON_REQUEST` with the `requestId` of the request. A `CORRECTION` may be negative and
         needs a `note`; the other types need a positive quantity. A movement that takes an item below its minimum notifies the
         managers once. Recorded as `stock.movement_recorded` with the balance and type only; notes and references are
-        never copied into the audit log. A department coordinator may act only in a department they belong to (a sector named like it); an administrator may act in all of them.
+        never copied into the audit log. A department coordinator may act only in a department they belong to (a sector named like it); an administrator may act in all of them, and a Telecoms domain owner may act in Telecoms.
       requestBody:
         required: true
         content:
@@ -5208,7 +5208,7 @@ paths:
     patch:
       tags: [Stock]
       operationId: updateTelecomsStockMinimum
-      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, TELECOMS_DOMAIN_OWNER]
       summary: Change an item's low-stock minimum
       description: |
         Only `minimum` can be changed here. It must be zero or more. Recorded as `stock.minimum_changed`.
@@ -6494,6 +6494,418 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /telecoms/requests:
+    get:
+      tags: [Telecoms]
+      operationId: listTelecomsRequests
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, FINANCE_OFFICER, OBSERVER, TELECOMS_DOMAIN_OWNER]
+      summary: List Telecoms service requests
+      description: Telecoms managers, administrators and Finance Officers see all requests. Department coordinators must belong to Telecoms; other users see only requests they submitted.
+      responses:
+        '200':
+          description: Telecoms requests, newest activity first
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelecomsRequestList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Telecoms]
+      operationId: createTelecomsRequest
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, FINANCE_OFFICER, OBSERVER, TELECOMS_DOMAIN_OWNER]
+      summary: Create or submit a Telecoms request
+      description: Set draft to true to save a partial draft; otherwise all required customer, service, equipment and safety fields must be supplied.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelecomsRequestPayload'
+      responses:
+        '201':
+          description: The saved draft or newly submitted request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelecomsRequest'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /telecoms/requests/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Telecoms]
+      operationId: getTelecomsRequest
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, FINANCE_OFFICER, OBSERVER, TELECOMS_DOMAIN_OWNER]
+      summary: Get a Telecoms request
+      description: Telecoms managers, administrators and Finance Officers can read all requests. Department coordinators must belong to Telecoms; other users can read only their own requests.
+      responses:
+        '200':
+          description: The request with its quote, payment, work details and status history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelecomsRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /telecoms/requests/{id}/draft:
+    put:
+      tags: [Telecoms]
+      operationId: updateTelecomsRequestDraft
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, FINANCE_OFFICER, OBSERVER, TELECOMS_DOMAIN_OWNER]
+      summary: Update a Telecoms request draft
+      description: Only the draft owner or a Telecoms manager can edit a request that is still in DRAFT.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelecomsRequestPayload'
+      responses:
+        '200':
+          description: The updated draft
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelecomsRequest'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /telecoms/requests/{id}/submit:
+    post:
+      tags: [Telecoms]
+      operationId: submitTelecomsRequestDraft
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, FINANCE_OFFICER, OBSERVER, TELECOMS_DOMAIN_OWNER]
+      summary: Submit a Telecoms request draft
+      description: The owner or a Telecoms manager can submit a draft after completing required fields and accepting the lab rules.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The submitted request in NEW status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelecomsRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /telecoms/requests/{id}/quote:
+    post:
+      tags: [Telecoms]
+      operationId: quoteTelecomsRequest
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, TELECOMS_DOMAIN_OWNER]
+      summary: Send a Telecoms service quote
+      description: Only active Telecoms price-list items and available Telecoms stock can be quoted. The amount must match the selected price and quantity.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelecomsQuoteRequest'
+      responses:
+        '200':
+          description: The request with its quote and payment status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelecomsRequest'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /telecoms/requests/{id}/request-details:
+    post:
+      tags: [Telecoms]
+      operationId: requestTelecomsDetails
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, TELECOMS_DOMAIN_OWNER]
+      summary: Ask the customer for more information
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [message]
+              properties:
+                message:
+                  type: string
+                  minLength: 1
+                  maxLength: 2000
+      responses:
+        '200':
+          description: The request in AWAITING_DETAILS status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelecomsRequest'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /telecoms/requests/{id}/send-back:
+    post:
+      tags: [Telecoms]
+      operationId: sendBackTelecomsRequest
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, TELECOMS_DOMAIN_OWNER]
+      summary: Return a Telecoms request to reception
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 2000
+      responses:
+        '200':
+          description: The request in RETURNED status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelecomsRequest'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /telecoms/requests/{id}/status:
+    post:
+      tags: [Telecoms]
+      operationId: updateTelecomsRequestStatus
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, TELECOMS_DOMAIN_OWNER]
+      summary: Advance a Telecoms request
+      description: Only QUOTED to SCHEDULED and SCHEDULED to IN_PROGRESS transitions are allowed. Scheduling requires Finance-confirmed payment.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [toStatus]
+              properties:
+                toStatus:
+                  type: string
+                  enum: [SCHEDULED, IN_PROGRESS]
+      responses:
+        '200':
+          description: The request with its new status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelecomsRequest'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /telecoms/requests/{id}/work-details:
+    put:
+      tags: [Telecoms]
+      operationId: updateTelecomsWorkDetails
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, TELECOMS_DOMAIN_OWNER]
+      summary: Update Telecoms diagnostic and work details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [technician, partsUsed, timeSpent, notes]
+              properties:
+                technician:
+                  type: string
+                  maxLength: 200
+                partsUsed:
+                  type: string
+                  maxLength: 2000
+                timeSpent:
+                  type: string
+                  maxLength: 200
+                notes:
+                  type: string
+                  maxLength: 5000
+      responses:
+        '200':
+          description: The request with its work details updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelecomsRequest'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /telecoms/requests/{id}/mark-done:
+    post:
+      tags: [Telecoms]
+      operationId: markTelecomsRequestDone
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, TELECOMS_DOMAIN_OWNER]
+      summary: Mark Telecoms work complete
+      description: Work must be IN_PROGRESS and technician notes must be present.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The completed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelecomsRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /telecoms/price-list:
+    get:
+      tags: [Telecoms]
+      operationId: listTelecomsPriceItems
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, FINANCE_OFFICER, OBSERVER, TELECOMS_DOMAIN_OWNER]
+      summary: List active Telecoms prices
+      description: Prices come from active price-list items belonging to the Telecoms department.
+      responses:
+        '200':
+          description: Active Telecoms service prices
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelecomsPriceList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /telecoms/lab-bookings:
     get:
       tags: [Telecoms]
@@ -12430,6 +12842,212 @@ components:
       properties:
         attended:
           type: boolean
+    TelecomsRequest:
+      type: object
+      required: [id, code, customerName, customerType, serviceWanted, equipmentInvolved, preferredDate, rulesAccepted, status, createdAt, updatedAt, estimate, quote, payment, workDetails, history]
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        customerName:
+          type: string
+        customerType:
+          type: string
+          enum: [Student, Public, Company, Research Group, Internal]
+        serviceWanted:
+          type: string
+        equipmentInvolved:
+          type: string
+        preferredDate:
+          type: [string, 'null']
+          format: date
+        rulesAccepted:
+          type: boolean
+        status:
+          type: string
+          enum: [DRAFT, NEW, AWAITING_DETAILS, RETURNED, QUOTED, SCHEDULED, IN_PROGRESS, DONE]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        estimate:
+          oneOf:
+            - $ref: '#/components/schemas/TelecomsRequestEstimate'
+            - type: 'null'
+        quote:
+          oneOf:
+            - $ref: '#/components/schemas/TelecomsRequestQuote'
+            - type: 'null'
+        payment:
+          type: object
+          required: [status, reference, confirmedAt]
+          properties:
+            status:
+              $ref: '#/components/schemas/PaymentStatus'
+            reference:
+              type: [string, 'null']
+            confirmedAt:
+              type: [string, 'null']
+              format: date-time
+        workDetails:
+          type: object
+          required: [technician, partsUsed, timeSpent, notes]
+          properties:
+            technician:
+              type: string
+            partsUsed:
+              type: string
+            timeSpent:
+              type: string
+            notes:
+              type: string
+        history:
+          type: array
+          items:
+            type: object
+            required: [status, by, at, note]
+            properties:
+              status:
+                type: string
+                enum: [DRAFT, NEW, AWAITING_DETAILS, RETURNED, QUOTED, SCHEDULED, IN_PROGRESS, DONE]
+              by:
+                type: string
+              at:
+                type: string
+                format: date-time
+              note:
+                type: [string, 'null']
+    TelecomsRequestList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TelecomsRequest'
+    TelecomsRequestPayload:
+      type: object
+      additionalProperties: false
+      required: [customerName, customerType, serviceWanted, equipmentInvolved, preferredDate, rulesAccepted]
+      properties:
+        customerName:
+          type: string
+          maxLength: 200
+        customerType:
+          type: string
+          enum: [Student, Public, Company, Research Group, Internal]
+        serviceWanted:
+          type: string
+          maxLength: 2000
+        equipmentInvolved:
+          type: string
+          maxLength: 1000
+        preferredDate:
+          type: [string, 'null']
+          format: date
+        rulesAccepted:
+          type: boolean
+        estimate:
+          oneOf:
+            - $ref: '#/components/schemas/TelecomsRequestEstimate'
+            - type: 'null'
+        draft:
+          type: boolean
+          description: When true, save a partial draft instead of submitting it.
+    TelecomsRequestEstimate:
+      type: object
+      required: [parts, priceListItemId, priceQuantity]
+      properties:
+        parts:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            required: [itemId, quantity]
+            properties:
+              itemId:
+                type: string
+                format: uuid
+              quantity:
+                type: number
+                exclusiveMinimum: 0
+        priceListItemId:
+          type: [string, 'null']
+          format: uuid
+        priceQuantity:
+          type: number
+          exclusiveMinimum: 0
+    TelecomsRequestQuote:
+      type: object
+      required: [amount, currency, priceListItemId, priceQuantity, expectedCompletion, sentAt, sentBy]
+      properties:
+        amount:
+          type: number
+          exclusiveMinimum: 0
+          description: Whole UGX amount computed from the selected active price and quantity.
+        currency:
+          type: string
+          enum: [UGX]
+        priceListItemId:
+          type: string
+          format: uuid
+        priceQuantity:
+          type: number
+          exclusiveMinimum: 0
+        expectedCompletion:
+          type: string
+          format: date
+        sentAt:
+          type: string
+          format: date-time
+        sentBy:
+          type: string
+    TelecomsQuoteRequest:
+      type: object
+      additionalProperties: false
+      required: [amount, priceListItemId, priceQuantity, expectedCompletion, estimate]
+      properties:
+        amount:
+          type: number
+          exclusiveMinimum: 0
+        priceListItemId:
+          type: string
+          format: uuid
+        priceQuantity:
+          type: number
+          exclusiveMinimum: 0
+        expectedCompletion:
+          type: string
+          format: date
+        estimate:
+          $ref: '#/components/schemas/TelecomsRequestEstimate'
+    TelecomsPriceListItem:
+      type: object
+      required: [id, label, unit, unitPrice]
+      properties:
+        id:
+          type: string
+          format: uuid
+        label:
+          type: string
+        unit:
+          type: string
+        unitPrice:
+          type: integer
+          minimum: 0
+          description: UGX per unit
+    TelecomsPriceList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TelecomsPriceListItem'
     Bootcamp:
       type: object
       required: [id, topic, instructor, date, start, end, capacity, fee, enrolled, attendance]
