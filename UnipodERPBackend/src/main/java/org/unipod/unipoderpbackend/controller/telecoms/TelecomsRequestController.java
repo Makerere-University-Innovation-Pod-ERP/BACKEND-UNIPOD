@@ -40,6 +40,10 @@ public class TelecomsRequestController {
             + "'INNOVATION_COORDINATOR', 'RECEPTIONIST', 'FACT_FINDING_OFFICER', 'REVIEWER', "
             + "'SECTOR_OFFICER', 'IP_LIAISON', 'SUBMITTER', 'FINANCE_OFFICER', 'OBSERVER', "
             + "'TELECOMS_DOMAIN_OWNER')";
+    private static final String REQUESTER_ROLES = "hasAnyRole('ADMINISTRATOR', 'DEPARTMENT_COORDINATOR', "
+            + "'INNOVATION_COORDINATOR', 'RECEPTIONIST', 'FACT_FINDING_OFFICER', 'REVIEWER', "
+            + "'SECTOR_OFFICER', 'IP_LIAISON', 'SUBMITTER', 'FINANCE_OFFICER', "
+            + "'TELECOMS_DOMAIN_OWNER')";
     private static final String MANAGE_ROLES =
             "hasAnyRole('ADMINISTRATOR', 'DEPARTMENT_COORDINATOR', 'TELECOMS_DOMAIN_OWNER')";
     private static final String FINANCE_ROLES = "hasAnyRole('ADMINISTRATOR', 'FINANCE_OFFICER')";
@@ -70,7 +74,7 @@ public class TelecomsRequestController {
 
     @PostMapping("/requests")
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize(READ_ROLES)
+    @PreAuthorize(REQUESTER_ROLES)
     public TelecomsRequestResponse create(
             @Valid @RequestBody TelecomsRequestPayload payload,
             Authentication authentication
@@ -79,7 +83,7 @@ public class TelecomsRequestController {
     }
 
     @PutMapping("/requests/{id}/draft")
-    @PreAuthorize(READ_ROLES)
+    @PreAuthorize(REQUESTER_ROLES)
     public TelecomsRequestResponse updateDraft(
             @PathVariable UUID id,
             @Valid @RequestBody TelecomsRequestPayload payload,
@@ -89,7 +93,7 @@ public class TelecomsRequestController {
     }
 
     @PostMapping("/requests/{id}/submit")
-    @PreAuthorize(READ_ROLES)
+    @PreAuthorize(REQUESTER_ROLES)
     public TelecomsRequestResponse submitDraft(@PathVariable UUID id, Authentication authentication) {
         return requests.submitDraft(id, currentActor.from(authentication));
     }

@@ -38,7 +38,10 @@ import org.unipod.unipoderpbackend.dto.equipment.ReportMachineRequest;
 import org.unipod.unipoderpbackend.dto.equipment.RequestLoanRequest;
 import org.unipod.unipoderpbackend.dto.equipment.ReturnLoanRequest;
 import org.unipod.unipoderpbackend.dto.equipment.TelecomsEquipmentResponse;
+import org.unipod.unipoderpbackend.dto.stock.CncStockMovementResponse;
+import org.unipod.unipoderpbackend.dto.stock.CncStockResponse;
 import org.unipod.unipoderpbackend.dto.stock.CreateStockItemRequest;
+import org.unipod.unipoderpbackend.dto.stock.RecordCncMovementRequest;
 import org.unipod.unipoderpbackend.dto.stock.RecordTelecomsMovementRequest;
 import org.unipod.unipoderpbackend.dto.stock.RecordTextileMovementRequest;
 import org.unipod.unipoderpbackend.dto.stock.StockItemResponse;
@@ -60,6 +63,8 @@ class EquipmentOpenApiContractTest {
     private static final Set<String> REPORT = Set.of("ADMINISTRATOR", "DEPARTMENT_COORDINATOR", "INNOVATION_COORDINATOR",
             "RECEPTIONIST", "FACT_FINDING_OFFICER", "REVIEWER", "SECTOR_OFFICER", "IP_LIAISON", "FINANCE_OFFICER");
     private static final Set<String> MANAGE = Set.of("ADMINISTRATOR", "DEPARTMENT_COORDINATOR");
+    private static final Set<String> TELECOMS_STOCK_READ = withExtraRole(READ, "TELECOMS_DOMAIN_OWNER");
+    private static final Set<String> TELECOMS_STOCK_MANAGE = withExtraRole(MANAGE, "TELECOMS_DOMAIN_OWNER");
     private static final Set<String> READ_ERRORS = Set.of("200", "401", "403");
     private static final Set<String> MUTATION_ERRORS = Set.of("400", "401", "403", "404", "422");
 
@@ -105,17 +110,19 @@ class EquipmentOpenApiContractTest {
                 withOk("201", MUTATION_ERRORS));
         assertOperation("/textile/machines/{id}/mark-working", "post", "Machines", "markTextileMachineWorking", MANAGE,
                 Set.of("200", "400", "401", "403", "404", "409", "422"));
-        for (String department : List.of("telecoms", "textile")) {
-            String name = department.equals("telecoms") ? "Telecoms" : "Textile";
-            String itemPath = department.equals("telecoms") ? "/telecoms/stock/{id}/minimum" : "/textile/stock/{id}";
-            assertOperation("/" + department + "/stock", "get", "Stock", "list" + name + "Stock", READ, READ_ERRORS);
-            assertOperation("/" + department + "/stock", "post", "Stock", "register" + name + "StockItem", MANAGE,
+        for (String department : List.of("cnc", "telecoms", "textile")) {
+            String name = department.equals("cnc") ? "Cnc" : department.equals("telecoms") ? "Telecoms" : "Textile";
+            String itemPath = department.equals("telecoms") ? "/telecoms/stock/{id}/minimum" : "/" + department + "/stock/{id}";
+            Set<String> stockReadRoles = department.equals("telecoms") ? TELECOMS_STOCK_READ : READ;
+            Set<String> stockManageRoles = department.equals("telecoms") ? TELECOMS_STOCK_MANAGE : MANAGE;
+            assertOperation("/" + department + "/stock", "get", "Stock", "list" + name + "Stock", stockReadRoles, READ_ERRORS);
+            assertOperation("/" + department + "/stock", "post", "Stock", "register" + name + "StockItem", stockManageRoles,
                     Set.of("201", "400", "401", "403", "409", "422"));
-            assertOperation("/" + department + "/stock/movements", "get", "Stock", "list" + name + "StockMovements", READ,
-                    READ_ERRORS);
+            assertOperation("/" + department + "/stock/movements", "get", "Stock", "list" + name + "StockMovements",
+                    stockReadRoles, READ_ERRORS);
             assertOperation("/" + department + "/stock/movements", "post", "Stock", "record" + name + "StockMovement",
-                    MANAGE, withOk("201", MUTATION_ERRORS));
-            assertOperation(itemPath, "patch", "Stock", "update" + name + "StockMinimum", MANAGE,
+                    stockManageRoles, withOk("201", MUTATION_ERRORS));
+            assertOperation(itemPath, "patch", "Stock", "update" + name + "StockMinimum", stockManageRoles,
                     withOk("200", MUTATION_ERRORS));
         }
     }
@@ -156,6 +163,7 @@ class EquipmentOpenApiContractTest {
         assertEquals(components(MarkMachineWorkingRequest.class), schemaProperties("MarkMachineWorkingRequest"));
         assertEquals(components(MarkEquipmentWorkingRequest.class), schemaProperties("MarkEquipmentWorkingRequest"));
         assertEquals(components(CreateStockItemRequest.class), schemaProperties("CreateStockItemRequest"));
+        assertEquals(components(RecordCncMovementRequest.class), schemaProperties("RecordCncStockMovementRequest"));
         assertEquals(components(RecordTelecomsMovementRequest.class), schemaProperties("RecordTelecomsStockMovementRequest"));
         assertEquals(components(RecordTextileMovementRequest.class), schemaProperties("RecordTextileStockMovementRequest"));
         assertEquals(components(UpdateMinimumRequest.class), schemaProperties("UpdateStockMinimumRequest"));
@@ -176,6 +184,7 @@ class EquipmentOpenApiContractTest {
         requests.put("MarkMachineWorkingRequest", MarkMachineWorkingRequest.class);
         requests.put("MarkEquipmentWorkingRequest", MarkEquipmentWorkingRequest.class);
         requests.put("CreateStockItemRequest", CreateStockItemRequest.class);
+        requests.put("RecordCncStockMovementRequest", RecordCncMovementRequest.class);
         requests.put("RecordTelecomsStockMovementRequest", RecordTelecomsMovementRequest.class);
         requests.put("RecordTextileStockMovementRequest", RecordTextileMovementRequest.class);
         requests.put("UpdateStockMinimumRequest", UpdateMinimumRequest.class);
@@ -223,6 +232,8 @@ class EquipmentOpenApiContractTest {
         assertEquals(components(MachineFaultReportResponse.class), schemaProperties("MachineFaultReportResult"));
         assertEquals(components(MachineFaultReportResponse.Report.class), reportProperties());
         assertEquals(components(StockItemResponse.class), schemaProperties("StockItem"));
+        assertEquals(components(CncStockMovementResponse.class), schemaProperties("CncStockMovement"));
+        assertEquals(components(CncStockResponse.class), schemaProperties("CncStockList"));
         assertEquals(components(TelecomsStockMovementResponse.class), schemaProperties("TelecomsStockMovement"));
         assertEquals(components(TextileStockMovementResponse.class), schemaProperties("TextileStockMovement"));
         assertEquals(components(TextileStockResponse.class), schemaProperties("TextileStockList"));
@@ -231,8 +242,8 @@ class EquipmentOpenApiContractTest {
     @Test
     void requiredFieldsOfEveryResponseSchemaAreAllOfItsFields() {
         for (String name : List.of("EquipmentItem", "TelecomsEquipmentItem", "EquipmentLoan", "LoanManagerApproval",
-                "Machine", "MachineFaultReportResult", "StockItem", "TelecomsStockMovement", "TextileStockMovement",
-                "TextileStockList")) {
+                "Machine", "MachineFaultReportResult", "StockItem", "CncStockMovement", "CncStockList",
+                "TelecomsStockMovement", "TextileStockMovement", "TextileStockList")) {
             assertEquals(schemaProperties(name), schemaRequired(name), name);
         }
     }
@@ -242,6 +253,12 @@ class EquipmentOpenApiContractTest {
         Map<String, Object> result = schema("MachineFaultReportResult");
         Map<String, Object> report = (Map<String, Object>) ((Map<String, Object>) result.get("properties")).get("report");
         return new TreeSet<>(((Map<String, Object>) report.get("properties")).keySet());
+    }
+
+    private static Set<String> withExtraRole(Set<String> roles, String extraRole) {
+        Set<String> all = new TreeSet<>(roles);
+        all.add(extraRole);
+        return all;
     }
 
     private static Set<String> withOk(String ok, Set<String> errors) {

@@ -149,8 +149,8 @@ tags:
     description: Textile workshop machines, fault and service reports, and marking a machine working again.
   - name: Stock
     description: |
-      Department stock lists and their movement history (telecoms and textile). Quantities may be fractional; stock
-      never goes below zero.
+      Department stock lists and their movement history (CNC, telecoms and textile). Quantities may be fractional;
+      stock never goes below zero.
   - name: Finance
     description: |
       Invoices, payment evidence, verification and receipts (finance module D4). Submitters see and
@@ -5101,6 +5101,143 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /cnc/stock:
+    get:
+      tags: [Stock]
+      operationId: listCncStock
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER]
+      summary: The CNC & Carpentry stock list
+      description: |
+        Items ordered by name ignoring case. Quantities can be fractional (two decimals). Every role except SUBMITTER may read. `movementsThisWeek` counts the movements recorded in the last seven days.
+      responses:
+        '200':
+          description: The stock items
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CncStockList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Stock]
+      operationId: registerCncStockItem
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Add an item to the CNC & Carpentry stock list
+      description: |
+        A missing `sku` is generated. An opening `quantity` is recorded as a `RECEIVED` movement so the history
+        explains every unit. Recorded as `stock.item_registered`. A department coordinator may act only in a department they belong to (a sector named like it); an administrator may act in all of them.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateStockItemRequest'
+      responses:
+        '201':
+          description: The new item
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /cnc/stock/movements:
+    get:
+      tags: [Stock]
+      operationId: listCncStockMovements
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER]
+      summary: The CNC & Carpentry stock history, newest first
+      description: |
+        The latest 200 movements, wrapped in `items`. Every role except SUBMITTER may read.
+      responses:
+        '200':
+          description: The movements
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CncStockMovementList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Stock]
+      operationId: recordCncStockMovement
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Record stock received, used or corrected
+      description: |
+        Stock can never go below zero: a movement that would do so returns `422` and changes nothing, even when
+        two people record at once (the item is locked while the balance changes). CNC records usage as `USED_ON_ORDER` with the `jobId` of the job; when that is the id of a CNC job the response also carries its `jobCode`. A `CORRECTION` may be negative and
+        needs a `note`; the other types need a positive quantity. A movement that takes an item below its minimum notifies the
+        managers once. Recorded as `stock.movement_recorded` with the balance and type only; notes and references are
+        never copied into the audit log. A department coordinator may act only in a department they belong to (a sector named like it); an administrator may act in all of them.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordCncStockMovementRequest'
+      responses:
+        '201':
+          description: The new movement and the item with its new balance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CncStockMovementResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /cnc/stock/{id}:
+    patch:
+      tags: [Stock]
+      operationId: updateCncStockMinimum
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Change an item's low-stock minimum
+      description: |
+        Only `minimum` can be changed here. It must be zero or more. Recorded as `stock.minimum_changed`.
+        A department coordinator may act only in a department they belong to (a sector named like it); an administrator may act in all of them.
+      parameters:
+        - $ref: '#/components/parameters/StockItemId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStockMinimumRequest'
+      responses:
+        '200':
+          description: The item
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /telecoms/stock:
     get:
       tags: [Stock]
@@ -6518,7 +6655,7 @@ paths:
     post:
       tags: [Telecoms]
       operationId: createTelecomsRequest
-      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, FINANCE_OFFICER, OBSERVER, TELECOMS_DOMAIN_OWNER]
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, FINANCE_OFFICER, TELECOMS_DOMAIN_OWNER]
       summary: Create or submit a Telecoms request
       description: Set draft to true to save a partial draft; otherwise all required customer, service, equipment and safety fields must be supplied.
       requestBody:
@@ -6573,7 +6710,7 @@ paths:
     put:
       tags: [Telecoms]
       operationId: updateTelecomsRequestDraft
-      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, FINANCE_OFFICER, OBSERVER, TELECOMS_DOMAIN_OWNER]
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, FINANCE_OFFICER, TELECOMS_DOMAIN_OWNER]
       summary: Update a Telecoms request draft
       description: The owner or a Telecoms manager can edit a DRAFT, RETURNED, or AWAITING_DETAILS request.
       parameters:
@@ -6612,7 +6749,7 @@ paths:
     post:
       tags: [Telecoms]
       operationId: submitTelecomsRequestDraft
-      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, FINANCE_OFFICER, OBSERVER, TELECOMS_DOMAIN_OWNER]
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, INNOVATION_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, FINANCE_OFFICER, TELECOMS_DOMAIN_OWNER]
       summary: Submit a Telecoms request draft
       description: The owner or a Telecoms manager can submit a DRAFT, RETURNED, or AWAITING_DETAILS request after completing required fields and accepting the lab rules.
       parameters:
@@ -8905,6 +9042,7 @@ components:
         - SUBMITTER
         - FINANCE_OFFICER
         - OBSERVER
+        - TELECOMS_DOMAIN_OWNER
     CreateSubmissionRequest:
       type: object
       additionalProperties: false
@@ -11753,7 +11891,7 @@ components:
           maxLength: 2000
     StockMovementType:
       type: string
-      description: Telecoms uses `USED_ON_REQUEST` and textile uses `USED_ON_ORDER`; either may `RECEIVED` and `CORRECTION`.
+      description: Telecoms uses `USED_ON_REQUEST`; textile and CNC use `USED_ON_ORDER`; all may `RECEIVED` and `CORRECTION`.
       enum: [RECEIVED, USED_ON_REQUEST, USED_ON_ORDER, CORRECTION]
     StockItem:
       type: object
@@ -11774,6 +11912,87 @@ components:
           minimum: 0
         location:
           type: string
+    CncStockList:
+      type: object
+      required: [items, movementsThisWeek]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/StockItem'
+        movementsThisWeek:
+          type: integer
+          minimum: 0
+    CncStockMovement:
+      type: object
+      required: [id, itemId, itemName, type, quantity, balanceAfter, jobId, jobCode, note, by, at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        itemId:
+          type: string
+          format: uuid
+        itemName:
+          type: string
+        type:
+          $ref: '#/components/schemas/StockMovementType'
+        quantity:
+          type: number
+          description: What was typed. Positive for received and used stock, signed for a correction.
+        balanceAfter:
+          type: number
+        jobId:
+          type: [string, 'null']
+          description: The job the stock was used on, as it was typed
+        jobCode:
+          type: [string, 'null']
+          description: The job's code, when `jobId` is the id of a CNC job
+        note:
+          type: string
+          description: Empty when no note was given
+        by:
+          type: string
+          description: The account email of who recorded it
+        at:
+          type: string
+          format: date-time
+    CncStockMovementList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CncStockMovement'
+    CncStockMovementResult:
+      type: object
+      required: [movement, item]
+      properties:
+        movement:
+          $ref: '#/components/schemas/CncStockMovement'
+        item:
+          $ref: '#/components/schemas/StockItem'
+    RecordCncStockMovementRequest:
+      type: object
+      additionalProperties: false
+      required: [itemId, type, quantity]
+      properties:
+        itemId:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/StockMovementType'
+        quantity:
+          type: number
+          description: Up to two decimals. Never zero; negative only for a `CORRECTION`.
+        note:
+          type: string
+          maxLength: 1000
+        jobId:
+          type: string
+          maxLength: 64
+          description: Required for `USED_ON_ORDER`
     TelecomsStockList:
       type: object
       required: [items]

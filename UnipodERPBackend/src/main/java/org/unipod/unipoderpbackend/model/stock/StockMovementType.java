@@ -2,7 +2,7 @@ package org.unipod.unipoderpbackend.model.stock;
 
 /**
  * The reasons stock changes, as the department screens list them. Telecoms uses USED_ON_REQUEST and
- * textile uses USED_ON_ORDER; the other departments' services decide which of them they accept.
+ * textile and CNC use USED_ON_ORDER; the other departments' services decide which of them they accept.
  */
 public enum StockMovementType {
     RECEIVED,
