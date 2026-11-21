@@ -30,6 +30,7 @@ import org.springframework.web.server.ResponseStatusException;
 import org.unipod.unipoderpbackend.dto.notification.PushConfigurationResponse;
 import org.unipod.unipoderpbackend.dto.notification.PushSubscriptionRequest;
 import org.unipod.unipoderpbackend.model.notification.NotificationCreatedEvent;
+import org.unipod.unipoderpbackend.model.notification.NotificationEntityTypes;
 import org.unipod.unipoderpbackend.model.notification.WebPushSubscription;
 import org.unipod.unipoderpbackend.repository.notification.WebPushSubscriptionRepository;
 import tools.jackson.core.JacksonException;
@@ -311,7 +312,7 @@ public class WebPushNotificationService {
     private static String routeFor(String entityType) {
         if (entityType == null) return "/";
         return switch (entityType.toLowerCase(Locale.ROOT)) {
-            case "booking" -> "/my-submissions/bookings";
+            case NotificationEntityTypes.BOOKING -> "/my-submissions/bookings";
             case "invoice" -> "/my-submissions/invoices";
             case "submission" -> "/my-submissions";
             default -> "/";

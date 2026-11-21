@@ -15,9 +15,7 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
     @Query("""
             select notification from Notification notification
             where notification.recipient = :recipient
-              and (:includeBookings = true
-                   or notification.entityType is null
-                   or lower(notification.entityType) <> 'booking')
+              and """ + NotificationVisibilityPredicate.QUERY + """
               and (:unreadOnly = false or notification.readAt is null)
             order by notification.createdAt desc, notification.id desc
             """)
@@ -32,10 +30,7 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
             select count(notification) from Notification notification
             where notification.recipient = :recipient
               and notification.readAt is null
-              and (:includeBookings = true
-                   or notification.entityType is null
-                   or lower(notification.entityType) <> 'booking')
-            """)
+              and """ + NotificationVisibilityPredicate.QUERY)
     long countUnreadVisibleByRecipient(
             @Param("recipient") String recipient,
             @Param("includeBookings") boolean includeBookings
@@ -45,10 +40,7 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
             select notification from Notification notification
             where notification.id = :id
               and notification.recipient = :recipient
-              and (:includeBookings = true
-                   or notification.entityType is null
-                   or lower(notification.entityType) <> 'booking')
-            """)
+              and """ + NotificationVisibilityPredicate.QUERY)
     Optional<Notification> findVisibleByIdAndRecipient(
             @Param("id") UUID id,
             @Param("recipient") String recipient,
@@ -61,10 +53,7 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
             set notification.readAt = :now
             where notification.recipient = :recipient
               and notification.readAt is null
-              and (:includeBookings = true
-                   or notification.entityType is null
-                   or lower(notification.entityType) <> 'booking')
-            """)
+              and """ + NotificationVisibilityPredicate.QUERY)
     int markAllRead(
             @Param("recipient") String recipient,
             @Param("includeBookings") boolean includeBookings,

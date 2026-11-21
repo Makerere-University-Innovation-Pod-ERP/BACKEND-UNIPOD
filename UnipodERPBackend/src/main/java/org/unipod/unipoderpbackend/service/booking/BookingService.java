@@ -23,6 +23,7 @@ import org.unipod.unipoderpbackend.model.booking.Booking;
 import org.unipod.unipoderpbackend.model.booking.BookingStatus;
 import org.unipod.unipoderpbackend.model.booking.Facility;
 import org.unipod.unipoderpbackend.model.booking.FacilityStatus;
+import org.unipod.unipoderpbackend.model.notification.NotificationEntityTypes;
 import org.unipod.unipoderpbackend.model.notification.NotificationEvent;
 import org.unipod.unipoderpbackend.model.notification.NotificationType;
 import org.unipod.unipoderpbackend.repository.booking.BookingRepository;
@@ -390,7 +391,7 @@ public class BookingService {
                 Set.of(recipient),
                 title,
                 body,
-                "booking",
+                NotificationEntityTypes.BOOKING,
                 booking.getId()
         ));
     }
