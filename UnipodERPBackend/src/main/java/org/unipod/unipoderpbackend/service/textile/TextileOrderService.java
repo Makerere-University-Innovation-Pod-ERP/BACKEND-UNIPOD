@@ -4,6 +4,8 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
+import java.io.IOException;
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -13,8 +15,10 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
-import org.springframework.data.domain.PageRequest;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -28,16 +32,18 @@ import org.unipod.unipoderpbackend.dto.textile.TextileTransitionRequest;
 import org.unipod.unipoderpbackend.exception.operations.InvalidOperationsRequestException;
 import org.unipod.unipoderpbackend.exception.operations.OperationsConflictException;
 import org.unipod.unipoderpbackend.exception.operations.OperationsNotFoundException;
+import org.unipod.unipoderpbackend.exception.storage.DocumentStorageException;
+import org.unipod.unipoderpbackend.model.auth.ApiUserRole;
 import org.unipod.unipoderpbackend.model.authorization.Actor;
 import org.unipod.unipoderpbackend.model.equipment.Machine;
 import org.unipod.unipoderpbackend.model.equipment.MachineState;
 import org.unipod.unipoderpbackend.model.finance.InvoiceSourceType;
-import org.unipod.unipoderpbackend.model.finance.InvoiceStatus;
 import org.unipod.unipoderpbackend.model.finance.PriceItemStatus;
 import org.unipod.unipoderpbackend.model.finance.PriceListItem;
 import org.unipod.unipoderpbackend.model.operations.DepartmentCode;
 import org.unipod.unipoderpbackend.model.operations.DepartmentOrder;
 import org.unipod.unipoderpbackend.model.operations.StockItem;
+import org.unipod.unipoderpbackend.model.stock.StockMovementType;
 import org.unipod.unipoderpbackend.repository.equipment.MachineRepository;
 import org.unipod.unipoderpbackend.repository.finance.InvoiceRepository;
 import org.unipod.unipoderpbackend.repository.finance.PriceListItemRepository;
@@ -47,12 +53,19 @@ import org.unipod.unipoderpbackend.service.audit.AuditTrail;
 import org.unipod.unipoderpbackend.service.finance.PriceListService;
 import org.unipod.unipoderpbackend.service.operations.DepartmentAccess;
 import org.unipod.unipoderpbackend.service.sector.SectorService;
+import org.unipod.unipoderpbackend.service.stock.StockService;
+import org.unipod.unipoderpbackend.service.storage.DocumentStorage;
 
 @Service
 public class TextileOrderService {
     private static final DepartmentCode DEPARTMENT = DepartmentCode.TEXTILE;
     private static final ZoneId KAMPALA = ZoneId.of("Africa/Kampala");
     private static final long MAX_PHOTO_BYTES = 15L * 1024 * 1024;
+    private static final Set<ApiUserRole> READ_ROLES = Set.of(
+            ApiUserRole.ADMINISTRATOR, ApiUserRole.INNOVATION_COORDINATOR, ApiUserRole.DEPARTMENT_COORDINATOR,
+            ApiUserRole.RECEPTIONIST, ApiUserRole.FACT_FINDING_OFFICER, ApiUserRole.REVIEWER,
+            ApiUserRole.SECTOR_OFFICER, ApiUserRole.IP_LIAISON, ApiUserRole.FINANCE_OFFICER,
+            ApiUserRole.OBSERVER);
 
     private final DepartmentOrderRepository orders;
     private final StockItemRepository stockItems;
@@ -62,6 +75,8 @@ public class TextileOrderService {
     private final PriceListService priceList;
     private final SectorService sectors;
     private final DepartmentAccess access;
+    private final StockService stock;
+    private final DocumentStorage storage;
     private final AuditTrail audit;
     private final ObjectMapper mapper;
     private final Clock clock;
@@ -69,7 +84,8 @@ public class TextileOrderService {
     public TextileOrderService(DepartmentOrderRepository orders, StockItemRepository stockItems,
                                MachineRepository machines, PriceListItemRepository priceItems,
                                InvoiceRepository invoices, PriceListService priceList, SectorService sectors,
-                               DepartmentAccess access, AuditTrail audit, ObjectMapper mapper, Clock clock) {
+                               DepartmentAccess access, StockService stock, DocumentStorage storage,
+                               AuditTrail audit, ObjectMapper mapper, Clock clock) {
         this.orders = orders;
         this.stockItems = stockItems;
         this.machines = machines;
@@ -78,30 +94,55 @@ public class TextileOrderService {
         this.priceList = priceList;
         this.sectors = sectors;
         this.access = access;
+        this.stock = stock;
+        this.storage = storage;
         this.audit = audit;
         this.mapper = mapper;
         this.clock = clock;
     }
 
+    public record DownloadedPhoto(InputStream content, String contentType, String filename) {}
+
+    private record PhotoInfo(String name, String reference, String contentType) {}
+
     @Transactional(readOnly = true)
-    public Map<String, Object> list() {
-        List<Map<String, Object>> items = orders.findAllByDepartmentOrderByUpdatedAtDescCreatedAtDesc(
-                        DEPARTMENT, PageRequest.of(0, 500)).getContent().stream()
-                .map(this::toResponse).toList();
+    public Map<String, Object> list(Actor actor) {
+        requireOrderReader(actor);
+        List<Map<String, Object>> items = orders.findAllByDepartmentOrderByUpdatedAtDescCreatedAtDesc(DEPARTMENT).stream()
+                .filter(order -> actor.role() != ApiUserRole.SUBMITTER || isOwner(order, actor))
+                .map(order -> actor.role() == ApiUserRole.SUBMITTER
+                        ? toOwnerResponse(order) : toResponse(order)).toList();
         return Map.of("items", items);
     }
 
     @Transactional(readOnly = true)
-    public Map<String, Object> get(UUID id) {
-        return toResponse(require(id));
+    public Map<String, Object> get(UUID id, Actor actor) {
+        requireOrderReader(actor);
+        DepartmentOrder order = require(id);
+        requireOrderAccess(order, actor);
+        return actor.role() == ApiUserRole.SUBMITTER ? toOwnerResponse(order) : toResponse(order);
+    }
+
+    @Transactional(readOnly = true)
+    public DownloadedPhoto photo(UUID id, Actor actor) {
+        requireOrderReader(actor);
+        DepartmentOrder order = require(id);
+        requireOrderAccess(order, actor);
+        JsonNode photo = readJson(order.getSpecs()).path("photo");
+        String reference = photo.path("reference").asText("");
+        if (reference.isBlank()) throw new OperationsNotFoundException("Order photo not found.");
+        return new DownloadedPhoto(storage.download(reference),
+                photo.path("contentType").asText("application/octet-stream"),
+                photo.path("name").asText("textile-reference"));
     }
 
     @Transactional
     public Map<String, Object> create(TextileOrderRequest request, MultipartFile photo, Actor actor) {
+        requireOrderCreator(actor);
         validateSubmission(request);
         validatePhoto(photo);
         Instant now = clock.instant();
-        String specs = buildSpecs(request, photoName(photo), null);
+        String specs = buildSpecs(request, storePhoto(photo), null);
         String stage = request.submit() ? "NEW" : "DRAFT";
         String code = request.submit() ? nextCode(now) : null;
         ArrayNode history = mapper.createArrayNode();
@@ -111,9 +152,6 @@ public class TextileOrderService {
                 request.dateNeeded(), "textile-rules-v1", stage, specs,
                 writeJson(history), actor.email(), now);
         order.setCompletion(null, null, writeJson(defaultQuality()), null, now);
-        if (request.quantity() != null && !request.quantity().isBlank()) {
-            // Quantity is deliberately kept as the customer's text in specs, matching the screen.
-        }
         orders.saveAndFlush(order);
         audit.record(actor.email(), "textile_order.created", "textile_order", order.getId(), null,
                 AuditTrail.details("code", code, "status", stage));
@@ -123,26 +161,27 @@ public class TextileOrderService {
     @Transactional
     public Map<String, Object> update(UUID id, TextileOrderRequest request, MultipartFile photo, Actor actor) {
         DepartmentOrder order = requireForUpdate(id);
-        if (!"DRAFT".equals(order.getStage())) {
-            throw new OperationsConflictException("Only a draft order can be edited.");
+        requireDraftEditor(order, actor);
+        if (!List.of("DRAFT", "AWAITING_DETAILS", "RETURNED").contains(order.getStage())) {
+            throw new OperationsConflictException("Only a draft, returned, or details-requested order can be edited.");
         }
         validateSubmission(request);
         validatePhoto(photo);
-        JsonNode oldSpecs = readJson(order.getSpecs());
-        String oldPhoto = oldSpecs.path("photo").path("name").asText("");
-        String photoName = photoName(photo);
-        if (photoName == null) photoName = oldPhoto.isBlank() ? null : oldPhoto;
+        PhotoInfo photoInfo = photo == null || photo.isEmpty()
+                ? photoInfo(readJson(order.getSpecs()).path("photo")) : storePhoto(photo);
         JsonNode existingEstimate = readJson(order.getSpecs()).path("estimate");
-        String specs = buildSpecs(request, photoName, existingEstimate);
+        String specs = buildSpecs(request, photoInfo, existingEstimate);
         Instant now = clock.instant();
-        order.moveStage(request.submit() ? "NEW" : "DRAFT",
-                appendHistory(order.getStageHistory(), request.submit() ? "NEW" : "DRAFT",
-                        actor.email(), request.submit() ? "Order sent to Textile" : "Draft updated", now),
+        String target = request.submit() ? "NEW" : order.getStage();
+        order.moveStage(target,
+                appendHistory(order.getStageHistory(), target,
+                        actor.email(), request.submit() ? "Order sent to Textile" : "Order updated", now),
                 now);
         order.applySpecs(specs, now);
         if (request.submit()) {
-            String code = nextCode(now);
-            order.applyCode(code);
+            if (order.getCode() == null || order.getCode().startsWith("DRF-")) {
+                order.applyCode(nextCode(now));
+            }
         }
         orders.saveAndFlush(order);
         audit.record(actor.email(), "textile_order.updated", "textile_order", order.getId(), null,
@@ -150,8 +189,9 @@ public class TextileOrderService {
         return toResponse(order);
     }
 
-    @Transactional
-    public List<Map<String, Object>> priceList() {
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> priceList(Actor actor) {
+        requireOrderReader(actor);
         UUID departmentId = sectors.activeSectorByName("Textile")
                 .orElseThrow(() -> new InvalidOperationsRequestException("The Textile department is not set up."))
                 .getId();
@@ -180,25 +220,37 @@ public class TextileOrderService {
         if (request.expectedCompletion().isBefore(LocalDate.now(KAMPALA))) {
             throw new InvalidOperationsRequestException("The expected completion date cannot be in the past.");
         }
+        UUID textileDepartmentId = sectors.activeSectorByName("Textile")
+                .orElseThrow(() -> new InvalidOperationsRequestException("The Textile department is not set up."))
+                .getId();
         PriceListItem price = priceList.requireActive(request.priceListItemId());
-        for (TextileMaterialLine line : request.materials()) {
-            StockItem item = stockItems.findByIdForUpdate(line.itemId())
+        if (!textileDepartmentId.equals(price.getDepartmentId())) {
+            throw new InvalidOperationsRequestException("Choose a price from the Textile department.");
+        }
+        Map<UUID, BigDecimal> materialsByItem = aggregateMaterials(request.materials());
+        for (Map.Entry<UUID, BigDecimal> line : materialsByItem.entrySet()) {
+            StockItem item = stockItems.findByIdForUpdate(line.getKey())
                     .filter(stock -> "TEXTILE".equals(stock.getDepartment()))
                     .orElseThrow(() -> new InvalidOperationsRequestException("Stock item not found."));
-            if (item.getQuantityOnHand().compareTo(line.quantity()) < 0) {
+            if (item.getQuantityOnHand().compareTo(line.getValue()) < 0) {
                 throw new OperationsConflictException("Not enough " + item.getName() + " to take this order.");
             }
         }
-        long amount = Math.multiplyExact(price.getPriceUgx(), request.priceQuantity().intValueExact());
+        long amount;
+        try {
+            amount = Math.multiplyExact(price.getPriceUgx(), request.priceQuantity().intValueExact());
+        } catch (ArithmeticException overflow) {
+            throw new InvalidOperationsRequestException("The quote amount exceeds the supported limit.");
+        }
         Instant now = clock.instant();
         var invoice = priceList.invoiceFor(price.getId(), actor.email(), customerName(order),
                 request.priceQuantity().intValueExact(), InvoiceSourceType.JOB, order.getId().toString(), actor.email());
         ObjectNode estimate = mapper.createObjectNode();
         ArrayNode materials = estimate.putArray("materials");
-        for (TextileMaterialLine line : request.materials()) {
+        for (Map.Entry<UUID, BigDecimal> line : materialsByItem.entrySet()) {
             ObjectNode material = materials.addObject();
-            material.put("itemId", line.itemId().toString());
-            material.put("quantity", line.quantity());
+            material.put("itemId", line.getKey().toString());
+            material.put("quantity", line.getValue());
         }
         estimate.put("priceListItemId", price.getId().toString());
         estimate.put("priceQuantity", request.priceQuantity());
@@ -256,6 +308,7 @@ public class TextileOrderService {
             }
         } else if ("BEING_MADE".equals(target)) {
             requireStage(order, "SCHEDULED");
+            commitEstimatedMaterials(order, actor);
         } else if ("READY".equals(target)) {
             requireStage(order, "BEING_MADE");
             if (!qualityComplete(order)) {
@@ -334,7 +387,11 @@ public class TextileOrderService {
 
     @Transactional
     public Map<String, Object> recordCollection(UUID id, String collectedBy, Actor actor) {
-        access.requireManage(actor, DEPARTMENT);
+        if (actor.role() == ApiUserRole.RECEPTIONIST) {
+            requireOrderReader(actor);
+        } else {
+            access.requireManage(actor, DEPARTMENT);
+        }
         DepartmentOrder order = requireForUpdate(id);
         requireStage(order, "READY");
         if (!qualityComplete(order)) {
@@ -366,14 +423,18 @@ public class TextileOrderService {
 
     private void validateSubmission(TextileOrderRequest request) {
         if (request.submit()) {
-            for (String value : List.of(request.customerName(), request.customerType(),
-                    request.whatIsWanted(), request.quantity(), request.sizeDesign())) {
+            for (String value : new String[]{request.customerName(), request.customerType(),
+                    request.whatIsWanted(), request.quantity(), request.sizeDesign()}) {
                 if (value == null || value.isBlank()) {
                     throw new InvalidOperationsRequestException("Fill in every required field before sending the order.");
                 }
             }
             if (!request.rulesAccepted()) {
                 throw new InvalidOperationsRequestException("The customer must accept the Textile department's rules.");
+            }
+            if (request.dateNeeded() != null
+                    && request.dateNeeded().isBefore(LocalDate.now(clock.withZone(KAMPALA)))) {
+                throw new InvalidOperationsRequestException("The requested date cannot be in the past.");
             }
         } else if (request.customerName() == null || request.customerName().isBlank()) {
             throw new InvalidOperationsRequestException("A draft needs at least the customer name.");
@@ -386,16 +447,32 @@ public class TextileOrderService {
         if (!List.of("image/jpeg", "image/png").contains(type)) {
             throw new InvalidOperationsRequestException("The photo must be a JPG or PNG image.");
         }
+        if (photo.getOriginalFilename() != null && photo.getOriginalFilename().indexOf('\0') >= 0) {
+            throw new InvalidOperationsRequestException("The photo file name is invalid.");
+        }
         if (photo.getSize() > MAX_PHOTO_BYTES) {
             throw new InvalidOperationsRequestException("The photo must be 15 MB or smaller.");
         }
     }
 
-    private String photoName(MultipartFile photo) {
-        return photo == null || photo.isEmpty() ? null : clean(photo.getOriginalFilename());
+    private PhotoInfo storePhoto(MultipartFile photo) {
+        if (photo == null || photo.isEmpty()) return null;
+        try {
+            String reference = storage.upload(photo);
+            return new PhotoInfo(clean(photo.getOriginalFilename()), reference, photo.getContentType());
+        } catch (IOException exception) {
+            throw new DocumentStorageException(exception);
+        }
     }
 
-    private String buildSpecs(TextileOrderRequest request, String photoName, JsonNode estimate) {
+    private PhotoInfo photoInfo(JsonNode photo) {
+        if (photo == null || photo.isMissingNode() || photo.isNull()) return null;
+        String reference = photo.path("reference").asText("");
+        return reference.isBlank() ? null : new PhotoInfo(photo.path("name").asText(""), reference,
+                photo.path("contentType").asText("application/octet-stream"));
+    }
+
+    private String buildSpecs(TextileOrderRequest request, PhotoInfo photo, JsonNode estimate) {
         ObjectNode specs = mapper.createObjectNode();
         specs.put("customerName", clean(request.customerName()));
         specs.put("customerType", clean(request.customerType()));
@@ -405,11 +482,12 @@ public class TextileOrderService {
         if (request.dateNeeded() != null) specs.put("dateNeeded", request.dateNeeded().toString());
         else specs.putNull("dateNeeded");
         specs.put("rulesAccepted", request.rulesAccepted());
-        if (photoName == null) specs.putNull("photo");
+        if (photo == null) specs.putNull("photo");
         else {
-            ObjectNode photo = specs.putObject("photo");
-            photo.put("name", photoName);
-            photo.putNull("url");
+            ObjectNode photoNode = specs.putObject("photo");
+            photoNode.put("name", photo.name());
+            photoNode.put("reference", photo.reference());
+            photoNode.put("contentType", photo.contentType());
         }
         if (estimate != null && !estimate.isNull()) specs.set("estimate", estimate);
         return writeJson(specs);
@@ -505,10 +583,98 @@ public class TextileOrderService {
         return name.isBlank() ? "Textile customer" : name;
     }
 
+    private void requireOrderReader(Actor actor) {
+        if (actor.role() == ApiUserRole.SUBMITTER) return;
+        if (!READ_ROLES.contains(actor.role())) {
+            throw new AccessDeniedException("You cannot read Textile orders.");
+        }
+        if (actor.role() == ApiUserRole.DEPARTMENT_COORDINATOR) {
+            access.require(actor, DEPARTMENT);
+        }
+    }
+
+    private void requireOrderCreator(Actor actor) {
+        if (actor.role() == ApiUserRole.ADMINISTRATOR) return;
+        if (actor.role() == ApiUserRole.DEPARTMENT_COORDINATOR) {
+            access.requireManage(actor, DEPARTMENT);
+            return;
+        }
+        if (actor.role() != ApiUserRole.RECEPTIONIST) {
+            throw new AccessDeniedException("You cannot create Textile orders.");
+        }
+    }
+
+    private void requireDraftEditor(DepartmentOrder order, Actor actor) {
+        if (actor.role() == ApiUserRole.ADMINISTRATOR) return;
+        if (actor.role() == ApiUserRole.DEPARTMENT_COORDINATOR) {
+            access.requireManage(actor, DEPARTMENT);
+            return;
+        }
+        if ((actor.role() == ApiUserRole.RECEPTIONIST || actor.role() == ApiUserRole.SUBMITTER)
+                && isOwner(order, actor)) return;
+        throw new AccessDeniedException("Only the order owner or a Textile manager may edit this order.");
+    }
+
+    private void requireOrderAccess(DepartmentOrder order, Actor actor) {
+        if (actor.role() == ApiUserRole.SUBMITTER) {
+            if (!isOwner(order, actor)) {
+                throw new AccessDeniedException("You can only view your own Textile orders.");
+            }
+            return;
+        }
+        if (actor.role() == ApiUserRole.DEPARTMENT_COORDINATOR) {
+            access.require(actor, DEPARTMENT);
+        }
+    }
+
+    private boolean isOwner(DepartmentOrder order, Actor actor) {
+        return actor.email().equalsIgnoreCase(order.getCreatedBy())
+                || actor.email().equalsIgnoreCase(order.getCustomerId());
+    }
+
+    private Map<UUID, BigDecimal> aggregateMaterials(List<TextileMaterialLine> lines) {
+        Map<UUID, BigDecimal> totals = new TreeMap<>();
+        for (TextileMaterialLine line : lines) {
+            totals.merge(line.itemId(), line.quantity(), BigDecimal::add);
+        }
+        return totals;
+    }
+
+    private void commitEstimatedMaterials(DepartmentOrder order, Actor actor) {
+        JsonNode specs = readJson(order.getSpecs());
+        if (specs.path("materialsCommitted").asBoolean(false)) return;
+        JsonNode estimatedMaterials = specs.path("estimate").path("materials");
+        if (!estimatedMaterials.isArray() || estimatedMaterials.isEmpty()) {
+            throw new OperationsConflictException("The order has no estimated materials to commit.");
+        }
+        Map<UUID, BigDecimal> totals = new TreeMap<>();
+        for (JsonNode line : estimatedMaterials) {
+            UUID itemId;
+            try {
+                itemId = UUID.fromString(line.path("itemId").asText());
+            } catch (IllegalArgumentException invalidId) {
+                throw new InvalidOperationsRequestException("The order contains an invalid stock item.");
+            }
+            BigDecimal quantity = line.path("quantity").decimalValue();
+            if (quantity.signum() <= 0) {
+                throw new InvalidOperationsRequestException("Estimated material quantities must be positive.");
+            }
+            totals.merge(itemId, quantity, BigDecimal::add);
+        }
+        for (Map.Entry<UUID, BigDecimal> material : totals.entrySet()) {
+            stock.record(actor, DEPARTMENT, new StockService.MovementCommand(
+                    material.getKey(), StockMovementType.USED_ON_ORDER, material.getValue(),
+                    "Materials committed at production start", order.getId().toString()));
+        }
+        ObjectNode updatedSpecs = specs instanceof ObjectNode object ? object.deepCopy() : mapper.createObjectNode();
+        updatedSpecs.put("materialsCommitted", true);
+        order.applySpecs(writeJson(updatedSpecs), clock.instant());
+    }
+
     private Map<String, Object> toResponse(DepartmentOrder order) {
         JsonNode specs = readJson(order.getSpecs());
         JsonNode estimate = specs.path("estimate");
-        JsonNode quote = readJson(order.getQuote());
+        JsonNode quote = order.getQuote() == null ? null : readJson(order.getQuote());
         JsonNode production = specs.path("production");
         JsonNode collection = specs.path("collection");
         String status = order.getStage();
@@ -527,8 +693,8 @@ public class TextileOrderService {
         } else {
             Map<String, Object> photo = new LinkedHashMap<>();
             photo.put("name", specs.path("photo").path("name").asText(""));
-            photo.put("url", specs.path("photo").path("url").isNull()
-                    ? null : specs.path("photo").path("url").asText());
+            photo.put("url", specs.path("photo").path("reference").isMissingNode()
+                    ? null : "/textile/orders/" + order.getId() + "/photo");
             out.put("photo", photo);
         }
         out.put("rulesAccepted", specs.path("rulesAccepted").asBoolean(false));
@@ -536,7 +702,7 @@ public class TextileOrderService {
         out.put("createdAt", order.getCreatedAt());
         out.put("updatedAt", order.getUpdatedAt());
         out.put("estimate", estimate.isMissingNode() || estimate.isNull() ? null : readEstimate(estimate));
-        out.put("quote", quote.isMissingNode() || quote.isNull() ? null : readQuote(quote));
+        out.put("quote", quote == null || quote.isNull() ? null : readQuote(quote));
         Map<String, Object> payment = new LinkedHashMap<>();
         payment.put("status", paymentStatus(order));
         payment.put("reference", order.getInvoiceId() == null ? null : order.getInvoiceId().toString());
@@ -553,8 +719,6 @@ public class TextileOrderService {
         JsonNode quality = readJson(order.getQualityChecklist());
         if (!quality.isArray()) {
             quality = defaultQuality();
-            order.setCompletion(order.getMaterialsUsed(), order.getMachineTimeUsed(), writeJson(quality),
-                    order.getCollectionSignature(), order.getUpdatedAt());
         }
         out.put("qualityChecklist", quality);
         out.put("collection", collection.isMissingNode() || collection.isNull() ? null
@@ -563,6 +727,35 @@ public class TextileOrderService {
                         "recordedBy", collection.path("recordedBy").asText()));
         out.put("history", readHistory(order.getStageHistory()));
         return out;
+    }
+
+    private Map<String, Object> toOwnerResponse(DepartmentOrder order) {
+        Map<String, Object> response = new LinkedHashMap<>(toResponse(order));
+        response.remove("estimate");
+        response.remove("production");
+        response.remove("qualityChecklist");
+        response.remove("history");
+        Object quoteValue = response.get("quote");
+        if (quoteValue instanceof Map<?, ?> quoteValues) {
+            Map<String, Object> quote = new LinkedHashMap<>();
+            quoteValues.forEach((key, value) -> {
+                if (key instanceof String field) quote.put(field, value);
+            });
+            quote.remove("priceListItemId");
+            quote.remove("sentBy");
+            quote.remove("sentAt");
+            response.put("quote", quote);
+        }
+        Object paymentValue = response.get("payment");
+        if (paymentValue instanceof Map<?, ?> paymentValues) {
+            Map<String, Object> payment = new LinkedHashMap<>();
+            paymentValues.forEach((key, value) -> {
+                if (key instanceof String field) payment.put(field, value);
+            });
+            payment.remove("reference");
+            response.put("payment", payment);
+        }
+        return response;
     }
 
     private Map<String, Object> readEstimate(JsonNode estimate) {
