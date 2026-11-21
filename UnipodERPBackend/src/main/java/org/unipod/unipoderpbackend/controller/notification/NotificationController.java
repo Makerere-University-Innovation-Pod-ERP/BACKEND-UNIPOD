@@ -26,6 +26,7 @@ import org.unipod.unipoderpbackend.dto.notification.PushSubscriptionRequest;
 import org.unipod.unipoderpbackend.dto.notification.ReadAllResponse;
 import org.unipod.unipoderpbackend.dto.notification.UnreadCountResponse;
 import org.unipod.unipoderpbackend.security.CurrentActor;
+import org.unipod.unipoderpbackend.security.SubmitterAuthorization;
 import org.unipod.unipoderpbackend.service.notification.NotificationService;
 import org.unipod.unipoderpbackend.service.notification.WebPushNotificationService;
 
@@ -54,22 +55,22 @@ public class NotificationController {
             @RequestParam(defaultValue = "25") @Min(1) @Max(100) int size,
             Authentication authentication
     ) {
-        return notifications.list(me(authentication), unread, page, size);
+        return notifications.list(me(authentication), unread, page, size, canViewBookings(authentication));
     }
 
     @GetMapping("/unread-count")
     public UnreadCountResponse unreadCount(Authentication authentication) {
-        return new UnreadCountResponse(notifications.unreadCount(me(authentication)));
+        return new UnreadCountResponse(notifications.unreadCount(me(authentication), canViewBookings(authentication)));
     }
 
     @PostMapping("/{id}/read")
     public NotificationResponse markRead(@PathVariable UUID id, Authentication authentication) {
-        return notifications.markRead(me(authentication), id);
+        return notifications.markRead(me(authentication), id, canViewBookings(authentication));
     }
 
     @PostMapping("/read-all")
     public ReadAllResponse markAllRead(Authentication authentication) {
-        return new ReadAllResponse(notifications.markAllRead(me(authentication)));
+        return new ReadAllResponse(notifications.markAllRead(me(authentication), canViewBookings(authentication)));
     }
 
     @GetMapping("/push/config")
@@ -97,5 +98,9 @@ public class NotificationController {
 
     private String me(Authentication authentication) {
         return currentActor.from(authentication).email();
+    }
+
+    private boolean canViewBookings(Authentication authentication) {
+        return SubmitterAuthorization.hasSubmitterRole(authentication);
     }
 }

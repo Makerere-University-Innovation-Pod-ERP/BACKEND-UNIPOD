@@ -128,6 +128,14 @@ class WebPushNotificationServiceTest {
 
         String shortPayload = service.payloadFor(shortEvent, subscription);
         assertEquals("Short ✓", objectMapper.readTree(shortPayload).get("body").asText());
+        assertEquals("/my-submissions", objectMapper.readTree(shortPayload).get("url").asText());
+
+        NotificationCreatedEvent fallbackEvent = new NotificationCreatedEvent(
+                UUID.randomUUID(), "person@example.test", NotificationType.FAULT_REPORTED,
+                "A fault was reported", null, "equipment", UUID.randomUUID()
+        );
+        String fallbackPayload = service.payloadFor(fallbackEvent, subscription);
+        assertEquals("/", objectMapper.readTree(fallbackPayload).get("url").asText());
 
         String repeatedEmoji = "😀".repeat(3000);
         NotificationCreatedEvent largeEvent = new NotificationCreatedEvent(
