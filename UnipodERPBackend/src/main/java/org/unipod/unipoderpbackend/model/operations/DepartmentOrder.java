@@ -82,6 +82,13 @@ public class DepartmentOrder {
         this.quote = quoteJson; this.quotedBy = quotedBy; this.quoteSubmittedAt = now;
         this.invoiceId = invoiceId; this.invoiceStatus = invoiceStatus; this.updatedAt = now;
     }
+    public void applySpecs(String specs, Instant now) {
+        this.specs = specs == null ? "{}" : specs;
+        this.updatedAt = now;
+    }
+    public void applyCode(String code) {
+        this.code = code;
+    }
     public void moveStage(String stage, String stageHistory, Instant now) {
         this.stage = stage; this.stageHistory = stageHistory; this.updatedAt = now;
     }
