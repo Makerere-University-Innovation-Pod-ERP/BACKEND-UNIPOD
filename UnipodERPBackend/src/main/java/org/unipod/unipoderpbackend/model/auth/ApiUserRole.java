@@ -11,5 +11,6 @@ public enum ApiUserRole {
     IP_LIAISON,
     SUBMITTER,
     FINANCE_OFFICER,
-    OBSERVER
+    OBSERVER,
+    TELECOMS_DOMAIN_OWNER
 }

@@ -191,12 +191,12 @@ public class StockService {
         return new StockMovementDraft(command.type(), command.quantity(), command.note(), reference, null, null);
     }
 
-    /** Telecoms uses stock on requests and textile on orders; either may receive stock and correct a count. */
+    /** Telecoms uses stock on requests; textile and CNC use it on orders; all may receive stock and correct a count. */
     private static void requireAllowed(DepartmentCode department, StockMovementType type) {
         Set<StockMovementType> allowed = EnumSet.of(StockMovementType.RECEIVED, StockMovementType.CORRECTION);
         if (department == DepartmentCode.TELECOMS) {
             allowed.add(StockMovementType.USED_ON_REQUEST);
-        } else if (department == DepartmentCode.TEXTILE) {
+        } else if (department == DepartmentCode.TEXTILE || department == DepartmentCode.CNC) {
             allowed.add(StockMovementType.USED_ON_ORDER);
         }
         if (!allowed.contains(type)) {

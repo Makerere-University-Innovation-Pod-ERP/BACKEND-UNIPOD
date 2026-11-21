@@ -59,29 +59,34 @@ public class NotificationService {
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<NotificationResponse> list(String recipient, boolean unreadOnly, int page, int size) {
+    public PageResponse<NotificationResponse> list(
+            String recipient,
+            boolean unreadOnly,
+            int page,
+            int size,
+            boolean includeBookings
+    ) {
         PageRequest pageRequest = PageRequest.of(page, size);
-        return PageResponse.from((unreadOnly
-                ? notifications.findByRecipientAndReadAtIsNullOrderByCreatedAtDescIdDesc(recipient, pageRequest)
-                : notifications.findByRecipientOrderByCreatedAtDescIdDesc(recipient, pageRequest))
+        return PageResponse.from(notifications.findVisibleByRecipient(
+                        recipient, includeBookings, unreadOnly, pageRequest)
                 .map(NotificationResponse::from));
     }
 
     @Transactional(readOnly = true)
-    public long unreadCount(String recipient) {
-        return notifications.countByRecipientAndReadAtIsNull(recipient);
+    public long unreadCount(String recipient, boolean includeBookings) {
+        return notifications.countUnreadVisibleByRecipient(recipient, includeBookings);
     }
 
     @Transactional
-    public NotificationResponse markRead(String recipient, UUID id) {
-        Notification notification = notifications.findByIdAndRecipient(id, recipient)
+    public NotificationResponse markRead(String recipient, UUID id, boolean includeBookings) {
+        Notification notification = notifications.findVisibleByIdAndRecipient(id, recipient, includeBookings)
                 .orElseThrow(() -> new NotificationNotFoundException(id));
         notification.markRead(clock.instant());
         return NotificationResponse.from(notification);
     }
 
     @Transactional
-    public int markAllRead(String recipient) {
-        return notifications.markAllRead(recipient, clock.instant());
+    public int markAllRead(String recipient, boolean includeBookings) {
+        return notifications.markAllRead(recipient, includeBookings, clock.instant());
     }
 }

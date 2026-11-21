@@ -29,7 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Every response is checked field by field against the zod schema the frontend parses it with
- * (`src/services/equipment.js`, `telecoms.js`, `textile.js` in the frontend repository). A schema field the API
+ * (`src/services/equipment.js`, `cnc.js`, `telecoms.js`, `textile.js` in the frontend repository). A schema field the API
  * does not send, or an extra one, fails here. Types: `s` string, `s?` string or null, `n` number, `a` array,
  * `o` object, `o?` object or null.
  */
@@ -51,6 +51,9 @@ class FrontendContractTest {
     // services/telecoms.js and textile.js stockItemSchema (identical)
     private static final Map<String, String> STOCK_ITEM = shape("id:s", "name:s", "unit:s", "quantity:n", "minimum:n",
             "location:s");
+    // services/cnc.js stockMovementSchema
+    private static final Map<String, String> CNC_MOVEMENT = shape("id:s", "itemId:s", "itemName:s", "type:s",
+            "quantity:n", "balanceAfter:n", "jobId:s?", "jobCode:s?", "note:s", "by:s", "at:s");
     // services/telecoms.js stockMovementSchema
     private static final Map<String, String> TELECOMS_MOVEMENT = shape("id:s", "itemId:s", "itemName:s", "type:s",
             "quantity:n", "balance:n", "note:s?", "requestId:s?", "by:s", "at:s");
@@ -214,6 +217,26 @@ class FrontendContractTest {
         String history = body(MockMvcRequestBuilders.get("/textile/stock/movements").with(admin), 200);
         assertShape(history, "$.items[?(@.itemId == '" + item + "')]", TEXTILE_MOVEMENT, true);
         assertShape(body(MockMvcRequestBuilders.patch("/textile/stock/{id}", item).with(admin)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"minimum\": 4}"), 200), "$", STOCK_ITEM, false);
+    }
+
+    @Test
+    void cncStockMatchesTheFrontendSchema() throws Exception {
+        UUID item = fixtures().stockItem("CNC", "Contract plywood", "sheets", "10", "2");
+
+        String list = body(MockMvcRequestBuilders.get("/cnc/stock").with(admin), 200);
+        assertEquals(Set.of("items", "movementsThisWeek"), keys(list, "$"));
+        assertTrue(JsonPath.<Object>read(list, "$.movementsThisWeek") instanceof Number);
+        assertShape(list, "$.items[?(@.id == '" + item + "')]", STOCK_ITEM, true);
+        String recorded = body(MockMvcRequestBuilders.post("/cnc/stock/movements").with(admin)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"itemId\": \"" + item + "\", \"type\": \"USED_ON_ORDER\", \"quantity\": 2, \"jobId\": \"CNC-1\"}"), 201);
+        assertEquals(Set.of("item", "movement"), keys(recorded, "$"));
+        assertShape(recorded, "$.movement", CNC_MOVEMENT, false);
+        assertShape(recorded, "$.item", STOCK_ITEM, false);
+        String history = body(MockMvcRequestBuilders.get("/cnc/stock/movements").with(admin), 200);
+        assertShape(history, "$.items[?(@.itemId == '" + item + "')]", CNC_MOVEMENT, true);
+        assertShape(body(MockMvcRequestBuilders.patch("/cnc/stock/{id}", item).with(admin)
                 .contentType(MediaType.APPLICATION_JSON).content("{\"minimum\": 4}"), 200), "$", STOCK_ITEM, false);
     }
 

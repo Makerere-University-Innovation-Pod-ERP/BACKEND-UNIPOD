@@ -309,12 +309,12 @@ public class WebPushNotificationService {
     }
 
     private static String routeFor(String entityType) {
-        if (entityType == null) return "/overview";
+        if (entityType == null) return "/";
         return switch (entityType.toLowerCase(Locale.ROOT)) {
             case "booking" -> "/my-submissions/bookings";
             case "invoice" -> "/my-submissions/invoices";
             case "submission" -> "/my-submissions";
-            default -> "/overview";
+            default -> "/";
         };
     }
 

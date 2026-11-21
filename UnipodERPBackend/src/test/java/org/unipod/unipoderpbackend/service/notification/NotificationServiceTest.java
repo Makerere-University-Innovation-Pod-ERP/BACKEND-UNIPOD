@@ -76,9 +76,11 @@ class NotificationServiceTest {
     @Test
     void markReadOnSomeoneElsesNotificationIsNotFound() {
         UUID id = UUID.randomUUID();
-        when(repository.findByIdAndRecipient(id, "me@unipod.ac.ug")).thenReturn(Optional.empty());
+        when(repository.findVisibleByIdAndRecipient(id, "me@unipod.ac.ug", false))
+                .thenReturn(Optional.empty());
 
-        assertThrows(NotificationNotFoundException.class, () -> service.markRead("me@unipod.ac.ug", id));
+        assertThrows(NotificationNotFoundException.class,
+                () -> service.markRead("me@unipod.ac.ug", id, false));
     }
 
     @Test
