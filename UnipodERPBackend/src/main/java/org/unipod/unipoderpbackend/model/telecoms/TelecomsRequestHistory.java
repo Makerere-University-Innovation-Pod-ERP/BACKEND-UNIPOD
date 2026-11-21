@@ -8,8 +8,10 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
+import org.hibernate.annotations.Immutable;
 
 @Entity
+@Immutable
 @Table(name = "telecoms_request_history")
 public class TelecomsRequestHistory {
     @Id

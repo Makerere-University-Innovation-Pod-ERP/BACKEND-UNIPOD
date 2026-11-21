@@ -1,6 +1,8 @@
 package org.unipod.unipoderpbackend.controller.telecoms;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -14,7 +16,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.unipod.unipoderpbackend.dto.telecoms.TelecomsPaymentConfirmationRequest;
 import org.unipod.unipoderpbackend.dto.telecoms.TelecomsPriceListItemResponse;
 import org.unipod.unipoderpbackend.dto.telecoms.TelecomsPriceListResponse;
 import org.unipod.unipoderpbackend.dto.telecoms.TelecomsQuoteRequest;
@@ -38,6 +42,7 @@ public class TelecomsRequestController {
             + "'TELECOMS_DOMAIN_OWNER')";
     private static final String MANAGE_ROLES =
             "hasAnyRole('ADMINISTRATOR', 'DEPARTMENT_COORDINATOR', 'TELECOMS_DOMAIN_OWNER')";
+    private static final String FINANCE_ROLES = "hasAnyRole('ADMINISTRATOR', 'FINANCE_OFFICER')";
 
     private final TelecomsRequestService requests;
     private final CurrentActor currentActor;
@@ -49,8 +54,12 @@ public class TelecomsRequestController {
 
     @GetMapping("/requests")
     @PreAuthorize(READ_ROLES)
-    public TelecomsRequestListResponse list(Authentication authentication) {
-        return requests.list(currentActor.from(authentication));
+    public TelecomsRequestListResponse list(
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "25") @Min(1) @Max(100) int size,
+            Authentication authentication
+    ) {
+        return requests.list(currentActor.from(authentication), page, size);
     }
 
     @GetMapping("/requests/{id}")
@@ -93,6 +102,16 @@ public class TelecomsRequestController {
             Authentication authentication
     ) {
         return requests.sendQuote(id, payload, currentActor.from(authentication));
+    }
+
+    @PostMapping("/requests/{id}/confirm-payment")
+    @PreAuthorize(FINANCE_ROLES)
+    public TelecomsRequestResponse confirmPayment(
+            @PathVariable UUID id,
+            @Valid @RequestBody TelecomsPaymentConfirmationRequest payload,
+            Authentication authentication
+    ) {
+        return requests.confirmPayment(id, payload, currentActor.from(authentication));
     }
 
     @PostMapping("/requests/{id}/request-details")

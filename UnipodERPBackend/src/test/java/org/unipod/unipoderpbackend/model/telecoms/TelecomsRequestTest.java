@@ -1,6 +1,7 @@
 package org.unipod.unipoderpbackend.model.telecoms;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.time.Instant;
@@ -32,12 +33,42 @@ class TelecomsRequestTest {
                 TelecomsRequestStatus.NEW, null, NOW);
         request.sendQuote(null, "{\"amount\":1000}", NOW.plusSeconds(60));
 
+        assertEquals(TelecomsPaymentStatus.AWAITING_PROOF, request.getPaymentStatus());
         OperationsConflictException exception = assertThrows(
                 OperationsConflictException.class,
                 () -> request.moveTo(TelecomsRequestStatus.SCHEDULED, NOW.plusSeconds(120)));
 
         assertEquals("PAYMENT_REQUIRED", exception.getCode());
         assertEquals(TelecomsRequestStatus.QUOTED, request.getStatus());
+    }
+
+    @Test
+    void confirmedPaymentAllowsScheduling() {
+        TelecomsRequest request = new TelecomsRequest(
+                UUID.randomUUID(), "TL-2026-000003", payload(false), "owner@example.test",
+                TelecomsRequestStatus.NEW, null, NOW);
+        request.sendQuote(null, "{\"amount\":1000}", NOW.plusSeconds(60));
+
+        request.confirmPayment("PAY-1000", NOW.plusSeconds(120));
+        request.moveTo(TelecomsRequestStatus.SCHEDULED, NOW.plusSeconds(180));
+
+        assertEquals(TelecomsPaymentStatus.CONFIRMED, request.getPaymentStatus());
+        assertEquals("PAY-1000", request.getPaymentReference());
+        assertNotNull(request.getPaymentConfirmedAt());
+        assertEquals(TelecomsRequestStatus.SCHEDULED, request.getStatus());
+    }
+
+    @Test
+    void returnedRequestCanBeEditedAndResubmitted() {
+        TelecomsRequest request = new TelecomsRequest(
+                UUID.randomUUID(), "TL-2026-000004", payload(false), "owner@example.test",
+                TelecomsRequestStatus.NEW, null, NOW);
+        request.sendBack(NOW.plusSeconds(60));
+
+        request.updateDraft(payload(true), null, NOW.plusSeconds(120));
+        request.submitDraft(payload(false), null, NOW.plusSeconds(180));
+
+        assertEquals(TelecomsRequestStatus.NEW, request.getStatus());
     }
 
     @Test

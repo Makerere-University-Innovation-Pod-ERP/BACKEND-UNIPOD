@@ -9,6 +9,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.Arrays;
 import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -110,13 +111,23 @@ public class TelecomsRequest {
     }
 
     public void updateDraft(TelecomsRequestPayload payload, String estimate, Instant now) {
-        requireStatus(TelecomsRequestStatus.DRAFT, "Only a draft can be edited.");
+        requireOneOf(
+                "Only a draft, a returned request, or one awaiting details can be edited.",
+                TelecomsRequestStatus.DRAFT,
+                TelecomsRequestStatus.RETURNED,
+                TelecomsRequestStatus.AWAITING_DETAILS
+        );
         apply(payload, estimate);
         updatedAt = now;
     }
 
     public void submitDraft(TelecomsRequestPayload payload, String estimate, Instant now) {
-        requireStatus(TelecomsRequestStatus.DRAFT, "Only a draft can be submitted.");
+        requireOneOf(
+                "Only a draft, a returned request, or one awaiting details can be submitted.",
+                TelecomsRequestStatus.DRAFT,
+                TelecomsRequestStatus.RETURNED,
+                TelecomsRequestStatus.AWAITING_DETAILS
+        );
         apply(payload, estimate);
         status = TelecomsRequestStatus.NEW;
         updatedAt = now;
@@ -134,6 +145,21 @@ public class TelecomsRequest {
         paymentStatus = TelecomsPaymentStatus.AWAITING_PROOF;
         paymentReference = null;
         paymentConfirmedAt = null;
+        updatedAt = now;
+    }
+
+    public void confirmPayment(String reference, Instant now) {
+        requireStatus(TelecomsRequestStatus.QUOTED, "Payment can only be confirmed for a quoted request.");
+        if (paymentStatus != TelecomsPaymentStatus.AWAITING_PROOF
+                && paymentStatus != TelecomsPaymentStatus.PROOF_SUBMITTED) {
+            throw new OperationsConflictException(
+                    "PAYMENT_STATE_INVALID",
+                    "Payment cannot be confirmed from " + paymentStatus + "."
+            );
+        }
+        paymentStatus = TelecomsPaymentStatus.CONFIRMED;
+        paymentReference = reference == null || reference.isBlank() ? null : reference.trim();
+        paymentConfirmedAt = now;
         updatedAt = now;
     }
 
@@ -215,8 +241,8 @@ public class TelecomsRequest {
         }
     }
 
-    private void requireOneOf(String message, TelecomsRequestStatus first, TelecomsRequestStatus second) {
-        if (status != first && status != second) {
+    private void requireOneOf(String message, TelecomsRequestStatus... allowed) {
+        if (Arrays.stream(allowed).noneMatch(value -> value == status)) {
             throw new OperationsConflictException("INVALID_REQUEST_TRANSITION", message);
         }
     }
