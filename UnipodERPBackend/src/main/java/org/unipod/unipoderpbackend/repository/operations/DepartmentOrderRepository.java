@@ -14,6 +14,9 @@ import org.unipod.unipoderpbackend.model.operations.DepartmentCode;
 import org.unipod.unipoderpbackend.model.operations.DepartmentOrder;
 
 public interface DepartmentOrderRepository extends JpaRepository<DepartmentOrder, UUID> {
+    @Query(value = "select nextval('textile_order_code_seq')", nativeQuery = true)
+    long nextTextileCodeSeq();
+    List<DepartmentOrder> findAllByDepartmentOrderByUpdatedAtDescCreatedAtDesc(DepartmentCode department);
     Page<DepartmentOrder> findAllByDepartmentOrderByUpdatedAtDescCreatedAtDesc(
             DepartmentCode department, Pageable pageable);
     @Lock(LockModeType.PESSIMISTIC_WRITE)

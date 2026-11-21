@@ -101,6 +101,28 @@ class DepartmentOpenApiContractTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void documentsTextileOrderPermissionsAndPriceQuantityLimit() {
+        Set<String> creators = Set.of("ADMINISTRATOR", "DEPARTMENT_COORDINATOR", "RECEPTIONIST");
+        assertOperation("/textile/orders", "get", "listTextileOrders", "Textile", READ,
+                Set.of("200", "401", "403"));
+        assertOperation("/textile/orders", "post", "createTextileOrder", "Textile", creators,
+                Set.of("201", "400", "401", "403", "422"));
+        assertOperation("/textile/orders/{id}", "get", "getTextileOrder", "Textile", READ,
+                Set.of("200", "401", "403", "404"));
+        assertOperation("/textile/orders/{id}", "put", "updateTextileDraft", "Textile", creators,
+                Set.of("200", "400", "401", "403", "404", "409", "422"));
+        assertOperation("/textile/orders/{id}/photo", "get", "getTextileOrderPhoto", "Textile", READ,
+                Set.of("200", "401", "403", "404"));
+        assertOperation("/textile/price-list", "get", "listTextilePriceItems", "Textile", READ,
+                Set.of("200", "401", "403"));
+
+        Map<String, Object> priceQuantity = (Map<String, Object>) properties("TextileQuoteRequest")
+                .get("priceQuantity");
+        assertEquals(2_147_483_647, ((Number) priceQuantity.get("maximum")).intValue());
+    }
+
+    @Test
     void enumsMatchTheCode() {
         assertEquals(names(MediaBoardStatus.values()), enumValues("MediaBoardStatus"));
         assertEquals(names(PaymentStatus.values()), enumValues("PaymentStatus"));

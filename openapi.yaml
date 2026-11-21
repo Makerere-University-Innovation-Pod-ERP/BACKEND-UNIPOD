@@ -4971,6 +4971,412 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /textile/orders:
+    get:
+      tags: [Textile]
+      operationId: listTextileOrders
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, DEPARTMENT_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER]
+      summary: List Textile orders
+      description: Returns Textile orders to authorized staff.
+      responses:
+        '200':
+          description: The Textile orders
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextileOrderList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Textile]
+      operationId: createTextileOrder
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, RECEPTIONIST]
+      summary: Create a Textile draft or submit an order
+      description: |
+        Multipart form with a JSON `order` part and optional JPG/PNG `photo` (maximum 15 MB). Submitted orders
+        require all customer details, rules acceptance, and a non-past `dateNeeded`. Drafts require only customer name.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TextileOrderForm'
+            encoding:
+              order:
+                contentType: application/json
+              photo:
+                contentType: image/jpeg, image/png
+      responses:
+        '201':
+          description: The created order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextileOrder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /textile/orders/{id}:
+    get:
+      tags: [Textile]
+      operationId: getTextileOrder
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, DEPARTMENT_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER]
+      summary: Get a Textile order
+      description: Authorized staff may read orders according to their role and department.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The Textile order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextileOrder'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Textile]
+      operationId: updateTextileDraft
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, RECEPTIONIST]
+      summary: Update and optionally submit an order
+      description: Only the creating receptionist or an authorized Textile manager may update draft, returned, or details-requested orders.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TextileOrderForm'
+            encoding:
+              order:
+                contentType: application/json
+              photo:
+                contentType: image/jpeg, image/png
+      responses:
+        '200':
+          description: The updated order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextileOrder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /textile/orders/{id}/photo:
+    get:
+      tags: [Textile]
+      operationId: getTextileOrderPhoto
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, DEPARTMENT_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER]
+      summary: Download an order's reference photo
+      description: Uses the same order-read policy; the photo is stored privately and is not exposed as a public URL.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The reference image
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /textile/price-list:
+    get:
+      tags: [Textile]
+      operationId: listTextilePriceItems
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, DEPARTMENT_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, FINANCE_OFFICER, OBSERVER]
+      summary: List active Textile prices
+      responses:
+        '200':
+          description: Active price-list items for Textile
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TextilePriceItem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /textile/orders/{id}/quote:
+    post:
+      tags: [Textile]
+      operationId: quoteTextileOrder
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Send a Textile quote and create its invoice
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TextileQuoteRequest'
+      responses:
+        '200':
+          description: The quoted order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextileOrder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /textile/orders/{id}/request-details:
+    post:
+      tags: [Textile]
+      operationId: requestTextileOrderDetails
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Request more details for an order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TextileMessageRequest'
+      responses:
+        '200':
+          description: The updated order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextileOrder'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /textile/orders/{id}/send-back:
+    post:
+      tags: [Textile]
+      operationId: sendTextileOrderBack
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Send an order back to reception
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TextileReasonRequest'
+      responses:
+        '200':
+          description: The updated order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextileOrder'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /textile/orders/{id}/transitions:
+    post:
+      tags: [Textile]
+      operationId: transitionTextileOrder
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Advance an order through production
+      description: Payment must be confirmed before scheduling. Estimated materials are atomically deducted when production starts.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TextileTransitionRequest'
+      responses:
+        '200':
+          description: The updated order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextileOrder'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /textile/orders/{id}/production:
+    put:
+      tags: [Textile]
+      operationId: updateTextileProduction
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Update production details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TextileProductionRequest'
+      responses:
+        '200':
+          description: The updated order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextileOrder'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /textile/orders/{id}/quality:
+    put:
+      tags: [Textile]
+      operationId: updateTextileQuality
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR]
+      summary: Update the production quality checklist
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TextileQualityRequest'
+      responses:
+        '200':
+          description: The updated order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextileOrder'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /textile/orders/{id}/collection:
+    post:
+      tags: [Textile]
+      operationId: collectTextileOrder
+      x-required-roles: [ADMINISTRATOR, DEPARTMENT_COORDINATOR, RECEPTIONIST]
+      summary: Record collection of a ready order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TextileCollectionRequest'
+      responses:
+        '200':
+          description: The collected order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextileOrder'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /textile/machines:
     get:
       tags: [Machines]
@@ -12995,6 +13401,313 @@ components:
           type: string
           maxLength: 200
           description: Who the lab is booked for; defaults to the signed-in user's display name ("Staff" when there is no profile)
+    TextileOrder:
+      type: object
+      required: [id, customerName, customerType, whatIsWanted, quantity, sizeDesign, rulesAccepted, status, createdAt, updatedAt, payment, production, qualityChecklist, history]
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+          nullable: true
+        customerName:
+          type: string
+        customerType:
+          type: string
+        whatIsWanted:
+          type: string
+        quantity:
+          type: string
+        sizeDesign:
+          type: string
+        dateNeeded:
+          type: string
+          format: date
+          nullable: true
+        photo:
+          type: object
+          nullable: true
+          properties:
+            name:
+              type: string
+            url:
+              type: string
+              nullable: true
+              description: Authenticated relative API path; use a bearer token when requesting it.
+        rulesAccepted:
+          type: boolean
+        status:
+          type: string
+          enum: [DRAFT, NEW, AWAITING_DETAILS, RETURNED, QUOTED, SCHEDULED, BEING_MADE, READY, COLLECTED]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        estimate:
+          type: object
+          nullable: true
+          properties:
+            materials:
+              type: array
+              items:
+                $ref: '#/components/schemas/TextileMaterialLine'
+            priceListItemId:
+              type: string
+              format: uuid
+              nullable: true
+            priceQuantity:
+              type: number
+        quote:
+          type: object
+          nullable: true
+          properties:
+            amount:
+              type: integer
+              format: int64
+            currency:
+              type: string
+              enum: [UGX]
+            priceListItemId:
+              type: string
+              format: uuid
+            priceQuantity:
+              type: integer
+            expectedCompletion:
+              type: string
+              format: date
+            sentAt:
+              type: string
+              format: date-time
+            sentBy:
+              type: string
+              format: email
+        payment:
+          type: object
+          properties:
+            status:
+              type: string
+              enum: [NOT_REQUESTED, AWAITING_PROOF, PROOF_SUBMITTED, CONFIRMED, REJECTED]
+            reference:
+              type: string
+              nullable: true
+            confirmedAt:
+              type: string
+              format: date-time
+              nullable: true
+        production:
+          type: object
+          properties:
+            materialUsed:
+              type: string
+            machineId:
+              type: string
+              format: uuid
+              nullable: true
+            staff:
+              type: string
+            notes:
+              type: string
+        qualityChecklist:
+          type: array
+          items:
+            $ref: '#/components/schemas/TextileQualityItem'
+        collection:
+          type: object
+          nullable: true
+          properties:
+            collectedBy:
+              type: string
+            collectedAt:
+              type: string
+              format: date-time
+        history:
+          type: array
+          items:
+            type: object
+            required: [status, by, at, note]
+            properties:
+              status:
+                type: string
+                enum: [DRAFT, NEW, AWAITING_DETAILS, RETURNED, QUOTED, SCHEDULED, BEING_MADE, READY, COLLECTED]
+              by:
+                type: string
+              at:
+                type: string
+                format: date-time
+              note:
+                type: string
+                nullable: true
+    TextileOrderList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TextileOrder'
+    TextileOrderForm:
+      type: object
+      required: [order]
+      properties:
+        order:
+          $ref: '#/components/schemas/TextileOrderRequest'
+        photo:
+          type: string
+          format: binary
+    TextileOrderRequest:
+      type: object
+      additionalProperties: false
+      required: [customerName, rulesAccepted, submit]
+      properties:
+        customerName:
+          type: string
+          minLength: 1
+          maxLength: 160
+        customerType:
+          type: string
+          maxLength: 40
+        whatIsWanted:
+          type: string
+          maxLength: 240
+        quantity:
+          type: string
+          maxLength: 120
+        sizeDesign:
+          type: string
+          maxLength: 500
+        dateNeeded:
+          type: string
+          format: date
+          nullable: true
+        rulesAccepted:
+          type: boolean
+        submit:
+          type: boolean
+          description: When true, validates required submission details and moves the order to NEW.
+    TextilePriceItem:
+      type: object
+      required: [id, label, unit, unitPrice, leadDays]
+      properties:
+        id:
+          type: string
+          format: uuid
+        label:
+          type: string
+        unit:
+          type: string
+        unitPrice:
+          type: integer
+          format: int64
+        leadDays:
+          type: integer
+    TextileMaterialLine:
+      type: object
+      required: [itemId, quantity]
+      properties:
+        itemId:
+          type: string
+          format: uuid
+        quantity:
+          type: number
+          minimum: 0.01
+    TextileQuoteRequest:
+      type: object
+      additionalProperties: false
+      required: [materials, priceListItemId, priceQuantity, expectedCompletion]
+      properties:
+        materials:
+          type: array
+          items:
+            $ref: '#/components/schemas/TextileMaterialLine'
+        priceListItemId:
+          type: string
+          format: uuid
+        priceQuantity:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+          description: Integer quantity; fractional price quantities are rejected.
+        expectedCompletion:
+          type: string
+          format: date
+    TextileMessageRequest:
+      type: object
+      additionalProperties: false
+      required: [message]
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 1000
+    TextileReasonRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 1000
+    TextileTransitionRequest:
+      type: object
+      additionalProperties: false
+      required: [toStatus]
+      properties:
+        toStatus:
+          type: string
+          enum: [SCHEDULED, BEING_MADE, READY]
+    TextileProductionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        materialUsed:
+          type: string
+          maxLength: 1000
+        machineId:
+          type: string
+          format: uuid
+          nullable: true
+        staff:
+          type: string
+          maxLength: 255
+        notes:
+          type: string
+          maxLength: 2000
+    TextileQualityItem:
+      type: object
+      required: [id, checked]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 80
+          description: ID of an existing quality checklist item.
+        checked:
+          type: boolean
+        label:
+          type: string
+    TextileQualityRequest:
+      type: object
+      additionalProperties: false
+      required: [checklist]
+      properties:
+        checklist:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/TextileQualityItem'
+    TextileCollectionRequest:
+      type: object
+      additionalProperties: false
+      required: [collectedBy]
+      properties:
+        collectedBy:
+          type: string
+          minLength: 1
+          maxLength: 200
     TextileAttendee:
       type: object
       required: [id, name, attended]
