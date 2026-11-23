@@ -2,6 +2,7 @@ package org.unipod.unipoderpbackend.service.authorization;
 
 import java.util.Set;
 import java.util.UUID;
+import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.unipod.unipoderpbackend.exception.authorization.AccessDeniedWithReasonException;
 import org.unipod.unipoderpbackend.model.auth.ApiUserRole;
@@ -10,7 +11,11 @@ import org.unipod.unipoderpbackend.model.authorization.AuthorizationAction;
 import org.unipod.unipoderpbackend.model.authorization.AuthorizationDecision;
 import org.unipod.unipoderpbackend.model.authorization.AuthorizationResource;
 import org.unipod.unipoderpbackend.model.authorization.DenialCode;
+import org.unipod.unipoderpbackend.model.authorization.RolePermissionConfig;
+import org.unipod.unipoderpbackend.repository.authorization.RolePermissionConfigRepository;
 
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -128,6 +133,37 @@ class AuthorizationServiceTest {
 
         assertDoesNotThrow(() -> service.authorize(submitter, AuthorizationAction.CASE_EDIT,
                 submission("student@mak.ac.ug", Set.of(), null)));
+    }
+
+    @Test
+    void configuredRolePermissionsReplaceTheDefaultCapabilities() {
+        RolePermissionConfigRepository configs = mock(RolePermissionConfigRepository.class);
+        when(configs.findById(ApiUserRole.REVIEWER)).thenReturn(java.util.Optional.of(
+                new RolePermissionConfig(ApiUserRole.REVIEWER, Set.of("CASE_VIEW"), Instant.now())
+        ));
+        AuthorizationService configured = new AuthorizationService(new AuthorizationPolicy(configs));
+        Actor reviewer = actor("faith@unipod.ac.ug", ApiUserRole.REVIEWER);
+
+        assertTrue(configured.check(reviewer, AuthorizationAction.CASE_VIEW,
+                submission(null, Set.of("faith@unipod.ac.ug"), null)).allowed());
+        assertEquals(DenialCode.ROLE_NOT_PERMITTED, configured.check(reviewer, AuthorizationAction.CASE_REVIEW,
+                submission(null, Set.of("faith@unipod.ac.ug"), null)).code());
+    }
+
+    @Test
+    void configuredActionWithoutABuiltInScopeDoesNotGrantGlobalAccess() {
+        RolePermissionConfigRepository configs = mock(RolePermissionConfigRepository.class);
+        when(configs.findById(ApiUserRole.OBSERVER)).thenReturn(java.util.Optional.of(
+                new RolePermissionConfig(ApiUserRole.OBSERVER, Set.of("PRICE_LIST_PROPOSE"), Instant.now())
+        ));
+        AuthorizationService configured = new AuthorizationService(new AuthorizationPolicy(configs));
+        Actor observer = actor("observer@unipod.ac.ug", ApiUserRole.OBSERVER);
+
+        assertEquals(DenialCode.NOT_OWNER, configured.check(
+                observer,
+                AuthorizationAction.PRICE_LIST_PROPOSE,
+                submission("another@unipod.ac.ug", Set.of(), TEXTILE)
+        ).code());
     }
 
     private static Actor actor(String email, ApiUserRole role) {

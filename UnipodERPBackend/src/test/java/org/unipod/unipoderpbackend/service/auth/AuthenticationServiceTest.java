@@ -15,6 +15,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 import org.unipod.unipoderpbackend.dto.auth.ChangePasswordRequest;
 import org.unipod.unipoderpbackend.dto.auth.CreateApiUserRequest;
@@ -31,6 +32,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -259,7 +262,7 @@ class AuthenticationServiceTest {
         );
         user.issuePasswordSetupToken("hashed-token", NOW.plus(Duration.ofHours(1)), NOW);
         when(users.findByPasswordSetupTokenHash(any())).thenReturn(Optional.of(user));
-        when(users.consumePasswordSetupToken(any(), any(), any())).thenReturn(1);
+        when(users.consumePasswordSetupToken(any(), any(), any(), anyLong())).thenReturn(1);
 
         authentication.setPassword(new org.unipod.unipoderpbackend.dto.auth.SetPasswordRequest(
                 "raw-token",
@@ -269,7 +272,8 @@ class AuthenticationServiceTest {
         verify(users).consumePasswordSetupToken(
                 any(),
                 argThat(hash -> passwordEncoder.matches("a brand new password", hash)),
-                any()
+                any(),
+                eq(0L)
         );
     }
 
@@ -308,8 +312,8 @@ class AuthenticationServiceTest {
                 NOW
         );
         user.issuePasswordSetupToken("hashed-token", NOW.plus(Duration.ofHours(1)), NOW);
-        when(users.findByPasswordSetupTokenHash(any())).thenReturn(Optional.of(user));
-        when(users.consumePasswordSetupToken(any(), any(), any())).thenReturn(0);
+        when(users.findByPasswordSetupTokenHash(any())).thenReturn(Optional.of(user), Optional.empty());
+        when(users.consumePasswordSetupToken(any(), any(), any(), anyLong())).thenReturn(0);
 
         ResponseStatusException exception = assertThrows(
                 ResponseStatusException.class,
@@ -320,6 +324,42 @@ class AuthenticationServiceTest {
         );
 
         assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+    }
+
+    @Test
+    void setPasswordReportsAConflictWhenTheAccountVersionChanged() {
+        ApiUser user = new ApiUser(
+                UUID.randomUUID(),
+                "walkin@example.test",
+                passwordEncoder.encode(PASSWORD),
+                ApiUserRole.SUBMITTER,
+                true,
+                NOW
+        );
+        user.issuePasswordSetupToken("hashed-token", NOW.plus(Duration.ofHours(1)), NOW);
+        ApiUser concurrentlyUpdated = new ApiUser(
+                user.getId(),
+                user.getEmail(),
+                passwordEncoder.encode(PASSWORD),
+                ApiUserRole.SUBMITTER,
+                true,
+                NOW
+        );
+        concurrentlyUpdated.issuePasswordSetupToken("hashed-token", NOW.plus(Duration.ofHours(1)), NOW);
+        ReflectionTestUtils.setField(concurrentlyUpdated, "version", 1L);
+        when(users.findByPasswordSetupTokenHash(any()))
+                .thenReturn(Optional.of(user), Optional.of(concurrentlyUpdated));
+        when(users.consumePasswordSetupToken(any(), any(), any(), anyLong())).thenReturn(0);
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> authentication.setPassword(new org.unipod.unipoderpbackend.dto.auth.SetPasswordRequest(
+                        "raw-token",
+                        "a brand new password"
+                ))
+        );
+
+        assertEquals(HttpStatus.CONFLICT, exception.getStatusCode());
     }
 
     private Jwt jwt() {

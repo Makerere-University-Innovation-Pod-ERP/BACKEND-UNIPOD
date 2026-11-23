@@ -6,6 +6,7 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -25,6 +26,13 @@ public class ApiUser {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 40)
     private ApiUserRole role;
+
+    @Column(name = "full_name", length = 200)
+    private String fullName;
+
+    @Version
+    @Column(nullable = false)
+    private long version;
 
     @Column(nullable = false)
     private boolean enabled;
@@ -65,13 +73,30 @@ public class ApiUser {
             boolean mustChangePassword,
             Instant now
     ) {
+        this(id, email, passwordHash, role, mustChangePassword, null, now);
+    }
+
+    public ApiUser(
+            UUID id,
+            String email,
+            String passwordHash,
+            ApiUserRole role,
+            boolean mustChangePassword,
+            String fullName,
+            Instant now
+    ) {
         this.id = id;
         this.email = email;
         this.passwordHash = passwordHash;
         this.role = role;
+        this.fullName = clean(fullName);
         this.enabled = true;
         this.mustChangePassword = mustChangePassword;
         this.createdAt = now;
+        this.updatedAt = now;
+    }
+
+    public void touch(Instant now) {
         this.updatedAt = now;
     }
 
@@ -136,6 +161,14 @@ public class ApiUser {
         return role;
     }
 
+    public String getFullName() {
+        return fullName;
+    }
+
+    public long getVersion() {
+        return version;
+    }
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -150,5 +183,9 @@ public class ApiUser {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    private static String clean(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 }

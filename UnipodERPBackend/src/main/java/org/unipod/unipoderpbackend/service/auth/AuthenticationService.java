@@ -194,9 +194,21 @@ public class AuthenticationService {
         int updated = users.consumePasswordSetupToken(
                 tokenHash,
                 passwordEncoder.encode(request.newPassword()),
-                now
+                now,
+                user.getVersion()
         );
         if (updated != 1) {
+            boolean accountChanged = users.findByPasswordSetupTokenHash(tokenHash)
+                    .filter(ApiUser::isEnabled)
+                    .filter(candidate -> candidate.hasValidPasswordSetupToken(now))
+                    .map(candidate -> candidate.getVersion() != user.getVersion())
+                    .orElse(false);
+            if (accountChanged) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "This account changed while the password was being set. Try the same link again."
+                );
+            }
             throw invalidSetupToken();
         }
         return user.getId();
@@ -306,6 +318,8 @@ public class AuthenticationService {
                 email,
                 passwordEncoder.encode(request.password()),
                 request.role(),
+                false,
+                request.fullName(),
                 now
         );
         try {

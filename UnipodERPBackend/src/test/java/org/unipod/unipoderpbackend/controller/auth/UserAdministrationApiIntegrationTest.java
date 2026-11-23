@@ -78,6 +78,12 @@ class UserAdministrationApiIntegrationTest {
                         .header("Authorization", bearer(adminToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"role\": \"FINANCE_OFFICER\"}"))
+                .andExpect(status().isUnprocessableEntity());
+
+        mockMvc.perform(patch("/users/" + reviewer.id())
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"role\": \"FINANCE_OFFICER\", \"version\": 0}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.role").value("FINANCE_OFFICER"));
 
@@ -109,7 +115,7 @@ class UserAdministrationApiIntegrationTest {
         mockMvc.perform(patch("/users/" + adminId)
                         .header("Authorization", bearer(adminToken))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"role\": \"OBSERVER\"}"))
+                        .content("{\"role\": \"OBSERVER\", \"version\": 0}"))
                 .andExpect(status().isConflict());
     }
 
@@ -130,14 +136,14 @@ class UserAdministrationApiIntegrationTest {
         mockMvc.perform(patch("/users/" + reviewer.id())
                         .header("Authorization", bearer(adminToken))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"departmentIds\": [\"" + departmentId + "\"]}"))
+                        .content("{\"departmentIds\": [\"" + departmentId + "\"], \"version\": 0}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.departmentIds[0]").value(departmentId));
 
         mockMvc.perform(patch("/users/" + reviewer.id())
                         .header("Authorization", bearer(adminToken))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"departmentIds\": []}"))
+                        .content("{\"departmentIds\": [], \"version\": 1}"))
                 .andExpect(jsonPath("$.departmentIds").isEmpty());
     }
 
