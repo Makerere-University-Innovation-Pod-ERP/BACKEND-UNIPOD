@@ -13,13 +13,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 import org.unipod.unipoderpbackend.dto.auth.AdminCreateUserRequest;
 import org.unipod.unipoderpbackend.dto.auth.AdminUpdateUserRequest;
 import org.unipod.unipoderpbackend.dto.auth.AdminUserResponse;
 import org.unipod.unipoderpbackend.dto.auth.AdminUserStatusRequest;
-import org.unipod.unipoderpbackend.dto.auth.UpdateUserRequest;
 import org.unipod.unipoderpbackend.security.CurrentActor;
 import org.unipod.unipoderpbackend.service.auth.UserAdministrationService;
 
@@ -57,16 +55,7 @@ public class AdminUserController {
             @Valid @RequestBody AdminUpdateUserRequest request,
             Authentication authentication
     ) {
-        users.update(
-                currentActor.from(authentication),
-                id,
-                new UpdateUserRequest(
-                        request.role(),
-                        request.departmentId() == null ? Set.of() : Set.of(request.departmentId()),
-                        request.version()
-                )
-        );
-        return users.getAdminUser(currentActor.from(authentication), id);
+        return users.updateManagedUser(currentActor.from(authentication), id, request);
     }
 
     @PatchMapping("/{id}/status")

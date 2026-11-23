@@ -126,8 +126,8 @@ public class AuthorizationPolicy {
             case CASE_VIEW, CASE_EDIT, CASE_FORWARD, CASE_ASSIGN_REVIEWER, CASE_REVIEW, CASE_DECIDE ->
                     caseScope(role);
             case PRICE_LIST_PROPOSE -> role == ApiUserRole.DEPARTMENT_COORDINATOR
-                    || role == ApiUserRole.SECTOR_OFFICER ? Scope.DEPARTMENT : Scope.ALL;
-            default -> Scope.ALL;
+                    || role == ApiUserRole.SECTOR_OFFICER ? Scope.DEPARTMENT : Scope.OWN;
+            default -> Scope.OWN;
         };
     }
 
@@ -136,7 +136,7 @@ public class AuthorizationPolicy {
             case SUBMITTER -> Scope.OWN;
             case REVIEWER -> Scope.ASSIGNED;
             case DEPARTMENT_COORDINATOR, SECTOR_OFFICER -> Scope.DEPARTMENT;
-            default -> Scope.ALL;
+            default -> Scope.OWN;
         };
     }
 }

@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.unipod.unipoderpbackend.dto.sector.AdminSectorResponse;
 import org.unipod.unipoderpbackend.dto.sector.SectorRequest;
+import org.unipod.unipoderpbackend.service.config.ConfigService;
 import org.unipod.unipoderpbackend.service.sector.SectorService;
 
 @RestController
@@ -22,9 +23,11 @@ import org.unipod.unipoderpbackend.service.sector.SectorService;
 @PreAuthorize("hasRole('ADMINISTRATOR')")
 public class AdminDepartmentController {
     private final SectorService sectors;
+    private final ConfigService config;
 
-    public AdminDepartmentController(SectorService sectors) {
+    public AdminDepartmentController(SectorService sectors, ConfigService config) {
         this.sectors = sectors;
+        this.config = config;
     }
 
     @GetMapping
@@ -35,7 +38,9 @@ public class AdminDepartmentController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public AdminSectorResponse create(@Valid @RequestBody SectorRequest request) {
-        return sectors.create(request);
+        AdminSectorResponse created = sectors.create(request);
+        config.refresh();
+        return created;
     }
 
     @PutMapping("/{id}")
@@ -43,6 +48,8 @@ public class AdminDepartmentController {
             @PathVariable UUID id,
             @Valid @RequestBody SectorRequest request
     ) {
-        return sectors.update(id, request);
+        AdminSectorResponse updated = sectors.update(id, request);
+        config.refresh();
+        return updated;
     }
 }

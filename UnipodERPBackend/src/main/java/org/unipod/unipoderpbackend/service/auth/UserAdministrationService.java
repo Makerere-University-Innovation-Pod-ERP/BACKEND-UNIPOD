@@ -9,6 +9,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
@@ -18,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 import org.unipod.unipoderpbackend.dto.PageResponse;
 import org.unipod.unipoderpbackend.dto.auth.AdminCreateUserRequest;
+import org.unipod.unipoderpbackend.dto.auth.AdminUpdateUserRequest;
 import org.unipod.unipoderpbackend.dto.auth.AdminUserResponse;
 import org.unipod.unipoderpbackend.dto.auth.ApiUserResponse;
 import org.unipod.unipoderpbackend.dto.auth.CreateApiUserRequest;
@@ -28,6 +30,8 @@ import org.unipod.unipoderpbackend.dto.auth.UserSummaryResponse;
 import org.unipod.unipoderpbackend.model.audit.AuditEvent;
 import org.unipod.unipoderpbackend.model.auth.ApiUser;
 import org.unipod.unipoderpbackend.model.auth.ApiUserRole;
+import org.unipod.unipoderpbackend.model.auth.UserProfile;
+import org.unipod.unipoderpbackend.model.sector.SectorMember;
 import org.unipod.unipoderpbackend.model.authorization.Actor;
 import org.unipod.unipoderpbackend.model.authorization.AuthorizationAction;
 import org.unipod.unipoderpbackend.model.authorization.AuthorizationResource;
@@ -91,13 +95,20 @@ public class UserAdministrationService {
                 request.email(),
                 request.password(),
                 request.role(),
-                request.fullName(),
-                request.departmentId()
+                request.fullName()
         ), actor);
         ApiUser user = require(created.id());
         if (request.departmentId() != null) {
             sectors.requireActive(request.departmentId());
             sectorMembers.insertIfAbsent(UUID.randomUUID(), request.departmentId(), user.getEmail());
+            audit.log(AuditEvent.changed(
+                    actor,
+                    "user.departments_changed",
+                    "user",
+                    user.getId(),
+                    Map.of("departmentIds", List.of()),
+                    Map.of("departmentIds", List.of(request.departmentId().toString()))
+            ));
         }
         return adminSummary(user);
     }
@@ -105,10 +116,27 @@ public class UserAdministrationService {
     @Transactional(readOnly = true)
     public List<AdminUserResponse> adminList(Actor actor) {
         authorization.authorize(actor, AuthorizationAction.USER_MANAGE, USERS);
-        return users.search(null, null, "", PageRequest.of(0, 500))
-                .getContent()
+        List<ApiUser> found = users.search(null, null, "", PageRequest.of(0, 500)).getContent();
+        if (found.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, UserProfileResponse> profileByUserId = profiles.findAllById(
+                        found.stream().map(ApiUser::getId).toList())
                 .stream()
-                .map(this::adminSummary)
+                .collect(Collectors.toMap(UserProfile::getUserId, UserProfileResponse::from));
+        Map<String, Set<UUID>> departmentsByEmail = sectorMembers.findAllBySubjectIn(
+                        found.stream().map(ApiUser::getEmail).toList())
+                .stream()
+                .collect(Collectors.groupingBy(
+                        SectorMember::getSubject,
+                        Collectors.mapping(SectorMember::getSectorId, Collectors.toSet())
+                ));
+        return found.stream()
+                .map(user -> adminSummary(
+                        user,
+                        profileByUserId.get(user.getId()),
+                        departmentsByEmail.getOrDefault(user.getEmail(), Set.of())
+                ))
                 .toList();
     }
 
@@ -137,22 +165,68 @@ public class UserAdministrationService {
     public UserSummaryResponse update(Actor actor, UUID id, UpdateUserRequest request) {
         authorization.authorize(actor, AuthorizationAction.USER_MANAGE, USERS);
         ApiUser user = require(id);
-        verifyVersion(user, request.version());
+        if (request.version() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A user version is required.");
+        }
+        applyUpdate(actor, user, request.role(), request.departmentIds(), request.version(),
+                request.departmentIds() != null);
+        return summary(user);
+    }
+
+    @Transactional
+    public AdminUserResponse updateManagedUser(Actor actor, UUID id, AdminUpdateUserRequest request) {
+        authorization.authorize(actor, AuthorizationAction.USER_MANAGE, USERS);
+        ApiUser user = require(id);
+        if (request.version() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A user version is required.");
+        }
+        Set<UUID> departmentIds = null;
+        if (request.departmentIdProvided()) {
+            if (request.departmentId() == null) {
+                departmentIds = Set.of();
+            } else {
+                Set<UUID> current = sectorMembers.findSectorIdsBySubject(user.getEmail());
+                if (current.size() > 1 && !current.contains(request.departmentId())) {
+                    throw new ResponseStatusException(
+                            HttpStatus.CONFLICT,
+                            "This account belongs to multiple departments. Update its memberships through the user administration API."
+                    );
+                }
+                departmentIds = current.size() > 1 ? current : Set.of(request.departmentId());
+            }
+        }
+        applyUpdate(actor, user, request.role(), departmentIds, request.version(),
+                request.departmentIdProvided());
+        return adminSummary(user);
+    }
+
+    private void applyUpdate(
+            Actor actor,
+            ApiUser user,
+            ApiUserRole requestedRole,
+            Set<UUID> requestedDepartmentIds,
+            Long expectedVersion,
+            boolean departmentIdsProvided
+    ) {
+        verifyVersion(user, expectedVersion);
         Instant now = clock.instant();
         boolean changed = false;
-        if (request.role() != null && request.role() != user.getRole()) {
+        if (requestedRole != null && requestedRole != user.getRole()) {
+            if (requestedRole == ApiUserRole.ADMINISTRATOR) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The administrator role is protected.");
+            }
             refuseSelf(actor, user, "change your own role");
             refuseLastAdministrator(user);
             ApiUserRole before = user.getRole();
-            user.changeRole(request.role(), now);
+            user.changeRole(requestedRole, now);
             changed = true;
             audit.log(AuditEvent.changed(actor, "user.role_changed", "user", user.getId(),
-                    Map.of("role", before.name()), Map.of("role", request.role().name())));
+                    Map.of("role", before.name()), Map.of("role", requestedRole.name())));
         }
-        if (request.departmentIds() != null) {
+        if (departmentIdsProvided) {
             Set<UUID> before = sectorMembers.findSectorIdsBySubject(user.getEmail());
-            Set<UUID> after = Set.copyOf(request.departmentIds());
-            after.forEach(sectors::requireActive);
+            Set<UUID> after = Set.copyOf(requestedDepartmentIds);
+            difference(after, before).forEach(sectors::requireActive);
             for (UUID removed : difference(before, after)) {
                 sectorMembers.deleteBySectorIdAndSubject(removed, user.getEmail());
             }
@@ -169,7 +243,6 @@ public class UserAdministrationService {
             user.touch(now);
             flushVersionedUser(user);
         }
-        return summary(user);
     }
 
     @Transactional
@@ -232,13 +305,22 @@ public class UserAdministrationService {
     private AdminUserResponse adminSummary(ApiUser user) {
         UserProfileResponse profile = profiles.findById(user.getId()).map(UserProfileResponse::from).orElse(null);
         Set<UUID> departmentIds = sectorMembers.findSectorIdsBySubject(user.getEmail());
+        return adminSummary(user, profile, departmentIds);
+    }
+
+    private AdminUserResponse adminSummary(
+            ApiUser user,
+            UserProfileResponse profile,
+            Set<UUID> departmentIds
+    ) {
         String fullName = profile != null && profile.fullName() != null && !profile.fullName().isBlank()
                 ? profile.fullName()
                 : user.getFullName() != null && !user.getFullName().isBlank()
                         ? user.getFullName()
                         : user.getEmail().substring(0, user.getEmail().indexOf('@'));
-        UUID departmentId = departmentIds.stream().sorted().findFirst().orElse(null);
-        return AdminUserResponse.from(user, fullName, departmentId);
+        List<UUID> sortedDepartmentIds = departmentIds.stream().sorted().toList();
+        UUID departmentId = sortedDepartmentIds.isEmpty() ? null : sortedDepartmentIds.get(0);
+        return AdminUserResponse.from(user, fullName, departmentId, sortedDepartmentIds);
     }
 
     private static void verifyVersion(ApiUser user, Long expectedVersion) {

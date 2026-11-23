@@ -1234,9 +1234,10 @@ paths:
       x-required-roles: [ADMINISTRATOR]
       summary: Change an account's role or departments [AD1]
       description: |
-        Send only what changes. `departmentIds` replaces the user's department list
-        (send `[]` to remove all). You cannot change your own role, and the last
-        active administrator cannot be demoted (409). Every change is audited.
+        Send only what changes, including the current `version`. `departmentIds`
+        replaces the user's department list (send `[]` to remove all). You cannot
+        change your own role, and the last active administrator cannot be demoted
+        (409). Every change is audited.
       security:
         - bearerAuth: []
       parameters:
@@ -9366,6 +9367,7 @@ components:
           type: integer
     UpdateUserRequest:
       type: object
+      required: [version]
       properties:
         role:
           $ref: '#/components/schemas/ApiUserRole'
@@ -9374,6 +9376,10 @@ components:
           items:
             type: string
             format: uuid
+        version:
+          type: integer
+          format: int64
+          minimum: 0
     Role:
       type: object
       required: [role, staff]
@@ -9697,6 +9703,10 @@ components:
           maxLength: 72
         role:
           $ref: '#/components/schemas/ApiUserRole'
+        fullName:
+          type: [string, 'null']
+          maxLength: 200
+          pattern: '^[^\p{Cc}]*$'
     AdminCreateUserRequest:
       type: object
       required: [email, password, role]
@@ -9704,6 +9714,7 @@ components:
         fullName:
           type: [string, 'null']
           maxLength: 200
+          pattern: '^[^\p{Cc}]*$'
         email:
           type: string
           format: email
@@ -9718,6 +9729,7 @@ components:
         departmentId:
           type: [string, 'null']
           format: uuid
+          description: Initial department membership.
     AdminUpdateUserRequest:
       type: object
       required: [role, version]
@@ -9727,6 +9739,7 @@ components:
         departmentId:
           type: [string, 'null']
           format: uuid
+          description: Omit to preserve memberships; send null to clear. For users with multiple memberships, this value may only identify an existing membership.
         version:
           type: integer
           format: int64
@@ -9743,7 +9756,7 @@ components:
           minimum: 0
     AdminManagementUser:
       type: object
-      required: [id, fullName, email, role, active, version, createdAt]
+      required: [id, fullName, email, role, departmentIds, active, version, createdAt]
       properties:
         id:
           type: string
@@ -9758,6 +9771,12 @@ components:
         departmentId:
           type: [string, 'null']
           format: uuid
+          description: Primary department for compatibility; see departmentIds for all memberships.
+        departmentIds:
+          type: array
+          items:
+            type: string
+            format: uuid
         active:
           type: boolean
         version:

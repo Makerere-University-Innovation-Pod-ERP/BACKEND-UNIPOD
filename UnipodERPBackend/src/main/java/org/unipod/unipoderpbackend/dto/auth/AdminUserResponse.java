@@ -1,6 +1,7 @@
 package org.unipod.unipoderpbackend.dto.auth;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.unipod.unipoderpbackend.model.auth.ApiUser;
 import org.unipod.unipoderpbackend.model.auth.ApiUserRole;
@@ -11,6 +12,7 @@ public record AdminUserResponse(
         String email,
         ApiUserRole role,
         UUID departmentId,
+        List<UUID> departmentIds,
         boolean active,
         long version,
         Instant createdAt
@@ -18,7 +20,8 @@ public record AdminUserResponse(
     public static AdminUserResponse from(
             ApiUser user,
             String fullName,
-            UUID departmentId
+            UUID departmentId,
+            List<UUID> departmentIds
     ) {
         return new AdminUserResponse(
                 user.getId(),
@@ -26,6 +29,7 @@ public record AdminUserResponse(
                 user.getEmail(),
                 user.getRole(),
                 departmentId,
+                departmentIds,
                 user.isEnabled(),
                 user.getVersion(),
                 user.getCreatedAt()

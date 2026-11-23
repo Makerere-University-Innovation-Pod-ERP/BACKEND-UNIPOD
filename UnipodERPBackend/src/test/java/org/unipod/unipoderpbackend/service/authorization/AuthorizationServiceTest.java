@@ -150,6 +150,22 @@ class AuthorizationServiceTest {
                 submission(null, Set.of("faith@unipod.ac.ug"), null)).code());
     }
 
+    @Test
+    void configuredActionWithoutABuiltInScopeDoesNotGrantGlobalAccess() {
+        RolePermissionConfigRepository configs = mock(RolePermissionConfigRepository.class);
+        when(configs.findById(ApiUserRole.OBSERVER)).thenReturn(java.util.Optional.of(
+                new RolePermissionConfig(ApiUserRole.OBSERVER, Set.of("PRICE_LIST_PROPOSE"), Instant.now())
+        ));
+        AuthorizationService configured = new AuthorizationService(new AuthorizationPolicy(configs));
+        Actor observer = actor("observer@unipod.ac.ug", ApiUserRole.OBSERVER);
+
+        assertEquals(DenialCode.NOT_OWNER, configured.check(
+                observer,
+                AuthorizationAction.PRICE_LIST_PROPOSE,
+                submission("another@unipod.ac.ug", Set.of(), TEXTILE)
+        ).code());
+    }
+
     private static Actor actor(String email, ApiUserRole role) {
         return new Actor(email, role, Set.of());
     }

@@ -31,6 +31,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -259,7 +261,7 @@ class AuthenticationServiceTest {
         );
         user.issuePasswordSetupToken("hashed-token", NOW.plus(Duration.ofHours(1)), NOW);
         when(users.findByPasswordSetupTokenHash(any())).thenReturn(Optional.of(user));
-        when(users.consumePasswordSetupToken(any(), any(), any())).thenReturn(1);
+        when(users.consumePasswordSetupToken(any(), any(), any(), anyLong())).thenReturn(1);
 
         authentication.setPassword(new org.unipod.unipoderpbackend.dto.auth.SetPasswordRequest(
                 "raw-token",
@@ -269,7 +271,8 @@ class AuthenticationServiceTest {
         verify(users).consumePasswordSetupToken(
                 any(),
                 argThat(hash -> passwordEncoder.matches("a brand new password", hash)),
-                any()
+                any(),
+                eq(0L)
         );
     }
 
@@ -309,7 +312,7 @@ class AuthenticationServiceTest {
         );
         user.issuePasswordSetupToken("hashed-token", NOW.plus(Duration.ofHours(1)), NOW);
         when(users.findByPasswordSetupTokenHash(any())).thenReturn(Optional.of(user));
-        when(users.consumePasswordSetupToken(any(), any(), any())).thenReturn(0);
+        when(users.consumePasswordSetupToken(any(), any(), any(), anyLong())).thenReturn(0);
 
         ResponseStatusException exception = assertThrows(
                 ResponseStatusException.class,

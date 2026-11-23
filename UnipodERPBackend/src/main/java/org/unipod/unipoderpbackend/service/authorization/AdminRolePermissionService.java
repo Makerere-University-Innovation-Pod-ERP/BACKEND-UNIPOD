@@ -2,6 +2,7 @@ package org.unipod.unipoderpbackend.service.authorization;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.time.Instant;
 import java.nio.charset.StandardCharsets;
@@ -69,6 +70,9 @@ public class AdminRolePermissionService {
             throw conflict();
         }
         Set<String> before = config.getPermissions();
+        if (before.equals(request.permissions())) {
+            return roleResponse(role, config);
+        }
         config.replacePermissions(request.permissions(), Instant.now());
         try {
             configs.saveAndFlush(config);
@@ -116,7 +120,7 @@ public class AdminRolePermissionService {
     }
 
     private static String displayName(ApiUserRole role) {
-        String[] parts = role.name().toLowerCase().split("_");
+        String[] parts = role.name().toLowerCase(Locale.ROOT).split("_");
         StringBuilder name = new StringBuilder();
         for (String part : parts) {
             if (!name.isEmpty()) {

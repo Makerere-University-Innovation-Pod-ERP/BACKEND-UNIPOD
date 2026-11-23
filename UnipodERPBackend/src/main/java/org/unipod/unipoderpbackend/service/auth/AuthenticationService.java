@@ -194,7 +194,8 @@ public class AuthenticationService {
         int updated = users.consumePasswordSetupToken(
                 tokenHash,
                 passwordEncoder.encode(request.newPassword()),
-                now
+                now,
+                user.getVersion()
         );
         if (updated != 1) {
             throw invalidSetupToken();

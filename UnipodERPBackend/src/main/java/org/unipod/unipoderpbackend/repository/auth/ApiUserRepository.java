@@ -46,14 +46,17 @@ public interface ApiUserRepository extends JpaRepository<ApiUser, UUID> {
                 user.mustChangePassword = false,
                 user.passwordSetupTokenHash = null,
                 user.passwordSetupExpiresAt = null,
-                user.updatedAt = :now
+                user.updatedAt = :now,
+                user.version = user.version + 1
             where user.passwordSetupTokenHash = :tokenHash
               and user.passwordSetupExpiresAt > :now
               and user.enabled = true
+              and user.version = :expectedVersion
             """)
     int consumePasswordSetupToken(
             @Param("tokenHash") String tokenHash,
             @Param("passwordHash") String passwordHash,
-            @Param("now") Instant now
+            @Param("now") Instant now,
+            @Param("expectedVersion") long expectedVersion
     );
 }

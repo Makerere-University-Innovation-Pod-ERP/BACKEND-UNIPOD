@@ -96,11 +96,6 @@ public class ApiUser {
         this.updatedAt = now;
     }
 
-    public void updateFullName(String fullName, Instant now) {
-        this.fullName = clean(fullName);
-        this.updatedAt = now;
-    }
-
     public void touch(Instant now) {
         this.updatedAt = now;
     }

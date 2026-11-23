@@ -12,6 +12,8 @@ import org.unipod.unipoderpbackend.model.sector.SectorMember;
 public interface SectorMemberRepository extends JpaRepository<SectorMember, UUID> {
     List<SectorMember> findAllBySectorIdOrderBySubjectAsc(UUID sectorId);
 
+    List<SectorMember> findAllBySubjectIn(List<String> subjects);
+
     boolean existsBySectorIdAndSubject(UUID sectorId, String subject);
 
     @Query("select member.sectorId from SectorMember member where member.subject = :subject")
