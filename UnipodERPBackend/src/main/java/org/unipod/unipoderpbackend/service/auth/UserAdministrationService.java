@@ -2,6 +2,7 @@ package org.unipod.unipoderpbackend.service.auth;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -116,7 +117,17 @@ public class UserAdministrationService {
     @Transactional(readOnly = true)
     public List<AdminUserResponse> adminList(Actor actor) {
         authorization.authorize(actor, AuthorizationAction.USER_MANAGE, USERS);
-        List<ApiUser> found = users.search(null, null, "", PageRequest.of(0, 500)).getContent();
+        List<AdminUserResponse> result = new ArrayList<>();
+        int pageNumber = 0;
+        Page<ApiUser> page;
+        do {
+            page = users.search(null, null, "", PageRequest.of(pageNumber++, 500));
+            result.addAll(adminSummaries(page.getContent()));
+        } while (!page.isLast());
+        return List.copyOf(result);
+    }
+
+    private List<AdminUserResponse> adminSummaries(List<ApiUser> found) {
         if (found.isEmpty()) {
             return List.of();
         }
@@ -319,8 +330,7 @@ public class UserAdministrationService {
                         ? user.getFullName()
                         : user.getEmail().substring(0, user.getEmail().indexOf('@'));
         List<UUID> sortedDepartmentIds = departmentIds.stream().sorted().toList();
-        UUID departmentId = sortedDepartmentIds.isEmpty() ? null : sortedDepartmentIds.get(0);
-        return AdminUserResponse.from(user, fullName, departmentId, sortedDepartmentIds);
+        return AdminUserResponse.from(user, fullName, sortedDepartmentIds);
     }
 
     private static void verifyVersion(ApiUser user, Long expectedVersion) {

@@ -15,6 +15,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 import org.unipod.unipoderpbackend.dto.auth.ChangePasswordRequest;
 import org.unipod.unipoderpbackend.dto.auth.CreateApiUserRequest;
@@ -311,7 +312,7 @@ class AuthenticationServiceTest {
                 NOW
         );
         user.issuePasswordSetupToken("hashed-token", NOW.plus(Duration.ofHours(1)), NOW);
-        when(users.findByPasswordSetupTokenHash(any())).thenReturn(Optional.of(user));
+        when(users.findByPasswordSetupTokenHash(any())).thenReturn(Optional.of(user), Optional.empty());
         when(users.consumePasswordSetupToken(any(), any(), any(), anyLong())).thenReturn(0);
 
         ResponseStatusException exception = assertThrows(
@@ -323,6 +324,42 @@ class AuthenticationServiceTest {
         );
 
         assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+    }
+
+    @Test
+    void setPasswordReportsAConflictWhenTheAccountVersionChanged() {
+        ApiUser user = new ApiUser(
+                UUID.randomUUID(),
+                "walkin@example.test",
+                passwordEncoder.encode(PASSWORD),
+                ApiUserRole.SUBMITTER,
+                true,
+                NOW
+        );
+        user.issuePasswordSetupToken("hashed-token", NOW.plus(Duration.ofHours(1)), NOW);
+        ApiUser concurrentlyUpdated = new ApiUser(
+                user.getId(),
+                user.getEmail(),
+                passwordEncoder.encode(PASSWORD),
+                ApiUserRole.SUBMITTER,
+                true,
+                NOW
+        );
+        concurrentlyUpdated.issuePasswordSetupToken("hashed-token", NOW.plus(Duration.ofHours(1)), NOW);
+        ReflectionTestUtils.setField(concurrentlyUpdated, "version", 1L);
+        when(users.findByPasswordSetupTokenHash(any()))
+                .thenReturn(Optional.of(user), Optional.of(concurrentlyUpdated));
+        when(users.consumePasswordSetupToken(any(), any(), any(), anyLong())).thenReturn(0);
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> authentication.setPassword(new org.unipod.unipoderpbackend.dto.auth.SetPasswordRequest(
+                        "raw-token",
+                        "a brand new password"
+                ))
+        );
+
+        assertEquals(HttpStatus.CONFLICT, exception.getStatusCode());
     }
 
     private Jwt jwt() {

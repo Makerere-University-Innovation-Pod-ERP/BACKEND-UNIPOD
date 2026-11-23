@@ -256,8 +256,9 @@ paths:
       description: |
         Public endpoint for a submitter who received a password setup link during an
         assisted submission. The token is single-use and expires after 72 hours; an
-        unknown, used, or expired token returns 400. A successful call also clears the
-        temporary-password flag.
+        unknown, used, or expired token returns 400. If the account changes concurrently,
+        the request returns 409 and the user may retry with the same link. A successful
+        call also clears the temporary-password flag.
       security: []
       requestBody:
         required: true
@@ -270,6 +271,8 @@ paths:
           description: Password set
         '400':
           $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /auth/signup:
@@ -9706,7 +9709,7 @@ components:
         fullName:
           type: [string, 'null']
           maxLength: 200
-          pattern: '^[^\p{Cc}]*$'
+          pattern: '^[^\x00-\x1F\x7F-\x9F]*$'
     AdminCreateUserRequest:
       type: object
       required: [email, password, role]
@@ -9714,7 +9717,7 @@ components:
         fullName:
           type: [string, 'null']
           maxLength: 200
-          pattern: '^[^\p{Cc}]*$'
+          pattern: '^[^\x00-\x1F\x7F-\x9F]*$'
         email:
           type: string
           format: email

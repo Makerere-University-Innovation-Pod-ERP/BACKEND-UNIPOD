@@ -20,16 +20,17 @@ public record AdminUserResponse(
     public static AdminUserResponse from(
             ApiUser user,
             String fullName,
-            UUID departmentId,
             List<UUID> departmentIds
     ) {
+        List<UUID> memberships = List.copyOf(departmentIds);
+        UUID departmentId = memberships.isEmpty() ? null : memberships.get(0);
         return new AdminUserResponse(
                 user.getId(),
                 fullName,
                 user.getEmail(),
                 user.getRole(),
                 departmentId,
-                departmentIds,
+                memberships,
                 user.isEnabled(),
                 user.getVersion(),
                 user.getCreatedAt()

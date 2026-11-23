@@ -11,7 +11,4 @@ public record UpdateUserRequest(
         Set<UUID> departmentIds,
         @NotNull @PositiveOrZero Long version
 ) {
-    public UpdateUserRequest(ApiUserRole role, Set<UUID> departmentIds) {
-        this(role, departmentIds, null);
-    }
 }

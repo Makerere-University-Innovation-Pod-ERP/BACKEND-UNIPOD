@@ -227,7 +227,7 @@ public class TextileOrderService {
         if (request.materials() == null || request.materials().isEmpty()) {
             throw new InvalidOperationsRequestException("Add at least one estimated material.");
         }
-        if (request.expectedCompletion().isBefore(LocalDate.now(KAMPALA))) {
+        if (request.expectedCompletion().isBefore(LocalDate.now(clock.withZone(KAMPALA)))) {
             throw new InvalidOperationsRequestException("The expected completion date cannot be in the past.");
         }
         UUID textileDepartmentId = sectors.activeSectorByName("Textile")

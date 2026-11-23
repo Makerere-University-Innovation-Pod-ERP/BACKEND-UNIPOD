@@ -198,6 +198,17 @@ public class AuthenticationService {
                 user.getVersion()
         );
         if (updated != 1) {
+            boolean accountChanged = users.findByPasswordSetupTokenHash(tokenHash)
+                    .filter(ApiUser::isEnabled)
+                    .filter(candidate -> candidate.hasValidPasswordSetupToken(now))
+                    .map(candidate -> candidate.getVersion() != user.getVersion())
+                    .orElse(false);
+            if (accountChanged) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "This account changed while the password was being set. Try the same link again."
+                );
+            }
             throw invalidSetupToken();
         }
         return user.getId();

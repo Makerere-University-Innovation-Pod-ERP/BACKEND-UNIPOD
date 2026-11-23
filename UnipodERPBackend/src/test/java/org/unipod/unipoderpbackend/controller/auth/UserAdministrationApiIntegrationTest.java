@@ -78,7 +78,7 @@ class UserAdministrationApiIntegrationTest {
                         .header("Authorization", bearer(adminToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"role\": \"FINANCE_OFFICER\"}"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isUnprocessableEntity());
 
         mockMvc.perform(patch("/users/" + reviewer.id())
                         .header("Authorization", bearer(adminToken))

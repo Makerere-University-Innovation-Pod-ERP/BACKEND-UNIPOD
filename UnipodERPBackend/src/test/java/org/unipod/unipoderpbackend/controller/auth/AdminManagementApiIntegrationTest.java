@@ -100,15 +100,16 @@ class AdminManagementApiIntegrationTest {
                         .header("Authorization", bearer(adminToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isUnprocessableEntity());
     }
 
     @Test
     void departmentAndStaffLifecycleUseVersionedAdminRoutes() throws Exception {
-        config.departments();
+        var departmentsBeforeCreate = config.departments();
+        String departmentName = "Management Test Unit " + UUID.randomUUID();
         String departmentBody = """
-                {"name":"Management Test Unit","notificationEmail":"unit@example.test","active":true}
-                """;
+                {"name":"%s","notificationEmail":"unit@example.test","active":true}
+                """.formatted(departmentName);
         String department = mockMvc.perform(post("/admin/departments")
                         .header("Authorization", bearer(adminToken))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -117,6 +118,8 @@ class AdminManagementApiIntegrationTest {
                 .andExpect(jsonPath("$.notificationEmail").value("unit@example.test"))
                 .andReturn().getResponse().getContentAsString();
         String departmentId = objectMapper.readTree(department).get("id").asString();
+        org.junit.jupiter.api.Assertions.assertFalse(departmentsBeforeCreate.stream()
+                .anyMatch(item -> item.id().toString().equals(departmentId)));
         org.junit.jupiter.api.Assertions.assertTrue(config.departments().stream()
                 .anyMatch(item -> item.id().toString().equals(departmentId)));
         long departmentVersion = objectMapper.readTree(department).get("version").asLong();
@@ -165,7 +168,7 @@ class AdminManagementApiIntegrationTest {
                         .header("Authorization", bearer(adminToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"role\":\"REVIEWER\",\"version\":-1}"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isUnprocessableEntity());
 
         mockMvc.perform(patch("/admin/users/" + staffId)
                         .header("Authorization", bearer(adminToken))
@@ -216,12 +219,12 @@ class AdminManagementApiIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "name":"Management Test Unit",
+                                  "name":"%s",
                                   "notificationEmail":"unit@example.test",
                                   "active":false,
                                   "version":%d
                                 }
-                                """.formatted(departmentVersion)))
+                                """.formatted(departmentName, departmentVersion)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.active").value(false));
         org.junit.jupiter.api.Assertions.assertFalse(config.departments().stream()
@@ -249,13 +252,13 @@ class AdminManagementApiIntegrationTest {
                         .header("Authorization", bearer(adminToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"permissions\":[\"CASE_VIEW\",null],\"version\":1}"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isUnprocessableEntity());
 
         mockMvc.perform(put("/admin/roles/REVIEWER/permissions")
                         .header("Authorization", bearer(adminToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"permissions\":[],\"version\":-1}"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isUnprocessableEntity());
 
         Actor reviewer = new Actor("reviewer@example.test", ApiUserRole.REVIEWER, java.util.Set.of());
         var decision = authorization.check(
