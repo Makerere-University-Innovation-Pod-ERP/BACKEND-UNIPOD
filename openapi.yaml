@@ -6629,6 +6629,23 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /finance/overview:
+    get:
+      tags: [Finance]
+      operationId: getFinanceOverview
+      x-required-roles: [ADMINISTRATOR, FINANCE_OFFICER]
+      summary: Aggregate overview for the Finance Officer screen
+      responses:
+        '200':
+          description: Finance overview
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FinanceOverview'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /services/catalogue:
     get:
       tags: [Service Catalogue]
@@ -12123,6 +12140,148 @@ components:
         collectedUgx:
           type: integer
           format: int64
+    FinanceOverview:
+      type: object
+      required: [eyebrow, greeting, subtitle, metrics, pipelineStages, needsAttention, income, facilities, recentActivities]
+      properties:
+        eyebrow:
+          type: string
+        greeting:
+          type: string
+        subtitle:
+          type: string
+        metrics:
+          type: array
+          items:
+            $ref: '#/components/schemas/FinanceOverviewMetric'
+        pipelineStages:
+          type: array
+          items:
+            $ref: '#/components/schemas/FinanceOverviewPipelineStage'
+        needsAttention:
+          type: array
+          items:
+            $ref: '#/components/schemas/FinanceOverviewAttentionItem'
+        income:
+          $ref: '#/components/schemas/FinanceOverviewIncome'
+        facilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/FinanceOverviewFacility'
+        recentActivities:
+          type: array
+          items:
+            $ref: '#/components/schemas/FinanceOverviewActivity'
+    FinanceOverviewMetric:
+      type: object
+      required: [id, label, value, subtext, variant]
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        value:
+          oneOf:
+            - type: string
+            - type: number
+        subtext:
+          type: string
+        variant:
+          type: string
+          enum: [default, forest, burgundy]
+          default: default
+        icon:
+          type: string
+    FinanceOverviewPipelineStage:
+      type: object
+      required: [key, label, count]
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        count:
+          type: integer
+          format: int64
+    FinanceOverviewAttentionItem:
+      type: object
+      required: [id, index, title, subtext]
+      properties:
+        id:
+          type: string
+        index:
+          type: string
+        title:
+          type: string
+        subtext:
+          type: string
+        category:
+          type: string
+        sector:
+          type: string
+        code:
+          type: string
+    FinanceOverviewIncome:
+      type: object
+      required: [amountFormatted, amount, currency, subtext, bars]
+      properties:
+        amountFormatted:
+          type: string
+        amount:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        subtext:
+          type: string
+        bars:
+          type: array
+          items:
+            $ref: '#/components/schemas/FinanceOverviewIncomeBar'
+    FinanceOverviewIncomeBar:
+      type: object
+      required: [label, value, color]
+      properties:
+        label:
+          type: string
+        value:
+          type: integer
+          format: int64
+        color:
+          type: string
+    FinanceOverviewFacility:
+      type: object
+      required: [id, name, bookings, capacity, percentage]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        bookings:
+          type: integer
+          format: int64
+        capacity:
+          type: integer
+          format: int64
+        percentage:
+          type: integer
+          format: int64
+    FinanceOverviewActivity:
+      type: object
+      required: [id, actor, action, target, timestamp]
+      properties:
+        id:
+          type: string
+        actor:
+          type: string
+        action:
+          type: string
+        target:
+          type: string
+        actionSuffix:
+          type: string
+        timestamp:
+          type: string
     FacilityStatus:
       type: string
       enum: [AVAILABLE, BOOKED, MAINTENANCE]
