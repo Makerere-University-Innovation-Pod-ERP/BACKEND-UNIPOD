@@ -492,6 +492,27 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /admin/users:
+    get:
+      tags: [Authentication]
+      operationId: listAdminUsers
+      x-required-roles: [ADMINISTRATOR]
+      summary: List management users
+      description: Returns up to 500 accounts in the management screen's flat response shape.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Management user entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AdminManagementUser'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     post:
       tags: [Authentication]
       operationId: createApiUser
@@ -505,14 +526,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateApiUserRequest'
+              $ref: '#/components/schemas/AdminCreateUserRequest'
       responses:
         '201':
           description: Account created
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiUser'
+                $ref: '#/components/schemas/AdminManagementUser'
         '400':
           $ref: '#/components/responses/BadRequest'
         '422':
@@ -527,6 +548,246 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /admin/users/{id}:
+    patch:
+      tags: [Authentication]
+      operationId: updateAdminUser
+      x-required-roles: [ADMINISTRATOR]
+      summary: Update a user's role and department assignment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUpdateUserRequest'
+      responses:
+        '200':
+          description: Updated management user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminManagementUser'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /admin/users/{id}/status:
+    patch:
+      tags: [Authentication]
+      operationId: setAdminUserActive
+      x-required-roles: [ADMINISTRATOR]
+      summary: Activate or deactivate a user
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUserStatusRequest'
+      responses:
+        '200':
+          description: Updated management user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminManagementUser'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /admin/departments:
+    get:
+      tags: [Users]
+      operationId: listAdminDepartments
+      x-required-roles: [ADMINISTRATOR]
+      summary: List all departments
+      description: Departments share the sector records and notification addresses.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: All department and sector records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AdminSector'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Users]
+      operationId: createAdminDepartment
+      x-required-roles: [ADMINISTRATOR]
+      summary: Create a department record
+      description: Uses the shared sector model; a routable notification email is required.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SectorRequest'
+      responses:
+        '201':
+          description: Created department
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSector'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /admin/departments/{id}:
+    put:
+      tags: [Users]
+      operationId: updateAdminDepartment
+      x-required-roles: [ADMINISTRATOR]
+      summary: Update a department record
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SectorRequest'
+      responses:
+        '200':
+          description: Updated department
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSector'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /admin/roles:
+    get:
+      tags: [Users]
+      operationId: listAdminRoles
+      x-required-roles: [ADMINISTRATOR]
+      summary: List roles and configured permissions
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Role permission configuration
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AdminRole'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/permissions:
+    get:
+      tags: [Users]
+      operationId: listAdminPermissions
+      x-required-roles: [ADMINISTRATOR]
+      summary: List backend-enforced permissions
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Permission catalog
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AdminPermission'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/roles/{id}/permissions:
+    put:
+      tags: [Users]
+      operationId: updateAdminRolePermissions
+      x-required-roles: [ADMINISTRATOR]
+      summary: Update a role's backend-enforced permissions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/ApiUserRole'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminRolePermissionsRequest'
+      responses:
+        '200':
+          description: Updated role permission configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminRole'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /submissions:
     post:
       tags: [Submissions]
@@ -9436,6 +9697,118 @@ components:
           maxLength: 72
         role:
           $ref: '#/components/schemas/ApiUserRole'
+    AdminCreateUserRequest:
+      type: object
+      required: [email, password, role]
+      properties:
+        fullName:
+          type: [string, 'null']
+          maxLength: 200
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        password:
+          type: string
+          format: password
+          minLength: 12
+          maxLength: 72
+        role:
+          $ref: '#/components/schemas/ApiUserRole'
+        departmentId:
+          type: [string, 'null']
+          format: uuid
+    AdminUpdateUserRequest:
+      type: object
+      required: [role, version]
+      properties:
+        role:
+          $ref: '#/components/schemas/ApiUserRole'
+        departmentId:
+          type: [string, 'null']
+          format: uuid
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+    AdminUserStatusRequest:
+      type: object
+      required: [active, version]
+      properties:
+        active:
+          type: boolean
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+    AdminManagementUser:
+      type: object
+      required: [id, fullName, email, role, active, version, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          $ref: '#/components/schemas/ApiUserRole'
+        departmentId:
+          type: [string, 'null']
+          format: uuid
+        active:
+          type: boolean
+        version:
+          type: integer
+          format: int64
+        createdAt:
+          type: string
+          format: date-time
+    AdminRolePermissionsRequest:
+      type: object
+      required: [permissions, version]
+      properties:
+        permissions:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum: [CASE_VIEW, CASE_EDIT, CASE_FORWARD, CASE_ASSIGN_REVIEWER, CASE_REVIEW, CASE_DECIDE, AUDIT_VIEW, USER_MANAGE, PRICE_LIST_MANAGE, PRICE_LIST_PROPOSE, REPORT_VIEW]
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+    AdminRole:
+      type: object
+      required: [id, name, permissions, version, editable]
+      properties:
+        id:
+          $ref: '#/components/schemas/ApiUserRole'
+        name:
+          type: string
+        permissions:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum: [CASE_VIEW, CASE_EDIT, CASE_FORWARD, CASE_ASSIGN_REVIEWER, CASE_REVIEW, CASE_DECIDE, AUDIT_VIEW, USER_MANAGE, PRICE_LIST_MANAGE, PRICE_LIST_PROPOSE, REPORT_VIEW]
+        version:
+          type: integer
+          format: int64
+        editable:
+          type: boolean
+    AdminPermission:
+      type: object
+      required: [id, name, description]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
     ApiUser:
       type: object
       required: [id, email, role, createdAt]

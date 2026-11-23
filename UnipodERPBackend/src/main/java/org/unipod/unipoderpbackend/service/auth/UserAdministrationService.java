@@ -12,10 +12,13 @@ import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 import org.unipod.unipoderpbackend.dto.PageResponse;
+import org.unipod.unipoderpbackend.dto.auth.AdminCreateUserRequest;
+import org.unipod.unipoderpbackend.dto.auth.AdminUserResponse;
 import org.unipod.unipoderpbackend.dto.auth.ApiUserResponse;
 import org.unipod.unipoderpbackend.dto.auth.CreateApiUserRequest;
 import org.unipod.unipoderpbackend.dto.auth.RoleResponse;
@@ -79,6 +82,42 @@ public class UserAdministrationService {
         return created;
     }
 
+    @Transactional
+    public AdminUserResponse createManagedUser(AdminCreateUserRequest request, Actor actor) {
+        if (request.role() == ApiUserRole.ADMINISTRATOR) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The administrator role is protected.");
+        }
+        ApiUserResponse created = createUser(new CreateApiUserRequest(
+                request.email(),
+                request.password(),
+                request.role(),
+                request.fullName(),
+                request.departmentId()
+        ), actor);
+        ApiUser user = require(created.id());
+        if (request.departmentId() != null) {
+            sectors.requireActive(request.departmentId());
+            sectorMembers.insertIfAbsent(UUID.randomUUID(), request.departmentId(), user.getEmail());
+        }
+        return adminSummary(user);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AdminUserResponse> adminList(Actor actor) {
+        authorization.authorize(actor, AuthorizationAction.USER_MANAGE, USERS);
+        return users.search(null, null, "", PageRequest.of(0, 500))
+                .getContent()
+                .stream()
+                .map(this::adminSummary)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public AdminUserResponse getAdminUser(Actor actor, UUID id) {
+        authorization.authorize(actor, AuthorizationAction.USER_MANAGE, USERS);
+        return adminSummary(require(id));
+    }
+
     @Transactional(readOnly = true)
     public PageResponse<UserSummaryResponse> list(
             Actor actor, ApiUserRole role, Boolean active, String query, int page, int size) {
@@ -98,13 +137,15 @@ public class UserAdministrationService {
     public UserSummaryResponse update(Actor actor, UUID id, UpdateUserRequest request) {
         authorization.authorize(actor, AuthorizationAction.USER_MANAGE, USERS);
         ApiUser user = require(id);
+        verifyVersion(user, request.version());
         Instant now = clock.instant();
+        boolean changed = false;
         if (request.role() != null && request.role() != user.getRole()) {
             refuseSelf(actor, user, "change your own role");
             refuseLastAdministrator(user);
             ApiUserRole before = user.getRole();
             user.changeRole(request.role(), now);
-            users.saveAndFlush(user);
+            changed = true;
             audit.log(AuditEvent.changed(actor, "user.role_changed", "user", user.getId(),
                     Map.of("role", before.name()), Map.of("role", request.role().name())));
         }
@@ -119,24 +160,35 @@ public class UserAdministrationService {
                 sectorMembers.insertIfAbsent(UUID.randomUUID(), added, user.getEmail());
             }
             if (!before.equals(after)) {
+                changed = true;
                 audit.log(AuditEvent.changed(actor, "user.departments_changed", "user", user.getId(),
                         Map.of("departmentIds", sorted(before)), Map.of("departmentIds", sorted(after))));
             }
+        }
+        if (changed) {
+            user.touch(now);
+            flushVersionedUser(user);
         }
         return summary(user);
     }
 
     @Transactional
     public UserSummaryResponse deactivate(Actor actor, UUID id) {
+        return deactivate(actor, id, null);
+    }
+
+    @Transactional
+    public UserSummaryResponse deactivate(Actor actor, UUID id, Long expectedVersion) {
         authorization.authorize(actor, AuthorizationAction.USER_MANAGE, USERS);
         ApiUser user = require(id);
+        verifyVersion(user, expectedVersion);
         if (!user.isEnabled()) {
             return summary(user);
         }
         refuseSelf(actor, user, "deactivate your own account");
         refuseLastAdministrator(user);
         user.deactivate(clock.instant());
-        users.saveAndFlush(user);
+        flushVersionedUser(user);
         sessions.endAllSessions(user.getId());
         audit.log(AuditEvent.changed(actor, "user.deactivated", "user", user.getId(),
                 Map.of("active", true), Map.of("active", false)));
@@ -145,13 +197,19 @@ public class UserAdministrationService {
 
     @Transactional
     public UserSummaryResponse reactivate(Actor actor, UUID id) {
+        return reactivate(actor, id, null);
+    }
+
+    @Transactional
+    public UserSummaryResponse reactivate(Actor actor, UUID id, Long expectedVersion) {
         authorization.authorize(actor, AuthorizationAction.USER_MANAGE, USERS);
         ApiUser user = require(id);
+        verifyVersion(user, expectedVersion);
         if (user.isEnabled()) {
             return summary(user);
         }
         user.reactivate(clock.instant());
-        users.saveAndFlush(user);
+        flushVersionedUser(user);
         audit.log(AuditEvent.changed(actor, "user.reactivated", "user", user.getId(),
                 Map.of("active", false), Map.of("active", true)));
         return summary(user);
@@ -169,6 +227,39 @@ public class UserAdministrationService {
     private UserSummaryResponse summary(ApiUser user) {
         UserProfileResponse profile = profiles.findById(user.getId()).map(UserProfileResponse::from).orElse(null);
         return UserSummaryResponse.from(user, sectorMembers.findSectorIdsBySubject(user.getEmail()), profile);
+    }
+
+    private AdminUserResponse adminSummary(ApiUser user) {
+        UserProfileResponse profile = profiles.findById(user.getId()).map(UserProfileResponse::from).orElse(null);
+        Set<UUID> departmentIds = sectorMembers.findSectorIdsBySubject(user.getEmail());
+        String fullName = profile != null && profile.fullName() != null && !profile.fullName().isBlank()
+                ? profile.fullName()
+                : user.getFullName() != null && !user.getFullName().isBlank()
+                        ? user.getFullName()
+                        : user.getEmail().substring(0, user.getEmail().indexOf('@'));
+        UUID departmentId = departmentIds.stream().sorted().findFirst().orElse(null);
+        return AdminUserResponse.from(user, fullName, departmentId);
+    }
+
+    private static void verifyVersion(ApiUser user, Long expectedVersion) {
+        if (expectedVersion != null && expectedVersion != user.getVersion()) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "This account changed elsewhere. Refresh and try again."
+            );
+        }
+    }
+
+    private void flushVersionedUser(ApiUser user) {
+        try {
+            users.saveAndFlush(user);
+        } catch (ObjectOptimisticLockingFailureException exception) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "This account changed elsewhere. Refresh and try again.",
+                    exception
+            );
+        }
     }
 
     private static void refuseSelf(Actor actor, ApiUser user, String what) {

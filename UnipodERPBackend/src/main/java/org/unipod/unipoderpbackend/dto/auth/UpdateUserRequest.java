@@ -6,6 +6,10 @@ import org.unipod.unipoderpbackend.model.auth.ApiUserRole;
 
 public record UpdateUserRequest(
         ApiUserRole role,
-        Set<UUID> departmentIds
+        Set<UUID> departmentIds,
+        Long version
 ) {
+    public UpdateUserRequest(ApiUserRole role, Set<UUID> departmentIds) {
+        this(role, departmentIds, null);
+    }
 }

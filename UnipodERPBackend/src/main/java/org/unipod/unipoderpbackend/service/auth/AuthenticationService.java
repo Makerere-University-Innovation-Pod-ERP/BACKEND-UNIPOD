@@ -306,6 +306,8 @@ public class AuthenticationService {
                 email,
                 passwordEncoder.encode(request.password()),
                 request.role(),
+                false,
+                request.fullName(),
                 now
         );
         try {
