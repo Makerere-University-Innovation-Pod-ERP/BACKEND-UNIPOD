@@ -113,6 +113,8 @@ tags:
     description: Training sessions, registrations, attendance and mentorship follow-ups (Operations)
   - name: Sectors
     description: Sector catalog and routing
+  - name: Rules
+    description: Published submission guidance and administrator-managed department rules
   - name: Case Files
     description: Case file aggregate, controls, stages, outcome, and document review
   - name: Fact-Finding
@@ -3751,6 +3753,117 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /rules:
+    get:
+      tags: [Rules]
+      operationId: listRules
+      x-required-roles: [ADMINISTRATOR, INNOVATION_COORDINATOR, DEPARTMENT_COORDINATOR, RECEPTIONIST, FACT_FINDING_OFFICER, REVIEWER, SECTOR_OFFICER, IP_LIAISON, SUBMITTER, FINANCE_OFFICER, OBSERVER, TELECOMS_DOMAIN_OWNER]
+      summary: List rules available to the signed-in user
+      description: Administrators see drafts and published rules. Other authenticated roles see published rules only.
+      responses:
+        '200':
+          description: The rules, most recently updated first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DepartmentRule'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Rules]
+      operationId: createRule
+      x-required-roles: [ADMINISTRATOR]
+      summary: Create a rule as a draft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDepartmentRuleRequest'
+      responses:
+        '201':
+          description: The new draft
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DepartmentRule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /rules/{id}:
+    patch:
+      tags: [Rules]
+      operationId: updateRule
+      x-required-roles: [ADMINISTRATOR]
+      summary: Update a rule or publish it
+      description: Send only the fields to change. Editing rule content increments `version`; publishing does not.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDepartmentRuleRequest'
+      responses:
+        '200':
+          description: The updated rule
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DepartmentRule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /rules/{id}/retire:
+    post:
+      tags: [Rules]
+      operationId: retireRule
+      x-required-roles: [ADMINISTRATOR]
+      summary: Unpublish a rule
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The unpublished rule
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DepartmentRule'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
   /sectors/catalog:
@@ -12508,6 +12621,88 @@ components:
           type: [string, 'null']
         message:
           type: string
+    RuleScope:
+      type: string
+      enum: [GENERAL, SECTOR]
+    DepartmentRule:
+      type: object
+      additionalProperties: false
+      required: [id, title, body, scope, scopeId, mustAccept, version, published, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          maxLength: 120
+        body:
+          type: string
+          maxLength: 4000
+        scope:
+          $ref: '#/components/schemas/RuleScope'
+        scopeId:
+          type: [string, 'null']
+          format: uuid
+          description: Active department ID for `SECTOR`; null for `GENERAL`.
+        mustAccept:
+          type: boolean
+        version:
+          type: integer
+          minimum: 1
+          description: Increments when the rule's wording, scope, or acknowledgement requirement changes.
+        published:
+          type: boolean
+        updatedAt:
+          type: string
+          format: date-time
+    CreateDepartmentRuleRequest:
+      type: object
+      additionalProperties: false
+      required: [title, body, scope, mustAccept]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        body:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        scope:
+          $ref: '#/components/schemas/RuleScope'
+        scopeId:
+          type: [string, 'null']
+          format: uuid
+          description: Required for `SECTOR`; must be null for `GENERAL`.
+        mustAccept:
+          type: boolean
+        published:
+          type: boolean
+          const: false
+          default: false
+          description: New rules are always created as drafts.
+    UpdateDepartmentRuleRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        body:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        scope:
+          $ref: '#/components/schemas/RuleScope'
+        scopeId:
+          type: [string, 'null']
+          format: uuid
+          description: Required when changing the scope to `SECTOR`; null when changing to `GENERAL`.
+        mustAccept:
+          type: boolean
+        published:
+          type: boolean
     PartnerType:
       type: string
       enum: [INDUSTRY_PARTNER, FUNDER, ACADEMIC_PARTNER]

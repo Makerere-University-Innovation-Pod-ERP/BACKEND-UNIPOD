@@ -47,6 +47,7 @@ import org.unipod.unipoderpbackend.exception.operations.OperationsNotFoundExcept
 import org.unipod.unipoderpbackend.exception.finance.InvoiceNotFoundException;
 import org.unipod.unipoderpbackend.exception.finance.ReceiptNotFoundException;
 import org.unipod.unipoderpbackend.exception.notification.NotificationNotFoundException;
+import org.unipod.unipoderpbackend.exception.rules.InvalidRuleException;
 import org.unipod.unipoderpbackend.exception.sector.SectorConflictException;
 import org.unipod.unipoderpbackend.exception.sector.SectorNotFoundException;
 import org.unipod.unipoderpbackend.exception.storage.StorageObjectNotFoundException;
@@ -171,6 +172,11 @@ public class ApiExceptionHandler {
     @ExceptionHandler(InvalidOperationsRequestException.class)
     ResponseEntity<ProblemDetail> handleInvalidOperations(InvalidOperationsRequestException exception) {
         return problem(HttpStatus.UNPROCESSABLE_CONTENT, "Invalid request", exception.getMessage(), "INVALID_REQUEST");
+    }
+
+    @ExceptionHandler(InvalidRuleException.class)
+    ResponseEntity<ProblemDetail> handleInvalidRule(InvalidRuleException exception) {
+        return validationProblem(exception.getErrors());
     }
 
     @ExceptionHandler(OperationsConflictException.class)
